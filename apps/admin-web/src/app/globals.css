@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: #f6f5f1;
+  color: #22262b;
+}
+
+/* Tabular numerals wherever counts/IDs appear, so columns of numbers align
+   like a real ledger rather than a proportional-width jumble. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible keyboard focus, kept consistent across every interactive element. */
+:focus-visible {
+  outline: 2px solid #2b6e64;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
