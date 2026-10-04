@@ -5,15 +5,31 @@
 
 import axios, { AxiosInstance } from 'axios';
 
+declare const process: {
+  env?: {
+    NEXT_PUBLIC_API_URL?: string;
+    [key: string]: any;
+  };
+} | undefined;
+
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+const defaultBaseUrl =
+  typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_API_URL
+    ? process.env.NEXT_PUBLIC_API_URL
+    : 'http://localhost:3000';
+
 export const apiClient: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000',
+  baseURL: defaultBaseUrl,
 });
+
+export function setApiBaseUrl(url: string): void {
+  apiClient.defaults.baseURL = url;
+}
 
 apiClient.interceptors.request.use((config) => {
   if (accessToken) {

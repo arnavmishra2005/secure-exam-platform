@@ -46,6 +46,17 @@ Default configuration:
 NEXT_PUBLIC_API_URL=http://localhost:3000
 ```
 
+### Exam Client (`apps/exam-client/renderer/.env`)
+Copy from the example file if it does not already exist:
+```bash
+cp apps/exam-client/renderer/.env.example apps/exam-client/renderer/.env
+```
+
+Default configuration:
+```env
+VITE_API_BASE_URL=http://localhost:3000
+```
+
 ---
 
 ## 2. Install Dependencies
@@ -99,6 +110,12 @@ npm run admin:dev
 ```
 - **Admin Portal**: http://localhost:3001
 
+#### Terminal 3 — Start Exam Client UI:
+```bash
+npm run client:dev
+```
+- **Exam Client Portal**: http://localhost:3002
+
 ---
 
 ### Option B: Docker Compose (All Services)
@@ -127,4 +144,8 @@ docker compose up --build
 - **Build Admin Web Portal**:
   ```bash
   npm run admin:build
+  ```
+- **Build Exam Client UI**:
+  ```bash
+  npm run client:build
   ```
