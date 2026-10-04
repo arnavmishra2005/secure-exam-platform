@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "apps/*",
+    "apps/exam-client/renderer",
     "packages/*"
   ],
   "scripts": {

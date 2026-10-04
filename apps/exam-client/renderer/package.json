@@ -1,0 +1,26 @@
+{
+  "name": "@secure-exam/exam-client-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@secure-exam/api-client": "*",
+    "idb": "^8.0.3",
+    "react": "^18.3.1",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^18.3.3",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^26.0.0",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.11"
+  }
+}
