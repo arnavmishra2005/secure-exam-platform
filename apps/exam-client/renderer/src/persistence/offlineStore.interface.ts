@@ -43,6 +43,8 @@ export interface IOfflineStore {
   /** Saves an edit locally and queues it for sync. Fields mean what they mean in the Phase 1 Answer API. */
   saveAnswer(attemptId: string, questionId: string, update: SaveAnswerPayload): Promise<void>;
   getAnswer(attemptId: string, questionId: string): Promise<LocalAnswer | null>;
+  /** Every answer stored for the attempt, whatever its status; restores the exam screen after a reload. */
+  getAllAnswers(attemptId: string): Promise<LocalAnswer[]>;
   /** Answers still waiting to sync, oldest edit first. */
   getPendingAnswers(attemptId: string): Promise<LocalAnswer[]>;
   /**

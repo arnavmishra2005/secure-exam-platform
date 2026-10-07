@@ -1,9 +1,9 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 import { AnswerEntity } from './entities/answer.entity';
-import { QuestionState } from '@secure-exam/types';
-import type { Answer, JwtPayload } from '@secure-exam/types';
+import { AttemptStatus, QuestionState } from '@secure-exam/types';
+import type { Answer, JwtPayload, PublicQuestion } from '@secure-exam/types';
 import { SaveAnswerDto } from '@secure-exam/validation';
 import { AttemptService } from '../attempt/attempt.service';
 import { SubmissionService } from './submission.service';
@@ -97,6 +97,19 @@ export class AnswerService {
     await this.attemptService.findOwnedAttemptOrThrow(attemptId, user);
     const answers = await this.answerRepository.find({ where: { attemptId } });
     return answers.map(toAnswerDto);
+  }
+
+  /**
+   * The exam-taking screen's question list: the attempt's exam questions
+   * without the answer key. Only the attempt's owner can read it, and only
+   * while the attempt is in progress.
+   */
+  async listQuestionsForAttempt(attemptId: string, user: JwtPayload): Promise<PublicQuestion[]> {
+    const attempt = await this.attemptService.findOwnedAttemptOrThrow(attemptId, user);
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new ConflictException('This attempt is no longer in progress');
+    }
+    return this.questionLookup.getPublicQuestionsForExam(attempt.examId);
   }
 
   /**

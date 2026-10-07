@@ -53,6 +53,21 @@ export function describeOfflineStoreContract(name: string, createStore: () => IO
       expect(pending.map((answer) => answer.questionId)).toEqual(['q2', 'q1']);
     });
 
+    it("lists all of this attempt's answers, synced or not", async () => {
+      const store = createStore();
+      await store.saveAnswer(ATTEMPT, 'q1', { selectedOptionIds: ['a'] });
+      await store.saveAnswer(ATTEMPT, 'q2', { markedForReview: true });
+      await store.saveAnswer('other-attempt', 'q1', { selectedOptionIds: ['c'] });
+      await store.markSynced(ATTEMPT, 'q1', 1);
+
+      const all = await store.getAllAnswers(ATTEMPT);
+      expect(all.map((answer) => [answer.questionId, answer.status]).sort()).toEqual([
+        ['q1', 'synced'],
+        ['q2', 'pending'],
+      ]);
+      expect(await store.getAllAnswers('no-such-attempt')).toEqual([]);
+    });
+
     it('marks the sent revision synced, but not an edit made while it was in flight', async () => {
       const store = createStore();
       await store.saveAnswer(ATTEMPT, 'q1', { selectedOptionIds: ['a'] }); // revision 1 is sent...

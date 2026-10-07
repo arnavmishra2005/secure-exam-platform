@@ -38,6 +38,9 @@ export function createIndexedDbStore(dbName = 'secure-exam-offline'): IOfflineSt
     async getAnswer(attemptId, questionId) {
       return (await (await db).get('answers', [attemptId, questionId])) ?? null;
     },
+    async getAllAnswers(attemptId) {
+      return (await db).getAllFromIndex('answers', 'byAttempt', attemptId);
+    },
     async getPendingAnswers(attemptId) {
       return pendingInOrder(await (await db).getAllFromIndex('answers', 'byAttempt', attemptId));
     },

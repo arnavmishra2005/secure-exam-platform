@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AnswerService } from './answer.service';
 import { AnswerEntity } from './entities/answer.entity';
@@ -10,7 +10,7 @@ import {
   QUESTION_LOOKUP_SERVICE,
   QuestionLookupInfo,
 } from './question-lookup/question-lookup.interface';
-import { QuestionState, Role } from '@secure-exam/types';
+import { AttemptStatus, QuestionState, Role } from '@secure-exam/types';
 // Person A's contract — see answer.service.ts for the "assumed to exist" note.
 import { AuditService } from '../audit/audit.service';
 
@@ -85,6 +85,7 @@ describe('AnswerService', () => {
       getQuestionsForExam: jest
         .fn()
         .mockResolvedValue([singleChoiceQuestion, multipleChoiceQuestion, textQuestion]),
+      getPublicQuestionsForExam: jest.fn().mockResolvedValue([]),
     };
     auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
 
@@ -277,6 +278,34 @@ describe('AnswerService', () => {
     await expect(
       service.saveAnswer('attempt-1', 'not-in-exam', { selectedOptionIds: ['opt-a'] }, student),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  describe('listQuestionsForAttempt (the exam screen\'s question list)', () => {
+    it("returns the attempt's exam questions from the public lookup", async () => {
+      const publicQuestions = [{ id: 'q-single', options: [{ id: 'opt-a' }] }] as any;
+      attemptService.findOwnedAttemptOrThrow.mockResolvedValue({ ...attempt, status: AttemptStatus.IN_PROGRESS });
+      questionLookup.getPublicQuestionsForExam.mockResolvedValue(publicQuestions);
+
+      await expect(service.listQuestionsForAttempt('attempt-1', student)).resolves.toBe(publicQuestions);
+      expect(attemptService.findOwnedAttemptOrThrow).toHaveBeenCalledWith('attempt-1', student);
+      expect(questionLookup.getPublicQuestionsForExam).toHaveBeenCalledWith('exam-1');
+      // The scoring lookup carries the answer key; it must not feed this endpoint.
+      expect(questionLookup.getQuestionsForExam).not.toHaveBeenCalled();
+    });
+
+    it("refuses another student's attempt", async () => {
+      attemptService.findOwnedAttemptOrThrow.mockRejectedValue(new ForbiddenException());
+
+      await expect(service.listQuestionsForAttempt('attempt-1', student)).rejects.toThrow(ForbiddenException);
+      expect(questionLookup.getPublicQuestionsForExam).not.toHaveBeenCalled();
+    });
+
+    it('refuses an attempt that has already been submitted', async () => {
+      attemptService.findOwnedAttemptOrThrow.mockResolvedValue({ ...attempt, status: AttemptStatus.SUBMITTED });
+
+      await expect(service.listQuestionsForAttempt('attempt-1', student)).rejects.toThrow(ConflictException);
+      expect(questionLookup.getPublicQuestionsForExam).not.toHaveBeenCalled();
+    });
   });
 
   describe('locking (writes must go through the same lock submission-finalization uses)', () => {

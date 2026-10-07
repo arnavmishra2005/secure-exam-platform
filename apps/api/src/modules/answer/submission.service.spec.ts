@@ -96,6 +96,7 @@ describe('SubmissionService', () => {
         { id: 'q-1', marks: 1, answerFormat: 'SINGLE_CHOICE', optionIds: ['opt-a'], correctOptionIds: ['opt-a'] },
         { id: 'q-2', marks: 2, answerFormat: 'TEXT' },
       ]),
+      getPublicQuestionsForExam: jest.fn().mockResolvedValue([]),
     };
     auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
 

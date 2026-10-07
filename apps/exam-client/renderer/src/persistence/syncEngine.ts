@@ -27,7 +27,7 @@ export interface SyncEngineOptions {
   store: IOfflineStore;
   api: SyncApi;
   network: Pick<NetworkMonitor, 'getStatus' | 'subscribe'>;
-  /** Called on a 401. TODO(Person A): refresh the session in AuthContext, then call syncNow(). */
+  /** Called on a 401. AuthContext refreshes the session, then calls syncNow(). */
   onUnauthorized?: () => void;
   retryBaseMs?: number;
   retryMaxMs?: number;

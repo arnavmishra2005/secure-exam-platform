@@ -2,6 +2,7 @@
 import { QuestionService } from '../../question/question.service';
 import { IQuestionLookupService, QuestionLookupInfo } from './question-lookup.interface';
 import { QuestionType } from '@secure-exam/types';
+import type { PublicQuestion } from '@secure-exam/types';
 
 @Injectable()
 export class QuestionLookupAdapter implements IQuestionLookupService {
@@ -29,6 +30,27 @@ export class QuestionLookupAdapter implements IQuestionLookupService {
           correctOptionIds,
         };
       });
+    } catch {
+      return [];
+    }
+  }
+
+  async getPublicQuestionsForExam(examId: string): Promise<PublicQuestion[]> {
+    try {
+      const questions = await this.questionService.getExamQuestions(examId);
+      // Build each object field by field so isCorrect and explanation can't leak.
+      return questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        type: q.type,
+        marks: q.marks,
+        negativeMarks: q.negativeMarks ?? undefined,
+        createdAt: q.createdAt.toISOString(),
+        updatedAt: q.updatedAt.toISOString(),
+        options: [...(q.options ?? [])]
+          .sort((a, b) => a.order - b.order)
+          .map((o) => ({ id: o.id, questionId: o.questionId, text: o.text, order: o.order })),
+      }));
     } catch {
       return [];
     }

@@ -1,13 +1,7 @@
 // Person C's persistence layer. The UI reads and writes answers only through
-// this module: B's useAnswer() calls saveAnswer(), and the submit confirmation
-// calls requestSubmit(). Framework-agnostic; the React bindings are
-// store/syncStore.ts and the hooks.
-
-// TODO(Day 0 / Person A): before this runs in the browser, the renderer's Vite
-// config must define process.env.NEXT_PUBLIC_API_URL (api-client reads it on
-// import; e.g. map it from VITE_API_BASE_URL) and list @secure-exam/* in
-// optimizeDeps.include (they are CommonJS builds). The API's CORS_ORIGIN must
-// also allow the renderer's origin.
+// this module: B's useAnswer() calls saveAnswer(), and ExamPage's submit and
+// timer-expiry handlers call requestSubmit(). Framework-agnostic; the React
+// bindings are store/syncStore.ts and the hooks.
 import { saveAnswer as putAnswer, sendHeartbeat, submitAttempt, type SaveAnswerPayload } from '@secure-exam/api-client';
 import { createIndexedDbStore } from './indexedDbStore';
 import { createMemoryStore } from './memoryStore';
@@ -33,10 +27,7 @@ let offlineStore: IOfflineStore | undefined;
 let networkMonitor: NetworkMonitor | undefined;
 let syncEngine: SyncEngine | undefined;
 
-/**
- * Overrides the defaults; call before anything else here is used.
- * TODO(Person A): at app start, pass onUnauthorized from AuthContext.
- */
+/** Overrides the defaults; call before anything else here is used (main.tsx does, at startup). */
 export function configurePersistence(overrides: PersistenceOptions): void {
   options = { ...options, ...overrides };
 }
@@ -67,7 +58,7 @@ export function getSyncEngine(): SyncEngine {
 
 /**
  * Saves the answer on this device, then syncs it in the background. `update` is
- * the Phase 1 Answer API request body. TODO(Person B): call from useAnswer().
+ * the Phase 1 Answer API request body. Called from B's useAnswer().
  */
 export async function saveAnswer(attemptId: string, questionId: string, update: SaveAnswerPayload): Promise<void> {
   await getOfflineStore().saveAnswer(attemptId, questionId, update);
@@ -77,8 +68,7 @@ export async function saveAnswer(attemptId: string, questionId: string, update: 
 /**
  * Submits the attempt. Resolves `submitted` once the server has finalized it, or
  * `pending` if it couldn't get there yet; the submission then stays queued and is
- * retried automatically when the connection returns.
- * TODO(Person B): call from SubmitConfirmationModal.
+ * retried automatically when the connection returns. Called from ExamPage.
  */
 export async function requestSubmit(attemptId: string): Promise<SubmitStatus> {
   await getOfflineStore().saveSubmitIntent(attemptId);
@@ -89,13 +79,13 @@ export async function requestSubmit(attemptId: string): Promise<SubmitStatus> {
 
 /**
  * Resumes syncing an attempt, e.g. answers or a submission left over from before
- * a reload. TODO(Person A): call from AttemptContext once the attempt is loaded.
+ * a reload. Called from AttemptContext once the attempt is loaded.
  */
 export function startSync(attemptId: string): Promise<void> {
   return getSyncEngine().syncNow(attemptId);
 }
 
-/** TODO(Person A): call on logout. Unsynced answers stay stored. */
+/** Called on logout. Unsynced answers stay stored. */
 export function stopSync(): void {
   syncEngine?.stop();
 }

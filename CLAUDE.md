@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-This is Phase 1 of a secure exam platform, set up as an npm-workspaces monorepo:
+This is Phases 1–2 of a secure exam platform, set up as an npm-workspaces monorepo:
 
 - `apps/api`: NestJS API
 - `apps/admin-web`: Next.js admin portal
+- `apps/exam-client/renderer`: Vite + React student exam UI (Phase 2), running in a plain browser tab
 - `packages/*`: shared TypeScript packages
 
-There is no student UI yet. The student flow (start an attempt, save answers, submit) exists only in the API and is exercised through Swagger. No student endpoint returns an exam's questions, so get question and option IDs as an admin. Kiosk and Electron lockdown are planned for later phases.
+Kiosk and Electron lockdown are planned for later phases.
 
-The design and module ownership are described in `phase1_backend_admin_security_task_breakdown.md` and `phase1_file_structure_and_ownership.md`. Some things those documents plan were never built: a root `database/` folder, a CI workflow, and a root `.env.example`. `secure_exam_system_implementation_plan.md` is empty.
+The design and module ownership are described in `phase1_backend_admin_security_task_breakdown.md`, `phase1_file_structure_and_ownership.md` and, for the exam client, `phase2_3_frontend_persistence_plan.md`. Some things those documents plan were never built: a root `database/` folder, a CI workflow, and a root `.env.example`. `secure_exam_system_implementation_plan.md` is empty.
 
 ## Commands
 
@@ -24,24 +25,27 @@ npm install
 npm run typecheck              # builds packages/* into dist/ — required before anything else (see below)
 docker compose up -d postgres  # Postgres 16 on :5432
 npm run migration:run
+npm run db:seed                # optional dev data; see below
 npm run api:start              # http://localhost:3000, Swagger UI at /api/docs
 npm run admin:dev              # http://localhost:3001
+npm run client:dev             # exam client, http://localhost:3002
 ```
 
-- **Tests:** `npm run api:test`.
+- **Tests:** `npm run api:test` (Jest) and `npm run client:test` (Vitest, exam client).
   - One file: `npm test --workspace=apps/api -- timer.service`
   - One test: `npm test --workspace=apps/api -- -t "rejects a second attempt"`
 - **Lint:** `npm run api:lint`. admin-web has no ESLint config, so `npm run admin:lint` asks you to create one instead of linting.
-- **Type-check without building:** `npx tsc --noEmit -p apps/api` and `npx tsc --noEmit -p apps/admin-web`.
-- **Full builds:** `npm run api:build` and `npm run admin:build`.
+- **Type-check without building:** `npx tsc --noEmit -p apps/api`, `npx tsc --noEmit -p apps/admin-web` and `npm run client:typecheck`.
+- **Full builds:** `npm run api:build`, `npm run admin:build` and `npm run client:build`.
 - **Migrations:** `npm run migration:run` and `npm run migration:revert`. To generate one: `npm run migration:generate --workspace=apps/api -- src/database/migrations/<Name>`.
 
 Things the scripts don't make obvious:
 
 - **Shared packages are loaded from `dist/`.** Each package's `main` is `dist/index.js`, and there are no path aliases or Jest mappers. Run `npm run typecheck` on a fresh checkout and after any change under `packages/`. Despite its name, the script writes `dist/`. Until it runs, the API, its tests, the migration CLI, and admin-web can't resolve `@secure-exam/*` and won't see your changes.
 - API scripts must run with `apps/api` as the working directory, because `.env` loading and the migrations glob use relative paths. The workspace scripts already do this.
-- Tests exist only in `apps/api` (`src/**/*.spec.ts`). They are unit tests with mocked repositories and a mocked `DataSource`, so they need no database. One spec comment mentions a `test/integration/...` file that doesn't exist.
-- **No seed data exists, and the API can't create an admin.** `POST /students` only creates `student` users. To log into the portal, insert an admin by hand. Passwords must be at least 8 characters (`LoginDto`).
+- API tests live in `apps/api` (`src/**/*.spec.ts`). They are unit tests with mocked repositories and a mocked `DataSource`, so they need no database. One spec comment mentions a `test/integration/...` file that doesn't exist. Exam-client tests are `apps/exam-client/renderer/src/**/__tests__/*.test.ts`; they fake the API and use `fake-indexeddb`.
+- **Dev seed:** `npm run db:seed` (`apps/api/src/database/seed.ts`) creates `admin@secure-exam.dev` / `Admin@1234`, three students (`alice@`, `bob@`, `carol@secure-exam.dev` / `Student@1234`) and an ACTIVE exam `11111111-1111-4111-8111-111111111111` with five questions. It is idempotent and refreshes the exam window on each run. Outside production it first synchronizes the schema the way the dev API does (see Database). Seeded assignments store `users.id`.
+- **The API can't create an admin.** `POST /students` only creates `student` users. Without the seed, insert an admin by hand. Passwords must be at least 8 characters (`LoginDto`).
   ```bash
   HASH=$(cd apps/api && node -e "console.log(require('bcrypt').hashSync(process.argv[1], 12))" 'admin-password')
   docker compose exec -T postgres psql -U exam_user -d secure_exam -c \
@@ -52,6 +56,10 @@ Things the scripts don't make obvious:
 ## Architecture
 
 ### Layout
+- `apps/exam-client/renderer`: Vite 8 + React 18 student UI (React Router, React Query, Zustand, Tailwind).
+  - Routes: `/login` → `/instructions` (enter an exam ID, `POST /attempts`) → `/exam` → `/submitted`. The attempt ID lives in `sessionStorage`; when it's lost, starting again gets a 409 and the page resumes the in-progress attempt through `GET /attempts/current?examId=` (student only, own attempt). The exam ID `demo` starts a local-only fixture attempt with sample questions.
+  - `persistence/` is Person C's framework-agnostic offline layer: `IOfflineStore` (IndexedDB now, in-memory fallback, SQLite in Phase 4), a sync engine that pushes pending answers one at a time with backoff, then a queued submit, and a network monitor (`navigator.onLine` plus a heartbeat ping). UI code saves answers only through `saveAnswer()` (B's `useAnswer`) and submits only through `requestSubmit()`. It reads sync state through `useSyncStatus` and `useNetworkStatus`.
+  - `vite.config.ts` aliases `@secure-exam/types` and `@secure-exam/api-client` to their TypeScript source, so the renderer doesn't need `dist/`. `main.tsx` calls `setBaseURL(VITE_API_BASE_URL)`.
 - `apps/api`: NestJS 10 with TypeORM 0.3 on Postgres. Each domain has a folder under `src/modules/` (auth, user, audit, exam, question, attempt, answer). Cross-cutting guards, decorators, filters, the interceptor, and config live in `src/common/`.
 - `apps/admin-web`: Next.js 14 App Router with Tailwind. Custom color tokens are in `tailwind.config.ts`.
   - Every page is a client component that calls `@secure-exam/api-client` functions in `useEffect`. There is no React Query or SWR.
@@ -70,7 +78,7 @@ The shared barrels (`packages/*/src/index.ts`) and `app.module.ts` are meant to 
 ### API request pipeline
 `main.ts` and `app.module.ts` register these globally:
 - Helmet
-- CORS, allowing `CORS_ORIGIN`
+- CORS, allowing the comma-separated origins in `CORS_ORIGIN` (admin portal and exam client)
 - `ValidationPipe` with `whitelist`, `forbidNonWhitelisted` and `transform`
 - `HttpExceptionFilter`, which never sends stack traces to clients
 - Three `APP_GUARD`s that run in this order: `ThrottlerGuard`, `JwtAuthGuard`, `RolesGuard`
@@ -80,13 +88,14 @@ Rules that follow from this:
 - A route without `@Roles()` is open to **any** logged-in user, including students. Always declare roles. Because the guards are global, the `@UseGuards(JwtAuthGuard, RolesGuard)` on some controllers is redundant.
 - Use `@CurrentUser()` from `common/decorators`. It returns a `JwtPayload` whose `sub` is the `users.id`. Nothing uses `modules/attempt/decorators/current-user.decorator.ts` or the `mock-*-lookup.service.ts` files. They are leftover stand-ins.
 - Joi validates environment variables when the app starts (`common/config/env.validation.ts`). Add new variables there.
-- There is no global route prefix. The routes are `/auth`, `/students`, `/exams`, `/questions`, `/exams/:examId/questions`, `/attempts`, `/attempts/:attemptId/answers`, `/submissions` and `/audit`.
+- There is no global route prefix. The routes are `/auth`, `/students`, `/exams`, `/questions`, `/exams/:examId/questions`, `/attempts`, `/attempts/:attemptId/answers`, `/attempts/:attemptId/questions`, `/submissions` and `/audit`.
 
 ### Auth
 - Access and refresh JWTs are signed with separate secrets.
 - `users.refreshTokenHash` stores a bcrypt hash of the most recently issued refresh token. Logout clears it.
 - On every request, `JwtStrategy` checks that the user still exists and is active.
 - The admin portal keeps the access token in memory and the refresh token in `localStorage`. It refreshes the access token only when a page loads, because there is no interceptor that refreshes after a 401. A tab left open longer than `JWT_ACCESS_EXPIRES_IN` (15 minutes by default) starts getting 401 errors.
+- The exam client stores tokens the same way, but refreshes on a 14-minute timer, and also when the sync engine reports a 401 (`handleUnauthorized` in `AuthContext`).
 
 ### Exam → attempt → result lifecycle
 - **Exams** move through `DRAFT → SCHEDULED → ACTIVE → CLOSED`, only forward, as defined by `EXAM_STATUS_TRANSITIONS`.
@@ -107,16 +116,16 @@ Rules that follow from this:
   - The method opens a transaction, locks the attempt row with `SELECT … FOR UPDATE`, and re-checks that the status is still `IN_PROGRESS`.
   - Write through the `EntityManager` it passes in, never through injected repositories.
   - This is what turns a save racing a submit, or two submits racing, into a clean 409 instead of a 500. The specs check this.
-- **Answer keys stay secret.** `Option.isCorrect` must never reach a student. All current question endpoints are admin-only. Any endpoint that serves questions to students must return `PublicQuestion` / `PublicOption` from `packages/types`.
+- **Answer keys stay secret.** `Option.isCorrect` must never reach a student. The question-bank endpoints are admin-only. The one student endpoint, `GET /attempts/:attemptId/questions` (owner only, attempt IN_PROGRESS), returns `PublicQuestion[]` built field by field in `QuestionLookupAdapter.getPublicQuestionsForExam`. Any new student-facing question endpoint must do the same.
 - **Modules stay loosely coupled.**
   - Attempt and answer code reaches exams and questions only through `IExamLookupService` and `IQuestionLookupService`. These are DI tokens bound to the `*-lookup.adapter.ts` files.
   - Their entities refer to other tables by ID only, never through TypeORM relations.
   - Both adapters swallow errors. Exam lookup returns `null` and question lookup returns `[]`.
   - `isStudentAssignedToExam` returns `true` when an exam has no assignments, and also when the lookup fails.
 - **"studentId" means two different things.**
-  - `exam_assignments.student_id` holds a `students.id`, which is what the admin UI assigns through `/students/lookup`.
+  - `exam_assignments.student_id` usually holds a `students.id`, which is what the admin UI assigns through `/students/lookup`. The dev seed stores a `users.id` there instead, and `assignStudent` accepts either.
   - `attempts.studentId` and `results.studentId` hold the JWT `sub`, which is a `users.id`.
-  - The assignment check compares the two directly, so it never finds an assigned student. Map between them through `students.userId` when you work on eligibility.
+  - `listAssignedStudents` resolves each assignment's `userId` through `students.userId`. `isStudentAssignedToExam` matches the JWT `sub` against that `userId`, or against the raw `student_id`.
 
 ### Audit logging
 - `AuditModule` is `@Global`, so `AuditService` can be injected anywhere.

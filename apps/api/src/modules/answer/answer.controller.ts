@@ -33,3 +33,18 @@ export class AnswerController {
     return this.answerService.listForAttempt(attemptId, user);
   }
 }
+
+@ApiTags('answers')
+@ApiBearerAuth()
+@Controller('attempts/:attemptId/questions')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class AttemptQuestionController {
+  constructor(private readonly answerService: AnswerService) {}
+
+  /** The student's exam questions for this attempt, without the answer key. */
+  @Get()
+  @Roles(Role.STUDENT)
+  list(@Param('attemptId', ParseUUIDPipe) attemptId: string, @CurrentUser() user: JwtPayload) {
+    return this.answerService.listQuestionsForAttempt(attemptId, user);
+  }
+}

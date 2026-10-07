@@ -26,9 +26,12 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
   const [allQuestions, setAllQuestions] = useState<QuestionWithOptions[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // True while an action (add/remove/schedule/save) is in flight.
+  const [busy, setBusy] = useState(false);
 
+  // Only the first load shows the full-page "Loading…". Refreshes after an action
+  // update the data in place, so the page doesn't collapse and lose its scroll position.
   async function refresh() {
-    setLoading(true);
     try {
       const [examData, mapped, bank] = await Promise.all([
         getExam(examId),
@@ -51,11 +54,15 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
   }, [examId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function withRefresh(action: () => Promise<unknown>) {
+    if (busy) return;
+    setBusy(true);
     try {
       await action();
       await refresh();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -80,7 +87,8 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
           {exam.status === ExamStatus.DRAFT && (
             <button
               onClick={() => withRefresh(() => scheduleExam(exam.id))}
-              className="bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
+              disabled={busy}
+              className="bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               Schedule
             </button>
@@ -88,7 +96,8 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
           {exam.status === ExamStatus.SCHEDULED && (
             <button
               onClick={() => withRefresh(() => startExam(exam.id))}
-              className="bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
+              disabled={busy}
+              className="bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               Start
             </button>
@@ -96,7 +105,8 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
           {exam.status === ExamStatus.ACTIVE && (
             <button
               onClick={() => withRefresh(() => closeExam(exam.id))}
-              className="bg-rose-600 px-3 py-1.5 text-sm text-white hover:bg-rose-700"
+              disabled={busy}
+              className="bg-rose-600 px-3 py-1.5 text-sm text-white hover:bg-rose-700 disabled:opacity-50"
             >
               Close
             </button>
@@ -139,7 +149,8 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
               </span>
               <button
                 onClick={() => withRefresh(() => removeQuestionFromExam(exam.id, q.id))}
-                className="text-xs text-rose-600 hover:underline"
+                disabled={busy}
+                className="text-xs text-rose-600 hover:underline disabled:opacity-50"
               >
                 Remove
               </button>
@@ -156,7 +167,8 @@ export default function ExamDetailPage({ params }: { params: { examId: string } 
                   <span>{q.text}</span>
                   <button
                     onClick={() => withRefresh(() => addQuestionToExam(exam.id, { questionId: q.id }))}
-                    className="rounded-sm bg-indigo-600 px-2.5 py-1 text-xs text-white hover:bg-indigo-700"
+                    disabled={busy}
+                    className="rounded-sm bg-indigo-600 px-2.5 py-1 text-xs text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     Add
                   </button>

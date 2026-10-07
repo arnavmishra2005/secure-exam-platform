@@ -154,6 +154,19 @@ export class AttemptService {
     return attempt;
   }
 
+  /**
+   * The student's own attempt at an exam, so the exam client can resume it
+   * after losing the attempt ID (a new tab, or cleared session storage).
+   * Looks up by the JWT `sub`, so a student can only ever find their own.
+   */
+  async findMyAttemptForExam(examId: string, user: JwtPayload): Promise<Attempt> {
+    const attempt = await this.attemptRepository.findOne({ where: { examId, studentId: user.sub } });
+    if (!attempt) {
+      throw new NotFoundException('You have not started this exam');
+    }
+    return toAttemptDto(attempt);
+  }
+
   async getAttemptById(attemptId: string, user: JwtPayload): Promise<Attempt> {
     const attempt = await this.findOwnedAttemptOrThrow(attemptId, user);
     return toAttemptDto(attempt);

@@ -4,7 +4,7 @@ import { getSyncStore } from '../store/syncStore';
 
 /**
  * 'online' or 'offline': navigator.onLine plus a periodic backend ping.
- * TODO(Person A): render this in NetworkStatusBadge.
+ * Rendered by Person A's NetworkStatusBadge.
  */
 export function useNetworkStatus(): NetworkStatus {
   return useStore(getSyncStore(), (state) => state.network);

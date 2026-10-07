@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PublicQuestion } from '@secure-exam/types';
 import { IQuestionLookupService, QuestionLookupInfo } from './question-lookup.interface';
 
 /**
@@ -55,6 +56,10 @@ const FIXTURE_QUESTIONS: QuestionLookupInfo[] = [
 export class MockQuestionLookupService implements IQuestionLookupService {
   async getQuestionsForExam(_examId: string): Promise<QuestionLookupInfo[]> {
     return FIXTURE_QUESTIONS;
+  }
+
+  async getPublicQuestionsForExam(_examId: string): Promise<PublicQuestion[]> {
+    return [];
   }
 }
 

@@ -11,6 +11,8 @@ export function createMemoryStore(): IOfflineStore {
   const intents = new Map<string, SubmitIntent>();
   const key = (attemptId: string, questionId: string) => `${attemptId}/${questionId}`;
 
+  const forAttempt = (attemptId: string) => [...answers.values()].filter((answer) => answer.attemptId === attemptId);
+
   function replace(attemptId: string, questionId: string, next: LocalAnswer | null): boolean {
     if (next) answers.set(key(attemptId, questionId), next);
     return next !== null;
@@ -24,9 +26,11 @@ export function createMemoryStore(): IOfflineStore {
       const answer = answers.get(key(attemptId, questionId));
       return answer ? structuredClone(answer) : null;
     },
+    async getAllAnswers(attemptId) {
+      return forAttempt(attemptId).map((answer) => structuredClone(answer));
+    },
     async getPendingAnswers(attemptId) {
-      const forAttempt = [...answers.values()].filter((answer) => answer.attemptId === attemptId);
-      return pendingInOrder(forAttempt).map((answer) => structuredClone(answer));
+      return pendingInOrder(forAttempt(attemptId)).map((answer) => structuredClone(answer));
     },
     async markSynced(attemptId, questionId, revision) {
       return replace(attemptId, questionId, applySynced(answers.get(key(attemptId, questionId)), revision));

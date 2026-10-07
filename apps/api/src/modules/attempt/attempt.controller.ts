@@ -24,6 +24,13 @@ export class AttemptController {
     return this.attemptService.listForMonitoring(query);
   }
 
+  /** The caller's own attempt at an exam, for resuming it. Declared before ':id' so it isn't parsed as one. */
+  @Get('current')
+  @Roles(Role.STUDENT)
+  current(@Query('examId', ParseUUIDPipe) examId: string, @CurrentUser() user: JwtPayload) {
+    return this.attemptService.findMyAttemptForExam(examId, user);
+  }
+
   @Get(':id')
   @Roles(Role.STUDENT, Role.ADMIN)
   getOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
