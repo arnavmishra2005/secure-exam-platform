@@ -1,210 +1,202 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Attempt, AttemptStatus, Exam, ExamStatus, PublicQuestion, QuestionType } from '@secure-exam/types';
+/**
+ * Owner: Person A — App Shell, Auth, Session & Timer
+ *
+ * AttemptContext bootstraps the current exam attempt on load.
+ * It fetches exam metadata + `expires_at` from Phase 1's attempt.api
+ * (built by Person C in Phase 1) and makes it available to:
+ *   - TimerDisplay (Person A) — for countdown seeding
+ *   - ExamPage (Person B) — for question list + exam metadata
+ *   - Header (Person A) — for exam title
+ *
+ * Design rules:
+ *   1. The attemptId is stored in sessionStorage (cleared when tab closes)
+ *      so it survives page reloads within the same session but not
+ *      cross-tab reuse.
+ *   2. The `expiresAt` timestamp comes from the SERVER — never from
+ *      the client clock. The timer re-seeds on every re-fetch/reconnect
+ *      so client drift never accumulates.
+ *   3. This context acts as a stub-friendly boundary: on Day 0/1 before
+ *      a real attempt exists, the fixture data in FIXTURE_ATTEMPT below
+ *      is used so Person B can develop ExamPage without waiting for a
+ *      live backend.
+ */
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Outlet } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { getAttempt } from '@secure-exam/api-client';
+import type { Attempt, Exam } from '@secure-exam/types';
+import { startSync } from '../persistence';
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 export interface AttemptContextValue {
   attempt: Attempt | null;
+  /** Exam metadata fetched alongside the attempt. */
   exam: Exam | null;
-  questions: PublicQuestion[];
+  /** Convenience: ISO 8601 string from the server (never computed client-side). */
+  expiresAt: string | null;
   isLoading: boolean;
-  error: string | null;
-  remainingSeconds: number;
-  submitAttempt: () => Promise<void>;
-  isSubmitting: boolean;
+  error: Error | null;
+  /** Trigger a manual re-fetch (e.g. after reconnect) to re-seed the timer. */
+  refetch: () => void;
+  /**
+   * Sets (or clears, with null) the active attempt. Always use this instead of
+   * writing ATTEMPT_ID_KEY to sessionStorage directly: the provider doesn't
+   * re-render on navigation, so it would keep the old ID until a page reload.
+   */
+  setAttemptId: (attemptId: string | null) => void;
 }
 
-const AttemptContext = createContext<AttemptContextValue | undefined>(undefined);
+// ── Context ────────────────────────────────────────────────────────────────
 
-// Sample fixture questions for development and testing
-const SAMPLE_EXAM: Exam = {
-  id: 'e0000000-0000-0000-0000-000000000001',
-  title: 'Sample Examination - Operating Systems & Networking',
-  description: 'Midterm evaluation covering processes, memory management, and OSI model.',
-  durationMinutes: 60,
-  startTime: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  endTime: new Date(Date.now() + 55 * 60 * 1000).toISOString(),
-  status: ExamStatus.ACTIVE,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
+const AttemptContext = createContext<AttemptContextValue | null>(null);
 
-const createSampleAttempt = (): Attempt => ({
-  id: 'a0000000-0000-0000-0000-000000000001',
-  examId: SAMPLE_EXAM.id,
-  studentId: 's0000000-0000-0000-0000-000000000001',
-  status: AttemptStatus.IN_PROGRESS,
-  startedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  expiresAt: new Date(Date.now() + 55 * 60 * 1000).toISOString(),
+// Key used to persist the active attemptId across page reloads within a session.
+export const ATTEMPT_ID_KEY = 'exam_attempt_id';
+
+// ── Fixture data (stub) — used when VITE_USE_FIXTURE=true ─────────────────
+// Remove or ignore once a real attempt is available from the backend.
+
+const IS_FIXTURE = import.meta.env.VITE_USE_FIXTURE === 'true';
+
+/** The demo attempt started from InstructionsPage. It doesn't exist on the server. */
+export const FIXTURE_ATTEMPT_ID = 'fixture-attempt-001';
+
+export function isFixtureAttempt(attemptId: string | null | undefined): boolean {
+  return IS_FIXTURE || attemptId === FIXTURE_ATTEMPT_ID;
+}
+
+const FIXTURE_ATTEMPT: Attempt = {
+  id: FIXTURE_ATTEMPT_ID,
+  examId: 'fixture-exam-001',
+  studentId: 'fixture-student-001',
+  status: 'IN_PROGRESS' as Attempt['status'],
+  startedAt: new Date().toISOString(),
+  // 90 minutes from now — gives Person B enough time to work on ExamPage locally
+  expiresAt: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
   submittedAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
-});
-
-const SAMPLE_QUESTIONS: PublicQuestion[] = [
-  {
-    id: 'q0000000-0000-0000-0000-000000000001',
-    text: 'Which of the following scheduling algorithms can lead to starvation if lower priority processes arrive continuously?',
-    type: QuestionType.MCQ_SINGLE,
-    marks: 2,
-    negativeMarks: 0.5,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    options: [
-      { id: 'opt-1-1', questionId: 'q0000000-0000-0000-0000-000000000001', text: 'Round Robin (RR)', order: 1 },
-      { id: 'opt-1-2', questionId: 'q0000000-0000-0000-0000-000000000001', text: 'Priority Scheduling (non-preemptive)', order: 2 },
-      { id: 'opt-1-3', questionId: 'q0000000-0000-0000-0000-000000000001', text: 'First-Come, First-Served (FCFS)', order: 3 },
-      { id: 'opt-1-4', questionId: 'q0000000-0000-0000-0000-000000000001', text: 'Completely Fair Scheduler with Aging', order: 4 },
-    ],
-  },
-  {
-    id: 'q0000000-0000-0000-0000-000000000002',
-    text: 'Select all protocols that operate at the Transport Layer of the OSI model:',
-    type: QuestionType.MCQ_MULTI,
-    marks: 3,
-    negativeMarks: 1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    options: [
-      { id: 'opt-2-1', questionId: 'q0000000-0000-0000-0000-000000000002', text: 'Transmission Control Protocol (TCP)', order: 1 },
-      { id: 'opt-2-2', questionId: 'q0000000-0000-0000-0000-000000000002', text: 'User Datagram Protocol (UDP)', order: 2 },
-      { id: 'opt-2-3', questionId: 'q0000000-0000-0000-0000-000000000002', text: 'Internet Protocol (IP)', order: 3 },
-      { id: 'opt-2-4', questionId: 'q0000000-0000-0000-0000-000000000002', text: 'Address Resolution Protocol (ARP)', order: 4 },
-    ],
-  },
-  {
-    id: 'q0000000-0000-0000-0000-000000000003',
-    text: 'A deadlock can occur even if mutual exclusion condition is not satisfied.',
-    type: QuestionType.TRUE_FALSE,
-    marks: 1,
-    negativeMarks: 0.25,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    options: [
-      { id: 'opt-3-1', questionId: 'q0000000-0000-0000-0000-000000000003', text: 'True', order: 1 },
-      { id: 'opt-3-2', questionId: 'q0000000-0000-0000-0000-000000000003', text: 'False', order: 2 },
-    ],
-  },
-  {
-    id: 'q0000000-0000-0000-0000-000000000004',
-    text: 'What is the primary purpose of virtual memory in modern operating systems?',
-    type: QuestionType.MCQ_SINGLE,
-    marks: 2,
-    negativeMarks: 0.5,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    options: [
-      { id: 'opt-4-1', questionId: 'q0000000-0000-0000-0000-000000000004', text: 'To allow processes to share the CPU cache efficiently', order: 1 },
-      { id: 'opt-4-2', questionId: 'q0000000-0000-0000-0000-000000000004', text: 'To provide each process with a contiguous address space and allow execution of processes larger than physical RAM', order: 2 },
-      { id: 'opt-4-3', questionId: 'q0000000-0000-0000-0000-000000000004', text: 'To completely eliminate page faults during disk I/O', order: 3 },
-      { id: 'opt-4-4', questionId: 'q0000000-0000-0000-0000-000000000004', text: 'To convert dynamic RAM into static RAM dynamically', order: 4 },
-    ],
-  },
-  {
-    id: 'q0000000-0000-0000-0000-000000000005',
-    text: 'Which of the following are valid IP addresses belonging to private network ranges (RFC 1918)?',
-    type: QuestionType.MCQ_MULTI,
-    marks: 3,
-    negativeMarks: 0.5,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    options: [
-      { id: 'opt-5-1', questionId: 'q0000000-0000-0000-0000-000000000005', text: '10.24.100.1', order: 1 },
-      { id: 'opt-5-2', questionId: 'q0000000-0000-0000-0000-000000000005', text: '172.20.14.88', order: 2 },
-      { id: 'opt-5-3', questionId: 'q0000000-0000-0000-0000-000000000005', text: '8.8.8.8', order: 3 },
-      { id: 'opt-5-4', questionId: 'q0000000-0000-0000-0000-000000000005', text: '192.168.1.254', order: 4 },
-    ],
-  },
-];
-
-interface Props {
-  children: React.ReactNode;
-  initialAttempt?: Attempt;
-  initialExam?: Exam;
-  initialQuestions?: PublicQuestion[];
-  onSubmit?: () => Promise<void>;
-}
-
-export const AttemptProvider: React.FC<Props> = ({
-  children,
-  initialAttempt,
-  initialExam = SAMPLE_EXAM,
-  initialQuestions = SAMPLE_QUESTIONS,
-  onSubmit,
-}) => {
-  const [attempt, setAttempt] = useState<Attempt | null>(() => initialAttempt || createSampleAttempt());
-  const [exam, setExam] = useState<Exam | null>(initialExam);
-  const [questions, setQuestions] = useState<PublicQuestion[]>(initialQuestions);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(() => {
-    const att = initialAttempt || createSampleAttempt();
-    if (!att.expiresAt) return 0;
-    const diff = Math.floor((new Date(att.expiresAt).getTime() - Date.now()) / 1000);
-    return Math.max(0, diff);
-  });
-
-  // Ticking countdown clock
-  useEffect(() => {
-    if (!attempt?.expiresAt) return;
-
-    const timer = setInterval(() => {
-      const diff = Math.floor((new Date(attempt.expiresAt).getTime() - Date.now()) / 1000);
-      const remaining = Math.max(0, diff);
-      setRemainingSeconds(remaining);
-      if (remaining <= 0) {
-        clearInterval(timer);
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [attempt?.expiresAt]);
-
-  const handleSubmit = async () => {
-    setIsSubmitting(true);
-    try {
-      if (onSubmit) {
-        await onSubmit();
-      } else {
-        // Fallback default action
-        await new Promise((res) => setTimeout(res, 800));
-        if (attempt) {
-          setAttempt({
-            ...attempt,
-            status: AttemptStatus.SUBMITTED,
-            submittedAt: new Date().toISOString(),
-          });
-        }
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to submit exam');
-      throw err;
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <AttemptContext.Provider
-      value={{
-        attempt,
-        exam,
-        questions,
-        isLoading,
-        error,
-        remainingSeconds,
-        submitAttempt: handleSubmit,
-        isSubmitting,
-      }}
-    >
-      {children}
-    </AttemptContext.Provider>
-  );
 };
 
-export function useAttemptContext(): AttemptContextValue {
+const FIXTURE_EXAM: Exam = {
+  id: 'fixture-exam-001',
+  title: 'Sample Exam (Fixture)',
+  description: 'This is fixture data — replace with a real exam from the backend.',
+  durationMinutes: 90,
+  startTime: new Date().toISOString(),
+  endTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+  status: 'ACTIVE' as Exam['status'],
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+// ── Provider ───────────────────────────────────────────────────────────────
+
+/**
+ * AttemptProvider is used as a layout route element in App.tsx so it wraps
+ * /instructions, /exam, and /submitted without adding extra DOM nesting.
+ * Renders <Outlet /> to pass children through.
+ */
+export function AttemptProvider({ children }: { children?: ReactNode }) {
+  const [attemptId, setAttemptIdState] = useState(() => sessionStorage.getItem(ATTEMPT_ID_KEY));
+
+  const setAttemptId = useCallback((id: string | null) => {
+    if (id) sessionStorage.setItem(ATTEMPT_ID_KEY, id);
+    else sessionStorage.removeItem(ATTEMPT_ID_KEY);
+    setAttemptIdState(id);
+  }, []);
+
+  const {
+    data,
+    isPending,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['attempt', attemptId],
+    queryFn: async () => {
+      if (!attemptId) return null;
+      // The /attempts/:id endpoint returns Attempt; exam metadata is embedded.
+      const attempt = await getAttempt(attemptId);
+      return attempt;
+    },
+    enabled: !!attemptId && !isFixtureAttempt(attemptId),
+    // Re-fetch every 60 seconds to keep expiresAt in sync with the server.
+    refetchInterval: 60_000,
+    // Re-fetch when the window regains focus (covers tab-switch reconnect).
+    refetchOnWindowFocus: true,
+  });
+
+  // Resume Person C's background sync for this attempt: answers or a submission
+  // left unsynced before a reload, or before the last logout.
+  const loadedAttemptId = data?.id;
+  useEffect(() => {
+    if (loadedAttemptId && !isFixtureAttempt(loadedAttemptId)) void startSync(loadedAttemptId);
+  }, [loadedAttemptId]);
+
+  const value = useMemo<AttemptContextValue>(() => {
+    if (!attemptId) {
+      return {
+        attempt: null,
+        exam: null,
+        expiresAt: null,
+        isLoading: false,
+        error: null,
+        refetch: () => {},
+        setAttemptId,
+      };
+    }
+
+    if (isFixtureAttempt(attemptId)) {
+      return {
+        attempt: FIXTURE_ATTEMPT,
+        exam: FIXTURE_EXAM,
+        expiresAt: FIXTURE_ATTEMPT.expiresAt,
+        isLoading: false,
+        error: null,
+        refetch: () => {},
+        setAttemptId,
+      };
+    }
+
+    const attempt = data ?? null;
+    return {
+      attempt,
+      // Note: Phase 1's GET /attempts/:id does not embed full Exam yet.
+      // Person B's exam data is fetched separately in useExamQuestions.ts.
+      // exam here is null until Person B's hook populates it separately.
+      exam: null,
+      expiresAt: attempt?.expiresAt ?? null,
+      // isPending, not isLoading: right after setAttemptId() the query for the new
+      // ID has no data yet, and consumers (ExamPage) must wait rather than treat
+      // the attempt as missing and redirect away.
+      isLoading: isPending,
+      error: error as Error | null,
+      refetch,
+      setAttemptId,
+    };
+  }, [attemptId, data, isPending, error, refetch, setAttemptId]);
+
+  return (
+    <AttemptContext.Provider value={value}>
+      {children ?? <Outlet />}
+    </AttemptContext.Provider>
+  );
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────
+
+export function useAttempt(): AttemptContextValue {
   const ctx = useContext(AttemptContext);
-  if (!ctx) {
-    throw new Error('useAttemptContext must be used within an AttemptProvider');
-  }
+  if (!ctx) throw new Error('useAttempt must be used inside <AttemptProvider>');
   return ctx;
 }

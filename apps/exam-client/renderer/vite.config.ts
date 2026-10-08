@@ -13,11 +13,11 @@ export default defineConfig({
     'process.env': {},
   },
   resolve: {
+    // Use the shared packages' TypeScript source: their dist/ builds are CommonJS.
     alias: {
       '@': resolve(__dirname, './src'),
       '@secure-exam/types': resolve(__dirname, '../../../packages/types/src/index.ts'),
       '@secure-exam/api-client': resolve(__dirname, '../../../packages/api-client/src/index.ts'),
-      '@secure-exam/validation': resolve(__dirname, '../../../packages/validation/src/index.ts'),
     },
   },
   server: {

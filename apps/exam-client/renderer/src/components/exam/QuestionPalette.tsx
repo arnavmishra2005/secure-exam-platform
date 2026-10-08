@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { QuestionState } from '@secure-exam/types';
 import { PaletteFilter, PaletteSummary } from '../../types/ui.types';
+import type { AnswerSyncStatus } from '../../persistence';
 
 interface QuestionPaletteProps {
   questionIds: string[];
@@ -13,6 +14,8 @@ interface QuestionPaletteProps {
   questionStates: Record<string, QuestionState>;
   onSelectQuestion: (index: number) => void;
   summary: PaletteSummary;
+  /** Person C's per-answer sync status, keyed by questionId. */
+  syncStatus?: Record<string, AnswerSyncStatus>;
 }
 
 export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
@@ -21,6 +24,7 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
   questionStates,
   onSelectQuestion,
   summary,
+  syncStatus,
 }) => {
   const [filter, setFilter] = useState<PaletteFilter>('ALL');
 
@@ -145,19 +149,29 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
           {filteredIndices.map(({ id, idx }) => {
             const state = questionStates[id] || QuestionState.NOT_VISITED;
             const isCurrent = idx === currentIndex;
+            const sync = syncStatus?.[id];
 
             return (
               <button
                 key={id}
                 onClick={() => onSelectQuestion(idx)}
-                className={`w-9 h-9 rounded flex items-center justify-center border shadow-xs ${getStateStyle(
+                className={`relative w-9 h-9 rounded flex items-center justify-center border shadow-xs ${getStateStyle(
                   state,
                   isCurrent,
                 )}`}
-                title={`Question ${idx + 1}: ${state.replace(/_/g, ' ')}`}
+                title={`Question ${idx + 1}: ${state.replace(/_/g, ' ')}${
+                  sync === 'pending' ? ' (not synced yet)' : sync === 'failed' ? ' (not accepted by the server)' : ''
+                }`}
                 aria-label={`Go to question ${idx + 1}`}
               >
                 {idx + 1}
+                {(sync === 'pending' || sync === 'failed') && (
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full ring-1 ring-white ${
+                      sync === 'failed' ? 'bg-red-600' : 'bg-amber-300'
+                    }`}
+                  />
+                )}
                 {state === QuestionState.ANSWERED_AND_MARKED_REVIEW && (
                   <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-300 ring-1 ring-white" />
                 )}

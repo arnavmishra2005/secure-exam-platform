@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AnswerEntity } from './entities/answer.entity';
 import { SubmissionEntity } from './entities/submission.entity';
 import { ResultEntity } from './entities/result.entity';
-import { AnswerController } from './answer.controller';
+import { AnswerController, AttemptQuestionController } from './answer.controller';
 import { SubmissionAdminController, SubmissionController } from './submission.controller';
 import { AnswerService } from './answer.service';
 import { SubmissionService } from './submission.service';
@@ -22,7 +22,7 @@ import { QuestionModule } from '../question/question.module';
     AttemptModule,
     QuestionModule,
   ],
-  controllers: [AnswerController, SubmissionController, SubmissionAdminController],
+  controllers: [AnswerController, AttemptQuestionController, SubmissionController, SubmissionAdminController],
   providers: [
     AnswerService,
     SubmissionService,

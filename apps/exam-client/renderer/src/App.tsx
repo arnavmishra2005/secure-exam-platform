@@ -1,74 +1,55 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+/**
+ * Owner: Person A — App Shell, Auth, Session & Timer
+ *
+ * Root router. Defines the four top-level routes and wraps the
+ * exam-taking route in ProtectedRoute so only authenticated students
+ * with an active attempt can reach it.
+ *
+ * Route flow:
+ *   /login           → LoginPage (public)
+ *   /instructions    → InstructionsPage (protected — auth required)
+ *   /exam            → ExamPage (protected — auth + active attempt required)
+ *   /submitted       → SubmittedPage (protected — auth required)
+ */
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AttemptProvider } from './contexts/AttemptContext';
-import { ExamPage } from './routes/exam/ExamPage';
+import LoginPage from './routes/login/LoginPage';
+import InstructionsPage from './routes/instructions/InstructionsPage';
+import SubmittedPage from './routes/submitted/SubmittedPage';
 
-interface ErrorBoundaryProps {
-  children: ReactNode;
-}
+// Person B owns ExamPage — lazy-loaded for code splitting.
+import { lazy, Suspense } from 'react';
+const ExamPage = lazy(() => import('./routes/exam/ExamPage'));
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-paper flex items-center justify-center p-6 font-sans">
-          <div className="bg-paper-raised border border-hairline rounded p-8 max-w-lg w-full text-center shadow-md">
-            <h2 className="font-serif text-xl font-bold text-brick mb-2">Something went wrong</h2>
-            <p className="text-sm text-ash-muted mb-4">
-              An error occurred while loading the exam interface.
-            </p>
-            <pre className="text-xs bg-paper p-3 rounded border border-hairline text-left overflow-auto max-h-40 font-mono text-ink mb-6">
-              {this.state.error?.message || 'Unknown error'}
-            </pre>
-            <button
-              onClick={() => {
-                this.setState({ hasError: false, error: null });
-                window.location.reload();
-              }}
-              className="px-4 py-2 bg-ink text-white rounded text-xs font-semibold hover:bg-ink-light transition-colors"
-            >
-              Reload Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-export const App: React.FC = () => {
+export default function App() {
   return (
-    <ErrorBoundary>
-      <AttemptProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<ExamPage />} />
-            <Route path="/exam" element={<ExamPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AttemptProvider>
-    </ErrorBoundary>
-  );
-};
+    <BrowserRouter>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={<LoginPage />} />
 
-export default App;
+        {/* Auth-protected routes */}
+        <Route element={<ProtectedRoute />}>
+          {/* AttemptProvider lives here — wraps every route that needs exam context */}
+          <Route element={<AttemptProvider />}>
+            <Route path="/instructions" element={<InstructionsPage />} />
+            <Route
+              path="/exam"
+              element={
+                <Suspense fallback={<div className="flex items-center justify-center h-screen text-gray-500">Loading exam…</div>}>
+                  <ExamPage />
+                </Suspense>
+              }
+            />
+            <Route path="/submitted" element={<SubmittedPage />} />
+          </Route>
+        </Route>
+
+        {/* Default redirect */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

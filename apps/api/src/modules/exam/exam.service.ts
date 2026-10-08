@@ -155,16 +155,18 @@ export class ExamService {
     const enriched = await Promise.all(
       assignments.map(async (a) => {
         const student = await this.studentRepo.findOne({
-          where: { id: a.studentId },
+          where: [{ id: a.studentId }, { userId: a.studentId }],
           relations: ['user'],
         });
         return {
           id: a.id,
           examId: a.examId,
           studentId: a.studentId,
+          userId: student?.userId ?? student?.user?.id,
           assignedAt: a.assignedAt,
           studentInfo: student
             ? {
+                userId: student.userId,
                 collegeId: student.collegeId,
                 fullName: student.user.fullName,
                 email: student.user.email,
@@ -185,7 +187,7 @@ export class ExamService {
 
     // Validate the student actually exists in our register
     const student = await this.studentRepo.findOne({
-      where: { id: studentId },
+      where: [{ id: studentId }, { userId: studentId }],
       relations: ['user'],
     });
     if (!student) {

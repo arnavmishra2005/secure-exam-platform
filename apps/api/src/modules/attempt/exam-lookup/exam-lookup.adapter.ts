@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ExamService } from '../../exam/exam.service';
 import { ExamLookupInfo, IExamLookupService } from './exam-lookup.interface';
 
@@ -22,11 +22,16 @@ export class ExamLookupAdapter implements IExamLookupService {
     }
   }
 
+  /**
+   * `studentId` is the JWT `sub` (a users.id). An assignment's student_id may
+   * hold a students.id (assigned through the admin UI) or a users.id (the dev
+   * seed), so match it directly or through the student's resolved userId.
+   */
   async isStudentAssignedToExam(examId: string, studentId: string): Promise<boolean> {
     try {
       const assigned = await this.examService.listAssignedStudents(examId);
       if (assigned.length === 0) return true;
-      return assigned.some((a) => a.studentId === studentId);
+      return assigned.some((a) => a.studentId === studentId || a.userId === studentId);
     } catch {
       return true;
     }

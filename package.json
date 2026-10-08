@@ -16,9 +16,12 @@
     "admin:lint": "npm run lint --workspace=apps/admin-web",
     "client:dev": "npm run dev --workspace=@secure-exam/exam-client-renderer",
     "client:build": "npm run build --workspace=@secure-exam/exam-client-renderer",
+    "client:test": "npm run test --workspace=@secure-exam/exam-client-renderer",
+    "client:typecheck": "npm run typecheck --workspace=@secure-exam/exam-client-renderer",
     "migration:run": "npm run migration:run --workspace=apps/api",
     "migration:revert": "npm run migration:revert --workspace=apps/api",
-    "typecheck": "npm run build --workspace=packages/types && npm run build --workspace=packages/validation && npm run build --workspace=packages/api-client"
+    "typecheck": "npm run build --workspace=packages/types && npm run build --workspace=packages/validation && npm run build --workspace=packages/api-client",
+    "db:seed": "npm run db:seed --workspace=apps/api"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

@@ -29,7 +29,7 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=change-me-refresh-secret-change-me
 JWT_REFRESH_EXPIRES_IN=7d
 
-CORS_ORIGIN=http://localhost:3001
+CORS_ORIGIN=http://localhost:3001,http://localhost:3002
 
 THROTTLE_TTL=60
 THROTTLE_LIMIT=1000
@@ -89,6 +89,11 @@ Apply all migrations to initialize the database schema:
 npm run migration:run
 ```
 
+Optionally, seed development data: an admin (`admin@secure-exam.dev` / `Admin@1234`), three students (`alice@`, `bob@`, `carol@secure-exam.dev` / `Student@1234`) and an active exam, ID `11111111-1111-4111-8111-111111111111`, with five questions. The seed is idempotent; re-running it also moves the exam's time window forward. Never run it in production.
+```bash
+npm run db:seed
+```
+
 ---
 
 ## 5. Run the Application
@@ -132,6 +137,10 @@ docker compose up --build
 - **Run Backend Unit Tests**:
   ```bash
   npm run api:test
+  ```
+- **Run Exam Client Tests** (persistence, sync and UI seams):
+  ```bash
+  npm run client:test
   ```
 - **Typecheck Packages**:
   ```bash

@@ -4,11 +4,21 @@
  *
  * CRITICAL RULE:
  * This hook NEVER touches IndexedDB directly and NEVER calls the backend answer API directly.
- * It calls Person C's `IOfflineStore` (obtained via `getOfflineStore()`).
+ * It calls Person C's `saveAnswer()`, which stores the answer on this device and syncs it
+ * in the background.
  */
 import { useCallback, useState } from 'react';
+import { QuestionState } from '@secure-exam/types';
+import { listAnswers, type SaveAnswerPayload } from '@secure-exam/api-client';
 import { useExamStore } from '../store/examStore';
-import { getOfflineStore, SaveAnswerInput } from '../persistence';
+import { getOfflineStore, saveAnswer as persistAnswer } from '../persistence';
+import { isFixtureAttempt } from '../contexts/AttemptContext';
+
+function persist(attemptId: string, questionId: string, update: SaveAnswerPayload): Promise<void> {
+  // The demo attempt doesn't exist on the server: keep its answers on this device only.
+  if (isFixtureAttempt(attemptId)) return getOfflineStore().saveAnswer(attemptId, questionId, update);
+  return persistAnswer(attemptId, questionId, update);
+}
 
 export function useAnswer(attemptId: string) {
   const [isSaving, setIsSaving] = useState(false);
@@ -27,14 +37,11 @@ export function useAnswer(attemptId: string) {
         const draft = state.answers[questionId] || { selectedOptionIds: [], textResponse: '' };
         const isMarked = !!state.markedForReview[questionId];
 
-        const input: SaveAnswerInput = {
+        await persist(attemptId, questionId, {
           selectedOptionIds: draft.selectedOptionIds,
           textResponse: draft.textResponse,
           markedForReview: isMarked,
-        };
-
-        const offlineStore = getOfflineStore();
-        await offlineStore.saveAnswer(attemptId, questionId, input);
+        });
 
         // Update local UI state
         state.markAsSaved(questionId);
@@ -63,13 +70,11 @@ export function useAnswer(attemptId: string) {
       try {
         const state = useExamStore.getState();
         const isMarked = !!state.markedForReview[questionId];
-        const input: SaveAnswerInput = {
+
+        await persist(attemptId, questionId, {
           clearResponse: true,
           markedForReview: isMarked,
-        };
-
-        const offlineStore = getOfflineStore();
-        await offlineStore.saveAnswer(attemptId, questionId, input);
+        });
 
         state.clearCurrentAnswer(questionId);
         setLastSavedAt(new Date());
@@ -97,16 +102,13 @@ export function useAnswer(attemptId: string) {
 
         const updatedState = useExamStore.getState();
         const draft = updatedState.answers[questionId] || { selectedOptionIds: [], textResponse: '' };
-        const newMarked = !updatedState.markedForReview[questionId];
+        const newMarked = !!updatedState.markedForReview[questionId];
 
-        const input: SaveAnswerInput = {
+        await persist(attemptId, questionId, {
           selectedOptionIds: draft.selectedOptionIds,
           textResponse: draft.textResponse,
           markedForReview: newMarked,
-        };
-
-        const offlineStore = getOfflineStore();
-        await offlineStore.saveAnswer(attemptId, questionId, input);
+        });
 
         setLastSavedAt(new Date());
 
@@ -123,14 +125,64 @@ export function useAnswer(attemptId: string) {
   );
 
   /**
-   * Hydrate all saved answers from offline storage into local exam store
+   * Hydrate saved answers into local exam store: the server's copy first (covers
+   * resuming in another tab or browser), then this device's, which always wins
+   * because it may hold edits the server hasn't received yet.
    */
   const restoreAnswersFromStore = useCallback(async () => {
     if (!attemptId) return;
     try {
-      const offlineStore = getOfflineStore();
-      const all = await offlineStore.getAllAnswers(attemptId);
-      useExamStore.getState().loadSavedAnswers(all);
+      const [serverAnswers, all] = await Promise.all([
+        isFixtureAttempt(attemptId)
+          ? []
+          : listAnswers(attemptId).catch((err) => {
+              console.warn('Could not load saved answers from the server; using this device only', err);
+              return [];
+            }),
+        getOfflineStore().getAllAnswers(attemptId),
+      ]);
+      const mapped: Record<
+        string,
+        {
+          selectedOptionIds: string[] | null;
+          textResponse: string | null;
+          state: QuestionState;
+        }
+      > = {};
+
+      for (const answer of serverAnswers) {
+        mapped[answer.questionId] = {
+          selectedOptionIds: answer.selectedOptionIds,
+          textResponse: answer.textResponse,
+          state: answer.state,
+        };
+      }
+
+      for (const item of all) {
+        // `payload` holds every local edit merged together, so it is the answer's current content.
+        const { payload } = item;
+        const selectedOptionIds = payload.clearResponse ? null : payload.selectedOptionIds ?? null;
+        const textResponse = payload.clearResponse ? null : payload.textResponse ?? null;
+        const hasAns =
+          Boolean(selectedOptionIds && selectedOptionIds.length > 0) ||
+          Boolean(textResponse && textResponse.trim().length > 0);
+        let qState = QuestionState.VISITED;
+        if (payload.markedForReview && hasAns) {
+          qState = QuestionState.ANSWERED_AND_MARKED_REVIEW;
+        } else if (payload.markedForReview) {
+          qState = QuestionState.MARKED_REVIEW;
+        } else if (hasAns) {
+          qState = QuestionState.ANSWERED;
+        }
+
+        mapped[item.questionId] = {
+          selectedOptionIds,
+          textResponse,
+          state: qState,
+        };
+      }
+
+      useExamStore.getState().loadSavedAnswers(mapped);
     } catch (err) {
       console.error('Failed to restore answers from offline store', err);
     }

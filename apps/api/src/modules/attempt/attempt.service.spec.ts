@@ -175,6 +175,34 @@ describe('AttemptService', () => {
     });
   });
 
+  describe('findMyAttemptForExam', () => {
+    it("returns the caller's own attempt at the exam", async () => {
+      const now = new Date();
+      attemptRepo.findOne.mockResolvedValue({
+        id: 'attempt-1',
+        examId: 'exam-1',
+        studentId: student.sub,
+        status: AttemptStatus.IN_PROGRESS,
+        startedAt: now,
+        expiresAt: now,
+        submittedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const result = await service.findMyAttemptForExam('exam-1', student);
+
+      expect(attemptRepo.findOne).toHaveBeenCalledWith({ where: { examId: 'exam-1', studentId: student.sub } });
+      expect(result).toMatchObject({ id: 'attempt-1', status: AttemptStatus.IN_PROGRESS });
+    });
+
+    it('throws NotFoundException when the student has not started the exam', async () => {
+      attemptRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findMyAttemptForExam('exam-1', student)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('findOwnedAttemptOrThrow', () => {
     it('returns the attempt for its owner', async () => {
       const attempt = { id: 'attempt-1', studentId: student.sub, examId: 'exam-1' };

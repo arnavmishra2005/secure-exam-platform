@@ -13,6 +13,8 @@
  * question types onto this abstraction.
  */
 
+import type { PublicQuestion } from '@secure-exam/types';
+
 export const QUESTION_LOOKUP_SERVICE = Symbol('QUESTION_LOOKUP_SERVICE');
 
 export type QuestionAnswerFormat = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TEXT';
@@ -35,4 +37,10 @@ export function isObjective(format: QuestionAnswerFormat): boolean {
 export interface IQuestionLookupService {
   /** All questions belonging to an exam, used for answer validation + scoring. */
   getQuestionsForExam(examId: string): Promise<QuestionLookupInfo[]>;
+
+  /**
+   * An exam's questions as a student may see them, in exam order. Must never
+   * include the answer key (`Option.isCorrect`) or the explanation.
+   */
+  getPublicQuestionsForExam(examId: string): Promise<PublicQuestion[]>;
 }

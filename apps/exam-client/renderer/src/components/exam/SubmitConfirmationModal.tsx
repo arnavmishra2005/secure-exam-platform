@@ -11,6 +11,9 @@ interface SubmitConfirmationModalProps {
   onConfirm: () => void;
   summary: PaletteSummary;
   isSubmitting?: boolean;
+  /** Person C's queued submission: requested, waiting for the connection to return. */
+  isSubmitPending?: boolean;
+  error?: string | null;
 }
 
 export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = ({
@@ -19,8 +22,12 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
   onConfirm,
   summary,
   isSubmitting = false,
+  isSubmitPending = false,
+  error = null,
 }) => {
   if (!isOpen) return null;
+
+  const isBusy = isSubmitting || isSubmitPending;
 
   const totalAnswered = summary.answered + summary.answeredAndMarkedReview;
   const totalUnanswered = summary.total - totalAnswered;
@@ -41,13 +48,29 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
+            disabled={isBusy}
             className="text-ash-muted hover:text-ink text-sm p-1 rounded transition-colors"
             aria-label="Close dialog"
           >
             ✕
           </button>
         </div>
+
+        {isSubmitPending && (
+          <div className="my-4 p-3.5 rounded bg-gold-light/40 border border-gold/40 text-xs leading-relaxed" role="status">
+            <p className="font-semibold text-ink">Submission pending: reconnect to finish</p>
+            <p className="text-ash mt-0.5">
+              Your answers and submission are saved on this device. They will be sent automatically when the
+              connection returns. Do not close this window.
+            </p>
+          </div>
+        )}
+
+        {error && (
+          <div className="my-4 p-3.5 rounded bg-brick-light/40 border border-brick/40 text-brick text-xs" role="alert">
+            {error}
+          </div>
+        )}
 
         {/* Warning banner if unanswered questions remain */}
         {totalUnanswered > 0 && (
@@ -115,7 +138,7 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
+            disabled={isBusy}
             className="px-4 py-2 text-xs font-semibold rounded border border-hairline bg-white text-ink hover:bg-paper transition-colors disabled:opacity-50"
           >
             Return to Exam
@@ -123,10 +146,12 @@ export const SubmitConfirmationModal: React.FC<SubmitConfirmationModalProps> = (
           <button
             type="button"
             onClick={onConfirm}
-            disabled={isSubmitting}
+            disabled={isBusy}
             className="px-5 py-2 text-xs font-semibold rounded bg-brick hover:bg-brick/90 text-white transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
           >
-            {isSubmitting ? (
+            {isSubmitPending ? (
+              <span>Waiting for connection…</span>
+            ) : isSubmitting ? (
               <>
                 <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />

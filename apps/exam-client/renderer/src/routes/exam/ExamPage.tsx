@@ -1,25 +1,40 @@
 /**
- * Owner: Person B
- * ExamPage: Main container screen for the exam-taking interface.
+ * Owner: Person B — Exam-Taking UI
+ * Container screen for the active exam-taking interface.
  *
- * Consumes:
- *  - Person A's AttemptContext (for exam metadata, questions, timer countdown)
- *  - Person C's offline-aware save hook (via useAnswer hook)
- *
- * Strictly decoupled: doesn't talk directly to IndexedDB or raw API endpoints.
+ * Integrated with:
+ *  - Person A: Header, TimerDisplay, useAttempt (session & expiresAt), routing (/submitted)
+ *  - Person B: QuestionRenderer, OptionList, QuestionPalette, NavigationControls, SubmitConfirmationModal, useExamStore
+ *  - Person C: answers saved through useAnswer (C's saveAnswer()), submission through
+ *    C's requestSubmit(), and sync state through useSyncStatus()
  */
-import React, { useEffect, useState } from 'react';
-import { useAttemptContext } from '../../contexts/AttemptContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AttemptStatus } from '@secure-exam/types';
+import { useAttempt } from '../../hooks/useAttempt';
+import { useSyncStatus } from '../../hooks/useSyncStatus';
+import { useExamQuestions } from '../../hooks/useExamQuestions';
 import { useExamStore } from '../../store/examStore';
 import { useAnswer } from '../../hooks/useAnswer';
+import { Header } from '../../components/layout/Header';
 import { QuestionRenderer } from '../../components/exam/QuestionRenderer';
 import { QuestionPalette } from '../../components/exam/QuestionPalette';
 import { NavigationControls } from '../../components/exam/NavigationControls';
 import { SubmitConfirmationModal } from '../../components/exam/SubmitConfirmationModal';
+import { isFixtureAttempt } from '../../contexts/AttemptContext';
+import { requestSubmit } from '../../persistence';
 
-export const ExamPage: React.FC = () => {
-  const { exam, attempt, questions, remainingSeconds, submitAttempt, isSubmitting } = useAttemptContext();
+export default function ExamPage() {
+  const navigate = useNavigate();
+  const { attempt, isLoading: isAttemptLoading } = useAttempt();
   const attemptId = attempt?.id || '';
+
+  const {
+    questions,
+    isLoading: isQuestionsLoading,
+    error: questionsError,
+    retry: retryQuestions,
+  } = useExamQuestions(attemptId);
 
   const {
     currentIndex,
@@ -40,8 +55,34 @@ export const ExamPage: React.FC = () => {
 
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPaletteOpenMobile, setIsPaletteOpenMobile] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Person C's sync state. The engine tracks one attempt at a time; ignore it for any other.
+  const isSyncedAttempt = useSyncStatus((s) => s.attemptId === attemptId);
+  const submitStatus = useSyncStatus((s) => s.submit);
+  const answerSyncStatus = useSyncStatus((s) => s.answers);
+  const attemptClosed = useSyncStatus((s) => s.attemptClosed);
+  const isSubmitPending = isSyncedAttempt && submitStatus === 'pending';
 
   const questionsCount = questions?.length || 0;
+
+  // No attempt to take, or it is already finished: leave the exam screen.
+  useEffect(() => {
+    if (isAttemptLoading) return;
+    if (!attempt) {
+      navigate('/instructions', { replace: true });
+    } else if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      navigate('/submitted', { replace: true });
+    }
+  }, [isAttemptLoading, attempt, navigate]);
+
+  // A submission queued while offline finishes in the background; follow it.
+  useEffect(() => {
+    if (isSyncedAttempt && submitStatus === 'submitted') {
+      navigate('/submitted', { replace: true });
+    }
+  }, [isSyncedAttempt, submitStatus, navigate]);
 
   // Initialize question IDs in local store when questions load
   useEffect(() => {
@@ -50,17 +91,24 @@ export const ExamPage: React.FC = () => {
       initExam(qIds);
       restoreAnswersFromStore();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionsCount, attemptId]);
+  }, [questionsCount, attemptId, initExam, restoreAnswersFromStore]);
 
-  // Handle timer expiry (auto-submit)
-  useEffect(() => {
-    if (remainingSeconds === 0 && attempt && attempt.status === 'IN_PROGRESS') {
-      submitAttempt().catch((err) => {
-        console.error('Auto-submit failed:', err);
-      });
+  // Handle timer expiry (auto-submit). The server finalizes an expired attempt on
+  // its own; requestSubmit() pushes what it can and confirms it, or stays queued if
+  // offline. SubmittedPage shows which.
+  const handleTimerExpired = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      if (attemptId && !isFixtureAttempt(attemptId)) {
+        await requestSubmit(attemptId);
+      }
+    } catch (err) {
+      console.error('Auto-submit error:', err);
+    } finally {
+      setIsSubmitting(false);
+      navigate('/submitted', { replace: true });
     }
-  }, [remainingSeconds, attempt?.status, submitAttempt]);
+  }, [attemptId, navigate]);
 
   const currentQuestion = questions[currentIndex];
   const currentQId = currentQuestion?.id || '';
@@ -92,54 +140,63 @@ export const ExamPage: React.FC = () => {
   };
 
   const handleConfirmSubmit = async () => {
+    if (!attemptId) return;
+    if (isFixtureAttempt(attemptId)) {
+      navigate('/submitted', { replace: true });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
     try {
-      await submitAttempt();
-      setIsSubmitModalOpen(false);
+      // Pushes every unsynced answer first, then submits. 'submitted' navigates via the
+      // effect above; 'pending' keeps the modal open until the connection returns.
+      const status = await requestSubmit(attemptId);
+      if (status === 'failed') {
+        setSubmitError('The server did not accept the submission. Please contact your invigilator.');
+      }
     } catch (err) {
       console.error('Submission failed', err);
+      setSubmitError('Your submission could not be saved on this device. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Format countdown timer (HH:MM:SS)
-  const formatTimer = (totalSec: number) => {
-    const hours = Math.floor(totalSec / 3600);
-    const minutes = Math.floor((totalSec % 3600) / 60);
-    const seconds = totalSec % 60;
-    return `${hours > 0 ? `${hours}:` : ''}${minutes.toString().padStart(2, '0')}:${seconds
-      .toString()
-      .padStart(2, '0')}`;
-  };
+  const currentSyncStatus = isSyncedAttempt ? answerSyncStatus[currentQId] : undefined;
+  const isLocked = isSubmitting || isSubmitPending;
 
-  const isLowTime = remainingSeconds < 300 && remainingSeconds > 0; // Less than 5 mins
-
-  if (attempt?.status === 'SUBMITTED') {
+  if (questionsError) {
     return (
-      <div className="min-h-screen bg-paper flex items-center justify-center p-6 font-sans">
-        <div className="bg-paper-raised border border-hairline rounded p-8 max-w-md w-full text-center shadow-lg">
-          <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
-            ✓
-          </div>
-          <h2 className="font-serif text-2xl font-bold text-ink mb-2">Examination Submitted</h2>
-          <p className="text-sm text-ash-muted mb-6">
-            Your responses have been securely recorded. You may now close this browser window.
-          </p>
-          <div className="p-4 bg-paper rounded border border-hairline text-left text-xs space-y-2 font-mono text-ash mb-4">
-            <div><span className="font-semibold text-ink">Exam:</span> {exam?.title}</div>
-            <div><span className="font-semibold text-ink">Attempt:</span> {attemptId}</div>
-            <div><span className="font-semibold text-ink">Total Questions:</span> {questions.length}</div>
-            <div><span className="font-semibold text-ink">Submitted At:</span> {attempt.submittedAt || new Date().toLocaleTimeString()}</div>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="bg-white border border-gray-200 rounded-xl p-8 max-w-md text-center shadow-sm">
+            <p className="text-base text-gray-800 font-semibold mb-1">Unable to load the exam</p>
+            <p className="text-sm text-gray-500 mb-4">{questionsError}</p>
+            <button
+              type="button"
+              onClick={retryQuestions}
+              className="px-4 py-2 text-sm font-semibold rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Try again
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
-  if (!questions || questions.length === 0) {
+  if (isQuestionsLoading || !questions || questions.length === 0) {
     return (
-      <div className="min-h-screen bg-paper flex items-center justify-center p-6">
-        <div className="bg-paper-raised border border-hairline rounded p-8 max-w-md text-center">
-          <p className="font-serif text-lg text-ink font-semibold mb-2">Loading Exam Questions...</p>
-          <p className="text-sm text-ash-muted">Please wait while the test environment initializes.</p>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="bg-white border border-gray-200 rounded-xl p-8 max-w-md text-center shadow-sm">
+            <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-base text-gray-800 font-semibold mb-1">Loading Exam Questions...</p>
+            <p className="text-sm text-gray-500">Please wait while the test environment initializes.</p>
+          </div>
         </div>
       </div>
     );
@@ -147,60 +204,15 @@ export const ExamPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-paper flex flex-col font-sans">
-      {/* Top Header Bar */}
-      <header className="bg-paper-raised border-b border-hairline sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="font-serif font-bold text-base sm:text-lg text-ink truncate max-w-[240px] sm:max-w-md">
-              {exam?.title || 'Exam Session'}
-            </h1>
-            <p className="text-xs text-ash-muted font-mono hidden sm:block">
-              Attempt ID: {attemptId ? attemptId.substring(0, 8) + '...' : 'Local'}
-            </p>
-          </div>
-        </div>
-
-        {/* Center / Right: Countdown timer & Quick action */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          {/* Timer Display */}
-          <div
-            className={`px-3 py-1.5 rounded border flex items-center gap-2 font-mono text-sm font-bold tracking-wider ${
-              isLowTime
-                ? 'bg-brick-light text-brick border-brick/40 animate-pulse'
-                : 'bg-white border-hairline text-ink'
-            }`}
-            title="Time remaining"
-          >
-            <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            <span>{formatTimer(remainingSeconds)}</span>
-          </div>
-
-          {/* Toggle palette on mobile */}
-          <button
-            type="button"
-            onClick={() => setIsPaletteOpenMobile(!isPaletteOpenMobile)}
-            className="md:hidden px-3 py-1.5 text-xs font-medium rounded border border-hairline bg-white text-ink"
-          >
-            {isPaletteOpenMobile ? 'Close Palette' : 'Palette'}
-          </button>
-
-          {/* Submit button in header for easy access */}
-          <button
-            type="button"
-            onClick={() => setIsSubmitModalOpen(true)}
-            className="hidden sm:inline-flex px-4 py-1.5 text-xs font-semibold rounded bg-brick hover:bg-brick/90 text-white transition-colors shadow-xs"
-          >
-            Finish Exam
-          </button>
-        </div>
-      </header>
+      {/* Person A's Header Bar with Timer, Title, Student Info, Network status & Finish Exam */}
+      <Header
+        onTimerExpired={handleTimerExpired}
+        onFinish={() => setIsSubmitModalOpen(true)}
+      />
 
       {/* Main Layout Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Left Side: Question Viewer & Navigation (8 cols on desktop) */}
+        {/* Left Side: Question Viewer & Navigation Controls */}
         <div className="md:col-span-8 lg:col-span-9 flex flex-col justify-between">
           <div>
             {currentQuestion ? (
@@ -212,10 +224,10 @@ export const ExamPage: React.FC = () => {
                 textResponse={currentDraft.textResponse}
                 onSelectOption={(optId, isMulti) => selectOption(currentQId, optId, isMulti)}
                 onTextResponseChange={(text) => setTextResponse(currentQId, text)}
-                disabled={isSubmitting}
+                disabled={isLocked}
               />
             ) : (
-              <div className="bg-paper-raised p-8 text-center rounded border border-hairline">
+              <div className="bg-paper-raised p-8 text-center rounded border border-hairline text-ash">
                 Question not found
               </div>
             )}
@@ -233,11 +245,27 @@ export const ExamPage: React.FC = () => {
             onSaveAndNext={handleSaveAndNext}
             onMarkForReviewAndNext={handleMarkForReviewAndNext}
             onClearResponse={handleClearResponse}
-            disabled={isSubmitting}
+            disabled={isLocked}
           />
+
+          {/* Person C's sync status for the current question */}
+          {attemptClosed && isSyncedAttempt ? (
+            <p className="mt-3 text-xs text-brick" role="status">
+              This attempt is closed. The server is no longer accepting answers.
+            </p>
+          ) : currentSyncStatus ? (
+            <p
+              className={`mt-3 text-xs ${currentSyncStatus === 'failed' ? 'text-brick' : 'text-ash-muted'}`}
+              role="status"
+            >
+              {currentSyncStatus === 'synced' && 'Answer saved to the server.'}
+              {currentSyncStatus === 'pending' && 'Answer saved on this device. It will sync automatically.'}
+              {currentSyncStatus === 'failed' && 'The server did not accept this answer. Change it and save again.'}
+            </p>
+          ) : null}
         </div>
 
-        {/* Right Side: Question Palette (4 cols on desktop, responsive drawer on mobile) */}
+        {/* Right Side: Question Palette (drawer on mobile, side panel on desktop) */}
         <div
           className={`md:col-span-4 lg:col-span-3 ${
             isPaletteOpenMobile
@@ -255,19 +283,38 @@ export const ExamPage: React.FC = () => {
                 setIsPaletteOpenMobile(false);
               }}
               summary={summary}
+              syncStatus={isSyncedAttempt ? answerSyncStatus : undefined}
             />
           </div>
         </div>
       </main>
 
+      {/* Mobile palette toggle floating button */}
+      <div className="md:hidden fixed bottom-4 right-4 z-30">
+        <button
+          type="button"
+          onClick={() => setIsPaletteOpenMobile(!isPaletteOpenMobile)}
+          className="px-4 py-2.5 rounded-full bg-blue-600 text-white font-semibold text-xs shadow-lg"
+        >
+          {isPaletteOpenMobile ? 'Close Palette' : 'Question Palette'}
+        </button>
+      </div>
+
       {/* Submit Confirmation Modal */}
       <SubmitConfirmationModal
-        isOpen={isSubmitModalOpen}
-        onClose={() => setIsSubmitModalOpen(false)}
+        isOpen={isSubmitModalOpen || isSubmitPending}
+        onClose={() => {
+          setIsSubmitModalOpen(false);
+          setSubmitError(null);
+        }}
         onConfirm={handleConfirmSubmit}
         summary={summary}
         isSubmitting={isSubmitting}
+        isSubmitPending={isSubmitPending}
+        error={submitError}
       />
     </div>
   );
-};
+}
+
+export { ExamPage };
