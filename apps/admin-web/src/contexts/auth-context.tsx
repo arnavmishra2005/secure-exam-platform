@@ -16,8 +16,15 @@ import {
   useMemo,
   useState,
 } from 'react';
+import type { InternalAxiosRequestConfig } from 'axios';
 import type { Role } from '@secure-exam/types';
-import { login as loginRequest, logout as logoutRequest, refresh as refreshRequest, setAccessToken } from '@/lib/api';
+import {
+  apiClient,
+  login as loginRequest,
+  logout as logoutRequest,
+  refresh as refreshRequest,
+  setAccessToken,
+} from '@/lib/api';
 
 const REFRESH_TOKEN_KEY = 'secure-exam.refreshToken';
 
@@ -52,6 +59,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     setUser(null);
   }, []);
+
+  // Access tokens expire after JWT_ACCESS_EXPIRES_IN (15m by default), so a
+  // tab left open would start getting 401s. On a 401, refresh once and retry
+  // the request. Concurrent 401s share one refresh, because each refresh
+  // rotates the refresh token and a second one would use a stale token.
+  useEffect(() => {
+    let pendingRefresh: Promise<string> | null = null;
+
+    const interceptor = apiClient.interceptors.response.use(undefined, async (error) => {
+      const config = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
+      const storedRefreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (
+        error.response?.status !== 401 ||
+        !config ||
+        config._retried ||
+        config.url?.startsWith('/auth/') ||
+        !storedRefreshToken
+      ) {
+        throw error;
+      }
+
+      pendingRefresh ??= refreshRequest({ refreshToken: storedRefreshToken })
+        .then(({ accessToken, refreshToken }) => {
+          setAccessToken(accessToken);
+          window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+          return accessToken;
+        })
+        .finally(() => {
+          pendingRefresh = null;
+        });
+
+      try {
+        await pendingRefresh;
+      } catch {
+        // The refresh token is expired or was revoked, so send the user back to login.
+        clearSession();
+        throw error;
+      }
+      config._retried = true;
+      return apiClient.request(config);
+    });
+
+    return () => apiClient.interceptors.response.eject(interceptor);
+  }, [clearSession]);
 
   // On first load, try to silently resume a session from the stored refresh
   // token so a page reload doesn't force a re-login every time.
