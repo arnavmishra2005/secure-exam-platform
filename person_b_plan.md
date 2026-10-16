@@ -138,7 +138,9 @@ Security note for `docs/execution-security.md`: the API's Docker socket access i
 
 ---
 
-## 8. Frontend (`apps/web/src/features/`, against A's kit)
+## 8. Frontend — `packages/exam-content-ui` (was planned as `apps/web/src/features/`)
+
+> Updated 2026-10-16: A's `apps/web` is more than 9 days away, so B's UI is a self-contained package that `apps/web` mounts later (see the package README). The folder layout below is mirrored under `packages/exam-content-ui/src/`.
 
 ```
 question-bank/
@@ -255,3 +257,11 @@ Still open:
 - **Shared:** `question-bank.types.ts`, `question-bank.schema.ts` (DTOs + `BANK_LIMITS`), `option-rules.ts` (MCQ rules used by legacy, bank and import), api-client `question-bank.api.ts` + `coding.api.ts`.
 - **Tests:** 136 unit tests pass (19 new for the bank: content rules, lock refusal, delete rules, bulk-add skips, CSV parser, import rows). End-to-end over HTTP on a migrations-only DB (production mode): 39 checks covering every route, filters, lock on new and legacy routes, duplicate, bulk add, import, topics, tags.
 - **Not done yet:** bank UI (`features/question-bank/`) and coding authoring UI — they need A's `apps/web` shell. Creating `apps/web` on B's branch would collide with A's version of the same files at merge.
+
+### Day 5 (2026-10-16) — done (UI as a package)
+- **`packages/exam-content-ui`** (`@secure-exam/exam-content-ui`), consumed as TS source by Vite apps. React 18 + React Query 5 + Tailwind 3, matching the exam client. All server calls go through an `ExamContentApi` interface (real api-client by default; in-memory fake for tests/playground). Navigation is the host's (callbacks). `src/ui/` holds stand-ins for A's kit — the one file to swap.
+- **Admin:** `QuestionBankPage` (search, filters, paging, lock badge, edit/duplicate/archive/delete, CSV import dialog with template + per-line errors), `QuestionForm` (MCQ / True-False / Coding; client checks mirror the API; locked questions edit metadata only, "Duplicate to edit"), `CodingProblemEditor` (Markdown statement with preview, limits, comparison mode, starter code + reference solution in Monaco, `TestCaseTable` with sample flag, weight, reorder), `PickForExamDialog` (READY questions not already in the exam, pick order kept, skip reasons shown).
+- **Student:** `CodingQuestionView` — statement (Markdown; links/images inert, no raw HTML), examples, Monaco editor, custom input, Run / Run samples / Submit, results (per-sample diff, score with sample/hidden labels), draft autosave via the host's `saveAnswer` (debounced, flushed on unmount), offline/attempt-ended/too-long states, friendly 409/429/503 messages, exam-mode paste blocking (`onBlockedPaste` for audit).
+- **Playground:** `npm run content-ui:dev` → http://localhost:3005. Fake mode (in-memory) or Real API mode through a Vite `/api` proxy to `:3000` with a login bar.
+- **Tests:** 25 Vitest/Testing Library tests (draft hook timing, run/submit flows and errors, offline, length limit, statement sanitizing, paste blocking, form validation + payloads for MCQ and coding, locked-edit path, bank list/filter/archive/delete rules, picker). Production build verified (Monaco bundled locally, worker included). Screens checked in headless Chrome.
+- **Shared-file touches:** root `package.json` (3 `content-ui:*` scripts) and `package-lock.json` (new package deps: `monaco-editor@0.52.2`, `@monaco-editor/react@4.7.0`, `react-markdown@9.0.1`).
