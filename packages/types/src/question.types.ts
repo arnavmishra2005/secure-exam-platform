@@ -7,6 +7,29 @@ export enum QuestionType {
   MCQ_SINGLE = 'MCQ_SINGLE',
   MCQ_MULTI = 'MCQ_MULTI',
   TRUE_FALSE = 'TRUE_FALSE',
+  /** Programming question; details live in `coding.types.ts`. Has no options. */
+  CODING = 'CODING',
+}
+
+export enum QuestionDifficulty {
+  EASY = 'EASY',
+  MEDIUM = 'MEDIUM',
+  HARD = 'HARD',
+}
+
+/** Bank lifecycle. Only READY questions are offered when picking questions for an exam. */
+export enum QuestionStatus {
+  DRAFT = 'DRAFT',
+  READY = 'READY',
+  ARCHIVED = 'ARCHIVED',
+}
+
+/** A topic groups bank questions, optionally within a course. */
+export interface Topic {
+  id: string;
+  /** Person A's Course.id, referenced by ID only. */
+  courseId?: string | null;
+  name: string;
 }
 
 export interface Option {
@@ -32,6 +55,12 @@ export interface Question {
   marks: number;
   negativeMarks?: number;
   explanation?: string;
+  /** Person A's Course.id, referenced by ID only. */
+  courseId?: string | null;
+  topicId?: string | null;
+  difficulty?: QuestionDifficulty | null;
+  status?: QuestionStatus;
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -40,7 +69,10 @@ export interface QuestionWithOptions extends Question {
   options: Option[];
 }
 
-export type PublicQuestion = Omit<Question, 'explanation'> & {
+export type PublicQuestion = Omit<
+  Question,
+  'explanation' | 'courseId' | 'topicId' | 'difficulty' | 'status' | 'tags'
+> & {
   options: PublicOption[];
 };
 

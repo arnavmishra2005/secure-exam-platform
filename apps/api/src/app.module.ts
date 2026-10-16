@@ -20,6 +20,7 @@ import { UserEntity } from './modules/user/entities/user.entity';
 import { UserModule } from './modules/user/user.module';
 import { ExamModule } from './modules/exam/exam.module';
 import { QuestionModule } from './modules/question/question.module';
+import { CodingModule } from './modules/coding/coding.module';
 import { AttemptModule } from './modules/attempt/attempt.module';
 import { AnswerModule } from './modules/answer/answer.module';
 
@@ -61,6 +62,7 @@ import { AnswerModule } from './modules/answer/answer.module';
     // Person B modules
     ExamModule,
     QuestionModule,
+    CodingModule,
 
     // Person C modules
     AttemptModule,

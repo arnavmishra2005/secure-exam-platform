@@ -12,6 +12,12 @@ import { ExamAssignmentEntity } from '../modules/exam/entities/exam-assignment.e
 import { QuestionEntity } from '../modules/question/entities/question.entity';
 import { OptionEntity } from '../modules/question/entities/option.entity';
 import { ExamQuestionEntity } from '../modules/question/entities/exam-question.entity';
+import { TopicEntity } from '../modules/question/entities/topic.entity';
+import { QuestionTagEntity } from '../modules/question/entities/question-tag.entity';
+import { CodingProblemEntity } from '../modules/coding/entities/coding-problem.entity';
+import { CodingTestCaseEntity } from '../modules/coding/entities/coding-test-case.entity';
+import { CodeRunEntity } from '../modules/coding/entities/code-run.entity';
+import { CodeSubmissionEntity } from '../modules/coding/entities/code-submission.entity';
 // Person C entities
 import { AttemptEntity } from '../modules/attempt/entities/attempt.entity';
 import { ExamSessionEntity } from '../modules/attempt/entities/exam-session.entity';
@@ -33,6 +39,12 @@ export default new DataSource({
     QuestionEntity,
     OptionEntity,
     ExamQuestionEntity,
+    TopicEntity,
+    QuestionTagEntity,
+    CodingProblemEntity,
+    CodingTestCaseEntity,
+    CodeRunEntity,
+    CodeSubmissionEntity,
     // Person C
     AttemptEntity,
     ExamSessionEntity,
