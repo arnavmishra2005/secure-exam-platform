@@ -17,6 +17,8 @@ import { ExamEntity } from '../exam/entities/exam.entity';
 import { QuestionEntity } from './entities/question.entity';
 import { OptionEntity } from './entities/option.entity';
 import { ExamQuestionEntity } from './entities/exam-question.entity';
+import { validateOptionsForType } from './option-rules';
+import { QuestionLockService } from './question-lock.service';
 import {
   AddQuestionToExamDto,
   CreateOptionDto,
@@ -37,6 +39,7 @@ export class QuestionService {
     @InjectRepository(ExamEntity)
     private readonly examRepo: Repository<ExamEntity>,
     private readonly auditService: AuditService,
+    private readonly lockService: QuestionLockService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -76,6 +79,7 @@ export class QuestionService {
 
   async update(id: string, dto: UpdateQuestionDto, actorId: string): Promise<QuestionEntity> {
     const question = await this.findOne(id);
+    await this.lockService.assertContentEditable(id);
     Object.assign(question, {
       text: dto.text ?? question.text,
       type: (dto.type as unknown as QuestionType) ?? question.type,
@@ -112,6 +116,7 @@ export class QuestionService {
 
   async addOption(questionId: string, dto: CreateOptionDto): Promise<OptionEntity> {
     const question = await this.findOne(questionId);
+    await this.lockService.assertContentEditable(questionId);
     const option = this.optionRepo.create({ ...dto, questionId: question.id });
     return this.optionRepo.save(option);
   }
@@ -123,6 +128,7 @@ export class QuestionService {
   ): Promise<OptionEntity> {
     const option = await this.optionRepo.findOne({ where: { id: optionId, questionId } });
     if (!option) throw new NotFoundException('Option not found for this question');
+    await this.lockService.assertContentEditable(questionId);
     Object.assign(option, dto);
     return this.optionRepo.save(option);
   }
@@ -130,40 +136,13 @@ export class QuestionService {
   async deleteOption(questionId: string, optionId: string): Promise<void> {
     const option = await this.optionRepo.findOne({ where: { id: optionId, questionId } });
     if (!option) throw new NotFoundException('Option not found for this question');
+    await this.lockService.assertContentEditable(questionId);
     await this.optionRepo.remove(option);
   }
 
-  /**
-   * Enforced per rules:
-   *  - MCQ_SINGLE: exactly one correct option
-   *  - MCQ_MULTI: at least one correct option
-   *  - TRUE_FALSE: exactly two options, exactly one correct
-   */
+  /** See option-rules.ts. */
   private validateOptionsForType(type: QuestionType, options: CreateOptionDto[]) {
-    if (!options || options.length < 2) {
-      throw new BadRequestException('A question needs at least two options');
-    }
-    const correctCount = options.filter((o) => o.isCorrect).length;
-
-    switch (type) {
-      case QuestionType.MCQ_SINGLE:
-        if (correctCount !== 1) {
-          throw new BadRequestException('MCQ_SINGLE requires exactly one correct option');
-        }
-        break;
-      case QuestionType.MCQ_MULTI:
-        if (correctCount < 1) {
-          throw new BadRequestException('MCQ_MULTI requires at least one correct option');
-        }
-        break;
-      case QuestionType.TRUE_FALSE:
-        if (options.length !== 2 || correctCount !== 1) {
-          throw new BadRequestException('TRUE_FALSE requires exactly two options, one correct');
-        }
-        break;
-      default:
-        throw new BadRequestException(`Unknown question type: ${type}`);
-    }
+    validateOptionsForType(type, options);
   }
 
   // ---------------------------------------------------------------------
@@ -197,7 +176,7 @@ export class QuestionService {
     dto: AddQuestionToExamDto,
     actorId: string,
   ): Promise<ExamQuestionEntity> {
-    await this.assertExamExists(examId);
+    await this.lockService.assertExamComposable(examId);
     await this.findOne(dto.questionId); // 404 if question missing
 
     const existing = await this.examQuestionRepo.findOne({
@@ -218,6 +197,7 @@ export class QuestionService {
   }
 
   async removeQuestionFromExam(examId: string, questionId: string, actorId: string): Promise<void> {
+    await this.lockService.assertExamComposable(examId);
     const mapping = await this.examQuestionRepo.findOne({ where: { examId, questionId } });
     if (!mapping) throw new NotFoundException('Question is not part of this exam');
     await this.examQuestionRepo.remove(mapping);
@@ -233,7 +213,7 @@ export class QuestionService {
     examId: string,
     dto: ReorderExamQuestionsDto,
   ): Promise<ExamQuestionEntity[]> {
-    await this.assertExamExists(examId);
+    await this.lockService.assertExamComposable(examId);
     const mappings = await this.examQuestionRepo.find({ where: { examId } });
     const byId = new Map(mappings.map((m) => [m.id, m]));
 

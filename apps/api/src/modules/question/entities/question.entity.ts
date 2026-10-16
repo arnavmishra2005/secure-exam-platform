@@ -29,10 +29,10 @@ export class QuestionEntity {
   marks: number;
 
   @Column({ name: 'negative_marks', type: 'float', nullable: true })
-  negativeMarks?: number;
+  negativeMarks?: number | null;
 
   @Column({ type: 'text', nullable: true })
-  explanation?: string;
+  explanation?: string | null;
 
   /** Person A's courses.id, referenced by ID only (no FK). */
   @Column({ name: 'course_id', type: 'uuid', nullable: true })

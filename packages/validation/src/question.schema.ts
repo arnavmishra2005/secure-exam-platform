@@ -21,6 +21,8 @@ export enum QuestionTypeDto {
   MCQ_SINGLE = 'MCQ_SINGLE',
   MCQ_MULTI = 'MCQ_MULTI',
   TRUE_FALSE = 'TRUE_FALSE',
+  // CODING is created through the question bank (SaveBankQuestionDto), which
+  // also saves the problem and its tests; the legacy endpoints are MCQ-only.
 }
 
 export class CreateOptionDto {

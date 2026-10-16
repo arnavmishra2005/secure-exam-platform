@@ -6,6 +6,7 @@ import { OptionEntity } from './entities/option.entity';
 import { ExamQuestionEntity } from './entities/exam-question.entity';
 import { QuestionTagEntity } from './entities/question-tag.entity';
 import { TopicEntity } from './entities/topic.entity';
+import { QuestionLockService } from './question-lock.service';
 import { QuestionService } from './question.service';
 import { QuestionController } from './question.controller';
 
@@ -22,7 +23,7 @@ import { QuestionController } from './question.controller';
     ExamModule,
   ],
   controllers: [QuestionController],
-  providers: [QuestionService],
-  exports: [QuestionService],
+  providers: [QuestionService, QuestionLockService],
+  exports: [QuestionService, QuestionLockService],
 })
 export class QuestionModule {}

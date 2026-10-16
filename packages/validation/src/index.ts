@@ -5,5 +5,6 @@ export * from './user.schema';
 export * from './exam.schema';
 export * from './question.schema';
 export * from './coding.schema';
+export * from './question-bank.schema';
 export * from './attempt.schema';
 export * from './answer.schema';
