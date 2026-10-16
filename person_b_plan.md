@@ -214,3 +214,12 @@ Still open:
   Bundle is ~875 KB gzipped, so lazy-load it on coding routes only. CSP needs `worker-src 'self' blob:` and `font-src 'self' data:`; tell C for Electron.
 - Pinned image digest today: `python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1`.
 - Known, not fixed (pre-existing): `questions.created_at/updated_at` entity columns are `timestamp`, migration says `timestamptz`.
+
+### Day 2 (2026-10-16) — done
+- **`POST /attempts/:attemptId/code/run`** (student, attempt owner): `{ questionId, language, code, kind: CUSTOM|SAMPLES, stdin? }`. Waits for the result. SAMPLES returns per-sample verdicts; hidden tests are never read. Every run is recorded in `code_runs` (best effort).
+- **Checks, in order:** attempt owned + IN_PROGRESS + not expired (reuses the answer module's `assertAttemptIsWritable` through B's `ATTEMPT_ACCESS` port, so an expired attempt is auto-submitted exactly like an answer save) → question is in the attempt's exam → question is CODING → problem set up (else 409) → language allowed.
+- **Limits:** code ≤ 10,000 chars, stdin ≤ 64 KB (`CodeRunDto`); `RunLimiterService`: `RUNNER_MAX_CONCURRENCY` containers (default 4), FIFO queue capped by `RUNNER_MAX_QUEUE` (503 beyond), one run at a time per student (429), `RUNNER_RUNS_PER_MINUTE` per student (default 20, 429). Keyed by user id, not IP. In-memory: one API instance only.
+- **Grading helpers:** `coding/grading/verdict.ts` (`EXACT`/`TRIM`/`TOKENS` comparison, CRLF-normalized; status → verdict), reused by Day 3 submit.
+- **Abuse suite** (`npm run test:runner`): fork bomb, 1 GB allocation, growing memory, endless output, writes outside `/tmp`, uid/env check, killing the harness, forging harness output, background process outliving the run — all contained. 20 simultaneous runs complete in ~4.4 s with ≤ 4 containers at once.
+- **End-to-end (curl, scratch DB):** custom run, samples, MCQ question → 400, oversized code → 400, parallel runs by one student → 429 + 200, other student's attempt → 403.
+- **Still to fix on Day 3:** a CODING question in an exam is currently listed by `GET /attempts/:id/questions` with no options and would be scored like a single-choice MCQ (0 marks) — the `'CODE'` answer-format change in §5.

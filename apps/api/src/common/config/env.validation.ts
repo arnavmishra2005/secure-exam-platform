@@ -24,6 +24,8 @@ export const envValidationSchema = Joi.object({
   RUNNER_DOCKER_BIN: Joi.string().default('docker'),
   RUNNER_PYTHON_IMAGE: Joi.string().default('python:3.12-slim'),
   RUNNER_MAX_CONCURRENCY: Joi.number().integer().min(1).default(4),
+  RUNNER_MAX_QUEUE: Joi.number().integer().min(0).default(100),
+  RUNNER_RUNS_PER_MINUTE: Joi.number().integer().min(1).default(20),
   RUNNER_OUTPUT_LIMIT_BYTES: Joi.number().integer().min(1024).default(65536),
   RUNNER_STARTUP_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
 });

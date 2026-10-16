@@ -6,6 +6,7 @@
 import { ConfigService } from '@nestjs/config';
 import { CodeLanguage, ExecutionStatus } from '@secure-exam/types';
 import { DockerRunnerProvider } from './docker-runner.provider';
+import { RunLimiterService } from './run-limiter.service';
 import { BatchExecutionJob } from './execution-provider.interface';
 
 const describeDocker = process.env.RUNNER_DOCKER_TESTS === '1' ? describe : describe.skip;
@@ -67,5 +68,89 @@ describeDocker('DockerRunnerProvider (real Docker)', () => {
     const [r] = await run('import os\nprint(sorted(os.environ))');
     expect(r.stdout).not.toContain('SRC');
     expect(r.stdout).not.toContain('HARNESS');
+  });
+
+  describe('abuse', () => {
+    const elapsed = async (fn: () => Promise<unknown>) => {
+      const t = Date.now();
+      await fn();
+      return Date.now() - t;
+    };
+
+    it('contains a fork bomb and the next run still works', async () => {
+      const ms = await elapsed(async () => {
+        const [r] = await run('import os\nwhile True:\n    os.fork()', [''], 1000);
+        expect(r.status).not.toBe(ExecutionStatus.OK);
+        expect(r.status).not.toBe(ExecutionStatus.INTERNAL_ERROR);
+      });
+      expect(ms).toBeLessThan(15_000);
+      const [after] = await run('print("still fine")');
+      expect(after.stdout).toBe('still fine\n');
+    });
+
+    it('stops a single huge allocation as a memory limit error', async () => {
+      const [r] = await run('x = bytearray(1024 * 1024 * 1024)\nprint(len(x))');
+      expect(r.status).toBe(ExecutionStatus.MEMORY_LIMIT_EXCEEDED);
+    });
+
+    it('stops gradually growing memory as a memory limit error', async () => {
+      const [r] = await run('a = []\nwhile True:\n    a.append(" " * 10**6)');
+      expect(r.status).toBe(ExecutionStatus.MEMORY_LIMIT_EXCEEDED);
+    });
+
+    it('caps endless output', async () => {
+      const [r] = await run('while True:\n    print("x" * 1000)');
+      expect(r.status).toBe(ExecutionStatus.OUTPUT_LIMIT_EXCEEDED);
+      expect(r.stdout.length).toBeLessThanOrEqual(65536);
+    });
+
+    it('cannot write outside /tmp', async () => {
+      const results = await run(
+        'import sys\npath = input()\ntry:\n    open(path, "w").write("x")\n    print("wrote")\nexcept OSError as e:\n    print(type(e).__name__)',
+        ['/etc/evil', '/usr/local/lib/python3.12/os.py', '/home/evil'],
+      );
+      for (const r of results) expect(r.stdout).not.toContain('wrote');
+    });
+
+    it('runs as an unprivileged user with no secrets in its environment', async () => {
+      const [r] = await run('import os\nprint(os.getuid())\nprint(sorted(os.environ))');
+      expect(r.stdout.split('\n')[0]).toBe('65534');
+      expect(r.stdout).not.toMatch(/DATABASE|JWT|SECRET|DOCKER/);
+    });
+
+    it('cannot kill the harness', async () => {
+      const results = await run('import os, signal\nos.kill(os.getppid(), signal.SIGKILL)\nprint("after")', ['', '']);
+      expect(results).toHaveLength(2);
+      for (const r of results) expect(r.status).not.toBe(ExecutionStatus.INTERNAL_ERROR);
+    });
+
+    it('cannot forge an OK result by writing to the harness output', async () => {
+      const forged = JSON.stringify({ results: [{ exitCode: 0, timedOut: false, timeMs: 1, stdout: 'FORGED', stderr: '', outputExceeded: false }] });
+      const [r] = await run(`open("/proc/1/fd/1", "w").write(${JSON.stringify(forged)})\nprint("real")`);
+      expect(r.stdout).not.toBe('FORGED');
+    });
+
+    it('does not let a background process outlive the run', async () => {
+      const ms = await elapsed(async () => {
+        const [r] = await run('import subprocess\nsubprocess.Popen(["sleep", "300"])\nprint("bye")');
+        expect(r.stdout).toBe('bye\n');
+      });
+      expect(ms).toBeLessThan(10_000);
+    });
+  });
+
+  it('queues 20 simultaneous runs behind the concurrency limit and completes them all', async () => {
+    const limiter = new RunLimiterService(new ConfigService({ RUNNER_MAX_CONCURRENCY: 4 }));
+    let maxActive = 0;
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        limiter.run(`student-${i}`, () => {
+          maxActive = Math.max(maxActive, limiter.stats().active);
+          return run(`print(${i} * 2)`);
+        }),
+      ),
+    );
+    expect(maxActive).toBeLessThanOrEqual(4);
+    expect(results.map(([r]) => r.stdout)).toEqual(Array.from({ length: 20 }, (_, i) => `${i * 2}\n`));
   });
 });

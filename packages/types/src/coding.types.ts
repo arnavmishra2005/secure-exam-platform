@@ -135,7 +135,8 @@ export interface SampleTestResult {
 }
 
 export interface CodeRunResponse {
-  runId: string;
+  /** Null if the run couldn't be recorded (the result is still valid). */
+  runId: string | null;
   kind: CodeRunKind;
   /** Present for kind = CUSTOM. */
   outcome?: ExecutionOutcome;
@@ -175,3 +176,10 @@ export interface StoredTestResult {
   stderr: string;
   timeMs: number;
 }
+
+// ---- Limits shared by the API and the editor UI ----
+
+/** Max characters of code per run/submit. Matches the answer draft limit (SaveAnswerDto.textResponse). */
+export const CODE_MAX_LENGTH = 10_000;
+/** Max characters of custom stdin per run. */
+export const CODE_STDIN_MAX_LENGTH = 65_536;
