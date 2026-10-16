@@ -6,5 +6,6 @@ export * from './auth.types';
 export * from './audit.types';
 export * from './exam.types';
 export * from './question.types';
+export * from './coding.types';
 export * from './attempt.types';
 export * from './answer.types';

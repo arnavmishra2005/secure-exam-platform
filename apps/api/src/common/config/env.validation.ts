@@ -19,4 +19,11 @@ export const envValidationSchema = Joi.object({
 
   THROTTLE_TTL: Joi.number().default(60),
   THROTTLE_LIMIT: Joi.number().default(1000),
+
+  // Person B: sandboxed code runner (modules/execution)
+  RUNNER_DOCKER_BIN: Joi.string().default('docker'),
+  RUNNER_PYTHON_IMAGE: Joi.string().default('python:3.12-slim'),
+  RUNNER_MAX_CONCURRENCY: Joi.number().integer().min(1).default(4),
+  RUNNER_OUTPUT_LIMIT_BYTES: Joi.number().integer().min(1024).default(65536),
+  RUNNER_STARTUP_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
 });
