@@ -26,3 +26,17 @@ export class CodeRunDto {
   @MaxLength(CODE_STDIN_MAX_LENGTH)
   stdin?: string;
 }
+
+/** POST /attempts/:attemptId/code/submit — graded against all test cases. */
+export class CodeSubmitDto {
+  @IsUUID('4')
+  questionId!: string;
+
+  @IsEnum(CodeLanguage)
+  language!: CodeLanguage;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(CODE_MAX_LENGTH)
+  code!: string;
+}

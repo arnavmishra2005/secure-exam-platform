@@ -13,6 +13,7 @@ import {
 import type { JwtPayload } from '@secure-exam/types';
 import { RunLimiterService } from '../execution/run-limiter.service';
 import { CodeRunService } from './code-run.service';
+import { CodingQuestionResolver } from './coding-question.resolver';
 
 const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 const EXAM_ID = '22222222-2222-4222-8222-222222222222';
@@ -58,13 +59,15 @@ function setup(overrides: { inExam?: boolean; type?: QuestionType; problem?: obj
     save: jest.fn(async (x) => ({ ...x, id: 'run-1' })),
   };
   const service = new CodeRunService(
-    attempts,
-    executor,
+    attempts as never,
+    executor as never,
     new RunLimiterService(new ConfigService({})),
-    examQuestionRepo as never,
-    questionRepo as never,
-    problemRepo as never,
-    testCaseRepo as never,
+    new CodingQuestionResolver(
+      examQuestionRepo as never,
+      questionRepo as never,
+      problemRepo as never,
+      testCaseRepo as never,
+    ),
     runRepo as never,
   );
   return { service, attempts, executor, testCaseRepo, runRepo, examQuestionRepo };

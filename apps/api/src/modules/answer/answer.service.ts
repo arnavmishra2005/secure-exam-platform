@@ -133,6 +133,14 @@ export class AnswerService {
       return;
     }
 
+    // Person B: a coding answer is the student's code draft, stored as textResponse.
+    if (question.answerFormat === 'CODE') {
+      if (hasOptionIds) {
+        throw new BadRequestException('This is a coding question — selectedOptionIds is not valid here');
+      }
+      return;
+    }
+
     // SINGLE_CHOICE or MULTIPLE_CHOICE from here on.
     if (hasText) {
       throw new BadRequestException('This is an objective question — textResponse is not valid here');

@@ -70,6 +70,19 @@ export class RunLimiterService {
     }
   }
 
+  /**
+   * For background work (end-of-attempt grading): shares the container
+   * slots with students but skips per-student limits and the queue cap.
+   */
+  async runShared<T>(work: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await work();
+    } finally {
+      this.release();
+    }
+  }
+
   /** For monitoring and tests. */
   stats() {
     return { active: this.active, queued: this.waiting.length, busyStudents: this.busyStudents.size };

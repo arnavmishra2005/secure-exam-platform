@@ -8,6 +8,9 @@ import { CodeLanguage, CodeSubmissionStatus, StoredTestResult } from '@secure-ex
  */
 @Entity('code_submissions')
 @Index('IDX_code_submissions_attempt_question', ['attemptId', 'questionId'])
+// At most one final (graded-for-marks) row per attempt + question, so a
+// score can never be recorded twice even if two graders race.
+@Index('UQ_code_submissions_final', ['attemptId', 'questionId'], { unique: true, where: '"is_final" = true' })
 export class CodeSubmissionEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

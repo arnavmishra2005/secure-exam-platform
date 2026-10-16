@@ -1,0 +1,30 @@
+/**
+ * Owner: Person B.
+ *
+ * Where a graded coding score goes. Today: added to the attempt's Result
+ * row (ResultTableScoreSink). At merge, bind this to Person A's
+ * ScoreRecorder (`record(..., 'AUTO_CODE')`) instead; callers don't change.
+ */
+
+import type { EntityManager } from 'typeorm';
+
+export const CODE_SCORE_SINK = Symbol('CODE_SCORE_SINK');
+
+export interface CodeScoreRecord {
+  attemptId: string;
+  examId: string;
+  questionId: string;
+  /** users.id */
+  studentId: string;
+  score: number;
+  maxScore: number;
+}
+
+export interface ICodeScoreSink {
+  /**
+   * Called inside the grading transaction, exactly once per attempt +
+   * question (guarded by the unique final-submission index). Throwing rolls
+   * the grade back; it is retried on the next sweep.
+   */
+  record(manager: EntityManager, record: CodeScoreRecord): Promise<void>;
+}

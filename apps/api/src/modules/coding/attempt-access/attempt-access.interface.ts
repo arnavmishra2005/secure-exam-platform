@@ -24,4 +24,23 @@ export interface IAttemptAccess {
    * an expired attempt is auto-submitted as a side effect.
    */
   assertWritable(attemptId: string, user: JwtPayload): Promise<WritableAttempt>;
+
+  /**
+   * Finalized (SUBMITTED / AUTO_SUBMITTED) attempts with a CODING question
+   * that has no final code submission yet, oldest first. One row per
+   * attempt + question.
+   */
+  findAwaitingCodeGrading(limit: number): Promise<PendingCodeGrade[]>;
+
+  /** The student's saved code draft (the answer's textResponse), or null. */
+  getDraftCode(attemptId: string, questionId: string): Promise<string | null>;
+}
+
+export interface PendingCodeGrade {
+  attemptId: string;
+  examId: string;
+  /** users.id */
+  studentId: string;
+  questionId: string;
+  submittedAt: Date;
 }

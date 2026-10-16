@@ -73,11 +73,13 @@ Because there is no contract session, **B defines its own contracts in B-owned f
 **Small edits B makes in A's attempt/answer code** (needed for coding questions to work end to end; list them in the PR):
 1. `QuestionAnswerFormat` gets `'CODE'`. `QuestionLookupAdapter` maps `QuestionType.CODING → 'CODE'` (unknown types → `TEXT`, not `SINGLE_CHOICE`). `saveAnswer` accepts `textResponse` for `CODE`. `computeScore` adds `CODE` marks to `maxScore`, gives no MCQ credit, doesn't flag manual review; B's grader adds the code score.
 2. `getPublicQuestionsForExam` adds an optional `coding` field from B's `CodingService.getPublicProblem()` (statement, starter code, limits, **sample** tests only).
-3. A grading hook after finalization (event `attempt.submitted` if A adds `@nestjs/event-emitter`; otherwise a direct call from the finalize path to B's grader). Decide at merge.
+3. ~~A grading hook after finalization~~ Not needed: B's `CodeGradingService` sweeps finalized attempts every 15 s (no edit to the finalize path).
+
+Items 1–2 are **done** (Day 3) and listed in the Day 3 log below so A can review them at merge.
 
 **What B needs from A (stubbed by B until merge):**
 1. `apps/web` shell, router/nav registries, UI kit. B's UI is built as self-contained feature folders.
-2. `ScoreRecorder.record(attemptId, questionId, score, maxScore, 'AUTO_CODE')`. B codes against its own `CODE_SCORE_SINK` port (stub logs + writes `code_submissions.is_final`); at merge it binds to A's recorder.
+2. `ScoreRecorder.record(attemptId, questionId, score, maxScore, 'AUTO_CODE')`. B codes against its own `CODE_SCORE_SINK` port; today `ResultTableScoreSink` adds the code score to `results.score`. At merge, bind the port to A's recorder (one line in `coding.module.ts`). If A's results start being computed from `QuestionScore`, drop the interim sink so the score isn't counted twice.
 3. `courses` table: B stores `course_id` as a plain uuid with no FK until merge.
 4. `results/tabs.registry.ts` line for `QuestionsTab`; questions renderer registry line for `CodingQuestionView`.
 
@@ -223,3 +225,17 @@ Still open:
 - **Abuse suite** (`npm run test:runner`): fork bomb, 1 GB allocation, growing memory, endless output, writes outside `/tmp`, uid/env check, killing the harness, forging harness output, background process outliving the run — all contained. 20 simultaneous runs complete in ~4.4 s with ≤ 4 containers at once.
 - **End-to-end (curl, scratch DB):** custom run, samples, MCQ question → 400, oversized code → 400, parallel runs by one student → 429 + 200, other student's attempt → 403.
 - **Still to fix on Day 3:** a CODING question in an exam is currently listed by `GET /attempts/:id/questions` with no options and would be scored like a single-choice MCQ (0 marks) — the `'CODE'` answer-format change in §5.
+
+### Day 3 (2026-10-16) — done
+- **`POST /attempts/:attemptId/code/submit`** `{ questionId, language, code }`: runs **all** test cases (samples + hidden), partial marks by weight (`grading/scoring.ts`, 2-decimal rounding), stores a non-final `code_submissions` row, audit `CODE_SUBMITTED`. Students get `{ passed, total, score, maxScore, tests: [{ index, isSample, verdict, timeMs }] }` — no hidden inputs/outputs. Sandbox failure → 503 and nothing stored. Attempt re-checked after execution: if it ended meanwhile → 409, not counted.
+- **End-of-attempt grading** (`CodeGradingService`, `@Interval` 15 s): for each finalized attempt × CODING question without a final row: last GRADED submit with `created_at <= submittedAt` → final; else the saved draft (`answers.textResponse`) run against all tests → final (`from_draft`); else 0. Final row + score in one transaction; unique partial index `UQ_code_submissions_final` (migration `1760000100007`) makes retries/races safe; sandbox failure defers to the next sweep. Audit `CODE_GRADED`.
+- **Edits in A's attempt/answer code** (review at merge):
+  - `question-lookup.interface.ts`: `QuestionAnswerFormat` + `'CODE'`.
+  - `question-lookup.adapter.ts`: `CODING → 'CODE'`, unknown types → `'TEXT'` (was `SINGLE_CHOICE`); `getPublicQuestionsForExam` adds `coding` (statement, starter code, limits, samples) via B's `CodingContentService`.
+  - `answer.service.ts`: `CODE` accepts `textResponse` (the code draft), rejects options.
+  - `submission.service.ts` `computeScore`: `CODE` adds marks to `maxScore`, gives 0, doesn't set `needsManualReview`.
+  - `answer.module.ts`: imports `CodingContentModule`.
+  - Specs: adapter (new ctor arg, CODE/TEXT mapping, coding field), computeScore (CODE case).
+- **Module split:** `CodingContentModule` (problem content; no attempt/answer imports) is imported by the answer module; `CodingModule` (run/submit/grade) imports the answer module. No cycle.
+- **Shared types:** `PublicQuestion.coding?`, `HiddenTestResult.isSample`, `AuditEventType.CODE_SUBMITTED/CODE_GRADED`, `CodeSubmitDto`.
+- **Tests:** 117 unit tests pass (30 in coding), Docker suite 17/17. End-to-end on a migrations-only DB, API in production mode: alice submit 4/8 counted, bob draft-only 8/8, carol nothing 0; results `maxScore` 19 (11 MCQ + 8), no manual-review flag; code submit after finishing → 409; question list includes samples only.

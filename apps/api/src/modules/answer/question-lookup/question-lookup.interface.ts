@@ -17,7 +17,11 @@ import type { PublicQuestion } from '@secure-exam/types';
 
 export const QUESTION_LOOKUP_SERVICE = Symbol('QUESTION_LOOKUP_SERVICE');
 
-export type QuestionAnswerFormat = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TEXT';
+/**
+ * CODE (Person B): a programming answer saved as `textResponse`. Graded by
+ * B's coding module after finalization, not by computeScore.
+ */
+export type QuestionAnswerFormat = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TEXT' | 'CODE';
 
 export interface QuestionLookupInfo {
   id: string;
@@ -29,7 +33,7 @@ export interface QuestionLookupInfo {
   correctOptionIds?: string[];
 }
 
-/** SINGLE_CHOICE and MULTIPLE_CHOICE are auto-gradeable; TEXT is not. */
+/** SINGLE_CHOICE and MULTIPLE_CHOICE are auto-gradeable here; TEXT needs a human; CODE is graded by B's coding module. */
 export function isObjective(format: QuestionAnswerFormat): boolean {
   return format === 'SINGLE_CHOICE' || format === 'MULTIPLE_CHOICE';
 }
