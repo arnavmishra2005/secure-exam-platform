@@ -12,7 +12,12 @@
     "jsx": "react-jsx",
     "strict": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@secure-exam/types": ["../types/src/index.ts"],
+      "@secure-exam/api-client": ["../api-client/src/index.ts"]
+    }
   },
   "include": ["src", "playground", "vite.config.ts"]
 }

@@ -8,6 +8,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import * as client from '@secure-exam/api-client';
 import type {
+  AttemptDrilldown,
   BankQuestionDetail,
   BankQuestionPage,
   BankQuestionQuery,
@@ -18,6 +19,7 @@ import type {
   CodeSubmitRequest,
   CodeSubmitResponse,
   CreateTopicRequest,
+  QuestionAnalyticsMatrix,
   SaveBankQuestionRequest,
   TagCount,
   Topic,
@@ -39,6 +41,8 @@ export interface ExamContentApi {
   addBankQuestionsToExam(examId: string, questionIds: string[]): Promise<BulkAddToExamResult>;
   runCode(attemptId: string, data: CodeRunRequest): Promise<CodeRunResponse>;
   submitCode(attemptId: string, data: CodeSubmitRequest): Promise<CodeSubmitResponse>;
+  getQuestionAnalytics(examId: string): Promise<QuestionAnalyticsMatrix>;
+  getAttemptDrilldown(examId: string, attemptId: string): Promise<AttemptDrilldown>;
 }
 
 /** The real API through @secure-exam/api-client (shared axios instance and token). */
@@ -57,6 +61,8 @@ export const defaultExamContentApi: ExamContentApi = {
   addBankQuestionsToExam: client.addBankQuestionsToExam,
   runCode: client.runCode,
   submitCode: client.submitCode,
+  getQuestionAnalytics: client.getQuestionAnalytics,
+  getAttemptDrilldown: client.getAttemptDrilldown,
 };
 
 const ApiContext = createContext<ExamContentApi>(defaultExamContentApi);

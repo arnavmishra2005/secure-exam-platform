@@ -22,6 +22,7 @@ import { ExamModule } from './modules/exam/exam.module';
 import { QuestionModule } from './modules/question/question.module';
 import { CodingModule } from './modules/coding/coding.module';
 import { QuestionBankModule } from './modules/question-bank/question-bank.module';
+import { QuestionAnalyticsModule } from './modules/question-analytics/question-analytics.module';
 import { AttemptModule } from './modules/attempt/attempt.module';
 import { AnswerModule } from './modules/answer/answer.module';
 
@@ -65,6 +66,7 @@ import { AnswerModule } from './modules/answer/answer.module';
     QuestionModule,
     CodingModule,
     QuestionBankModule,
+    QuestionAnalyticsModule,
 
     // Person C modules
     AttemptModule,

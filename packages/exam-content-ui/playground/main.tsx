@@ -15,6 +15,7 @@ import {
   PickForExamDialog,
   QuestionBankPage,
   QuestionForm,
+  QuestionsTab,
   defaultExamContentApi,
   type ExamContentApi,
 } from '../src';
@@ -23,7 +24,7 @@ import { Alert, Button, Field, Input } from '../src/ui';
 import { createFakeApi, publicCodingQuestion, seedState } from '../src/testing/fakeApi';
 
 type Mode = 'fake' | 'real';
-type Tab = 'bank' | 'picker' | 'student';
+type Tab = 'bank' | 'picker' | 'student' | 'results';
 
 function BankTab() {
   const [editing, setEditing] = useState<string | 'new' | null>(() =>
@@ -137,6 +138,28 @@ function StudentTab({ mode, fakeQuestion }: { mode: Mode; fakeQuestion: PublicQu
   );
 }
 
+function ResultsTab({ mode }: { mode: Mode }) {
+  const [examId, setExamId] = useState(mode === 'fake' ? 'exam-demo' : '11111111-1111-4111-8111-111111111111');
+  const [shown, setShown] = useState(examId);
+  return (
+    <div className="space-y-4 rounded-lg bg-white p-5 shadow-sm">
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setShown(examId);
+        }}
+      >
+        <Field label="Exam ID" className="flex-1">
+          {(id) => <Input id={id} value={examId} onChange={(e) => setExamId(e.target.value.trim())} />}
+        </Field>
+        <Button type="submit">Show</Button>
+      </form>
+      <QuestionsTab key={shown} examId={shown} />
+    </div>
+  );
+}
+
 function LoginBar({ onLoggedIn }: { onLoggedIn: (who: string) => void }) {
   const [email, setEmail] = useState('admin@secure-exam.dev');
   const [password, setPassword] = useState('Admin@1234');
@@ -171,7 +194,7 @@ function App() {
   const [mode, setMode] = useState<Mode>('fake');
   const [tab, setTab] = useState<Tab>(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    return t === 'picker' || t === 'student' ? t : 'bank';
+    return t === 'picker' || t === 'student' || t === 'results' ? t : 'bank';
   });
   const [who, setWho] = useState<string | null>(null);
   const fakeState = useMemo(() => seedState(), []);
@@ -209,6 +232,7 @@ function App() {
                   ['bank', 'Question bank'],
                   ['picker', 'Add to exam'],
                   ['student', 'Student coding view'],
+                  ['results', 'Question results'],
                 ] as [Tab, string][]
               ).map(([t, label]) => (
                 <button
@@ -250,6 +274,7 @@ function App() {
               {tab === 'bank' && <BankTab />}
               {tab === 'picker' && <PickerTab mode={mode} />}
               {tab === 'student' && <StudentTab mode={mode} fakeQuestion={publicCodingQuestion(fakeState)} />}
+              {tab === 'results' && <ResultsTab mode={mode} />}
             </main>
           )}
         </div>

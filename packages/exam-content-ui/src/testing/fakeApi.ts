@@ -4,7 +4,9 @@
  * READY-only bulk add). The fake runner does not execute code.
  */
 import {
+  AttemptStatus,
   CodeLanguage,
+  QuestionCellState,
   CodeRunKind,
   CodeSubmissionStatus,
   ExecutionStatus,
@@ -13,7 +15,9 @@ import {
   QuestionStatus,
   QuestionType,
   TestCaseVerdict,
+  type AttemptDrilldown,
   type BankQuestionDetail,
+  type QuestionAnalyticsMatrix,
   type BankQuestionQuery,
   type PublicQuestion,
   type SaveBankQuestionRequest,
@@ -166,6 +170,121 @@ export function publicCodingQuestion(state: FakeState): PublicQuestion {
         .filter((t) => t.isSample)
         .map((t, i) => ({ index: i + 1, input: t.input, expectedOutput: t.expectedOutput })),
     },
+  };
+}
+
+/** Question-wise results for 'exam-demo': three students over the seeded questions. */
+export function fakeAnalytics(state: FakeState): QuestionAnalyticsMatrix {
+  const [mcq, tf, coding] = ['q-mcq', 'q-tf', 'q-coding'].map((id) => state.questions.find((q) => q.id === id)!);
+  const questions = [mcq, tf, coding].map((q, i) => ({
+    id: q.id,
+    number: i + 1,
+    text: q.text,
+    type: q.type,
+    marks: q.marks,
+    ...(q.type === QuestionType.CODING
+      ? {}
+      : { options: q.options.map((o) => ({ id: o.id, text: o.text, isCorrect: o.isCorrect })) }),
+  }));
+  const S = QuestionCellState;
+  const people: [string, string, AttemptStatus, [QuestionCellState, number | null][]][] = [
+    ['Alice Johnson', 'alice@secure-exam.dev', AttemptStatus.SUBMITTED, [[S.CORRECT, 1], [S.WRONG, 0], [S.PARTIAL, 6.67]]],
+    ['Bob Smith', 'bob@secure-exam.dev', AttemptStatus.AUTO_SUBMITTED, [[S.CORRECT, 1], [S.CORRECT, 1], [S.CORRECT, 10]]],
+    ['Carol Williams', 'carol@secure-exam.dev', AttemptStatus.IN_PROGRESS, [[S.NOT_ANSWERED, 0], [S.CORRECT, 1], [S.PENDING, null]]],
+  ];
+  const students = people.map(([fullName, email, status, cells], i) => ({
+    attemptId: `att-${i + 1}`,
+    studentId: `user-${i + 1}`,
+    fullName,
+    email,
+    status,
+    startedAt: '2026-10-17T09:00:00.000Z',
+    submittedAt: status === AttemptStatus.IN_PROGRESS ? null : '2026-10-17T10:00:00.000Z',
+    score: cells.reduce((sum, [, sc]) => sum + (sc ?? 0), 0),
+    maxScore: 12,
+    answeredCount: cells.filter(([st]) => st !== S.NOT_ANSWERED).length,
+  }));
+  const cells = people.flatMap(([, , , c], i) =>
+    c.map(([st, sc], j) => ({
+      attemptId: `att-${i + 1}`,
+      questionId: questions[j].id,
+      state: st,
+      score: sc,
+      maxScore: questions[j].marks,
+      markedForReview: i === 2 && j === 0,
+    })),
+  );
+  const stats = questions.map((q) => {
+    const qc = cells.filter((c) => c.questionId === q.id);
+    const graded = qc.filter((c) => c.score !== null);
+    const n = (st: QuestionCellState) => qc.filter((c) => c.state === st).length;
+    return {
+      questionId: q.id,
+      attempts: qc.length,
+      answered: qc.length - n(S.NOT_ANSWERED),
+      correct: n(S.CORRECT),
+      partial: n(S.PARTIAL),
+      wrong: n(S.WRONG),
+      notAnswered: n(S.NOT_ANSWERED),
+      pending: n(S.PENDING),
+      averageScore: graded.length ? Math.round((graded.reduce((x, c) => x + (c.score ?? 0), 0) / graded.length) * 100) / 100 : null,
+      accuracy: graded.length ? Math.round((n(S.CORRECT) / graded.length) * 100) / 100 : null,
+      ...(q.options ? { optionCounts: Object.fromEntries(q.options.map((o, k) => [o.id, k === 0 ? 2 : k === 1 ? 1 : 0])) } : {}),
+      ...(q.type === QuestionType.CODING ? { testPassRate: 0.83 } : {}),
+    };
+  });
+  return { exam: { id: 'exam-demo', title: 'Python basics', status: 'CLOSED' }, questions, students, cells, stats };
+}
+
+export function fakeDrilldown(state: FakeState, attemptId: string): AttemptDrilldown {
+  const m = fakeAnalytics(state);
+  const student = m.students.find((s) => s.attemptId === attemptId);
+  if (!student) throw httpError(404, 'Attempt not found for this exam');
+  const coding = state.questions.find((q) => q.id === 'q-coding')!;
+  return {
+    exam: { id: m.exam.id, title: m.exam.title },
+    student,
+    questions: m.questions.map((q) => {
+      const c = m.cells.find((x) => x.attemptId === attemptId && x.questionId === q.id)!;
+      const { options: _options, ...question } = q;
+      const base = { ...question, state: c.state, score: c.score, markedForReview: c.markedForReview, answeredAt: null };
+      if (q.type !== QuestionType.CODING) {
+        return {
+          ...base,
+          options: q.options!.map((o, k) => ({
+            ...o,
+            selected: c.state === QuestionCellState.NOT_ANSWERED ? false : c.state === QuestionCellState.CORRECT ? o.isCorrect : k === 1,
+          })),
+        };
+      }
+      return {
+        ...base,
+        code:
+          c.state === QuestionCellState.PENDING
+            ? { code: 'nums = list(map(int, input().split()))\nprint(sum(nums))', language: CodeLanguage.PYTHON, source: 'DRAFT' as const, status: null, passed: 0, total: 0, tests: [], submitCount: 0, runCount: 3 }
+            : {
+                code: 'print(sum(map(int, input().split())))',
+                language: CodeLanguage.PYTHON,
+                source: 'FINAL_SUBMIT' as const,
+                status: CodeSubmissionStatus.GRADED,
+                passed: c.state === QuestionCellState.CORRECT ? 3 : 2,
+                total: 3,
+                submitCount: 2,
+                runCount: 5,
+                tests: coding.coding!.tests.map((t, k) => ({
+                  index: k + 1,
+                  isSample: t.isSample,
+                  verdict: c.state === QuestionCellState.CORRECT || k < 2 ? TestCaseVerdict.PASSED : TestCaseVerdict.WRONG_ANSWER,
+                  weight: t.weight,
+                  timeMs: 20,
+                  input: t.input,
+                  expectedOutput: t.expectedOutput,
+                  stdout: c.state === QuestionCellState.CORRECT || k < 2 ? `${t.expectedOutput}\n` : '0\n',
+                  stderr: '',
+                })),
+              },
+      };
+    }),
   };
 }
 
@@ -341,6 +460,13 @@ export function createFakeApi(state: FakeState = seedState(), opts: { latencyMs?
           timeMs: 14,
         })),
       });
+    },
+    async getQuestionAnalytics(examId) {
+      if (examId !== 'exam-demo') throw httpError(404, `Exam ${examId} not found`);
+      return wait(fakeAnalytics(state));
+    },
+    async getAttemptDrilldown(_examId, attemptId) {
+      return wait(fakeDrilldown(state, attemptId));
     },
   };
 }
