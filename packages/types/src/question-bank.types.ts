@@ -3,7 +3,13 @@
  * Plain type/interface declarations only — no logic. All admin-only.
  */
 
-import type { CodingProblem, CodingTestCase, OutputComparisonMode, StarterCode } from './coding.types';
+import type {
+  CodingProblem,
+  CodingTestCase,
+  OutputComparisonMode,
+  StarterCode,
+  TestCaseVerdict,
+} from './coding.types';
 import type {
   CreateOptionRequest,
   Option,
@@ -133,4 +139,33 @@ export interface BulkAddToExamRequest {
 export interface BulkAddToExamResult {
   added: string[];
   skipped: { questionId: string; reason: string }[];
+}
+
+// ---- Validate a coding problem (author's check before saving/using it) ----
+
+export interface ValidateCodingRequest {
+  /** The problem as currently edited (doesn't need to be saved). */
+  coding: CodingProblemInput;
+  /** Code to run; defaults to coding.referenceSolution. */
+  code?: string;
+}
+
+export interface ValidateCodingTestResult {
+  index: number;
+  isSample: boolean;
+  verdict: TestCaseVerdict;
+  timeMs: number;
+  expectedOutput: string;
+  stdout: string;
+  stderr: string;
+}
+
+export interface ValidateCodingResponse {
+  /** True when every test passed. */
+  ok: boolean;
+  passed: number;
+  total: number;
+  /** Slowest test as a share of the time limit, 0–1+: warns about limits that are too tight. */
+  slowestShareOfLimit: number;
+  tests: ValidateCodingTestResult[];
 }

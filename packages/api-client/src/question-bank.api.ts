@@ -13,6 +13,8 @@ import type {
   TagCount,
   Topic,
   UpdateBankQuestionMetaRequest,
+  ValidateCodingRequest,
+  ValidateCodingResponse,
 } from '@secure-exam/types';
 
 export function listBankQuestions(query: BankQuestionQuery = {}): Promise<BankQuestionPage> {
@@ -93,4 +95,9 @@ export function addBankQuestionsToExam(examId: string, questionIds: string[]): P
   return apiClient
     .post<BulkAddToExamResult>(`/exams/${examId}/questions/bulk`, { questionIds })
     .then((res) => res.data);
+}
+
+/** Runs the reference solution (or `code`) against the problem's tests; the problem doesn't need to be saved. */
+export function validateCodingProblem(data: ValidateCodingRequest): Promise<ValidateCodingResponse> {
+  return apiClient.post<ValidateCodingResponse>('/question-bank/validate-coding', data).then((res) => res.data);
 }

@@ -6,7 +6,9 @@ import { ExamQuestionEntity } from '../question/entities/exam-question.entity';
 import { QuestionTagEntity } from '../question/entities/question-tag.entity';
 import { QuestionEntity } from '../question/entities/question.entity';
 import { TopicEntity } from '../question/entities/topic.entity';
+import { ExecutionModule } from '../execution/execution.module';
 import { QuestionModule } from '../question/question.module';
+import { CodingValidationService } from './coding-validation.service';
 import { QuestionBankImportService } from './question-bank-import.service';
 import { QuestionBankController } from './question-bank.controller';
 import { QuestionBankService } from './question-bank.service';
@@ -23,8 +25,9 @@ import { QuestionBankService } from './question-bank.service';
       CodingTestCaseEntity,
     ]),
     QuestionModule, // QuestionLockService
+    ExecutionModule, // sandbox + shared run limiter, for validate-coding
   ],
   controllers: [QuestionBankController],
-  providers: [QuestionBankService, QuestionBankImportService],
+  providers: [QuestionBankService, QuestionBankImportService, CodingValidationService],
 })
 export class QuestionBankModule {}

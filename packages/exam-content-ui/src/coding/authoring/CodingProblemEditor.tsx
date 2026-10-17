@@ -8,6 +8,7 @@ import { CodeLanguage, OutputComparisonMode, type CodingProblemInput } from '@se
 import { Field, Input, Select, Spinner, Textarea } from '../../ui';
 import { Markdown } from '../ProblemStatement';
 import { TestCaseTable } from './TestCaseTable';
+import { ValidateSolution } from './ValidateSolution';
 
 // Monaco is heavy; load it only when this editor is shown.
 const CodeEditor = lazy(() => import('../editor/CodeEditor').then((m) => ({ default: m.CodeEditor })));
@@ -142,6 +143,8 @@ export function CodingProblemEditor({
         <h3 className="text-sm font-semibold text-slate-900">Test cases</h3>
         <TestCaseTable tests={value.tests} onChange={(tests) => set({ tests })} disabled={disabled} />
       </div>
+
+      <ValidateSolution coding={value} />
     </div>
   );
 }

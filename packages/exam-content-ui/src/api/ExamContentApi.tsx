@@ -24,6 +24,8 @@ import type {
   TagCount,
   Topic,
   UpdateBankQuestionMetaRequest,
+  ValidateCodingRequest,
+  ValidateCodingResponse,
 } from '@secure-exam/types';
 
 export interface ExamContentApi {
@@ -43,6 +45,7 @@ export interface ExamContentApi {
   submitCode(attemptId: string, data: CodeSubmitRequest): Promise<CodeSubmitResponse>;
   getQuestionAnalytics(examId: string): Promise<QuestionAnalyticsMatrix>;
   getAttemptDrilldown(examId: string, attemptId: string): Promise<AttemptDrilldown>;
+  validateCodingProblem(data: ValidateCodingRequest): Promise<ValidateCodingResponse>;
 }
 
 /** The real API through @secure-exam/api-client (shared axios instance and token). */
@@ -63,6 +66,7 @@ export const defaultExamContentApi: ExamContentApi = {
   submitCode: client.submitCode,
   getQuestionAnalytics: client.getQuestionAnalytics,
   getAttemptDrilldown: client.getAttemptDrilldown,
+  validateCodingProblem: client.validateCodingProblem,
 };
 
 const ApiContext = createContext<ExamContentApi>(defaultExamContentApi);

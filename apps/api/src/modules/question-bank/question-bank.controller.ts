@@ -25,6 +25,7 @@ import type {
   JwtPayload,
   TagCount,
   Topic,
+  ValidateCodingResponse,
 } from '@secure-exam/types';
 import {
   BankQuestionQueryDto,
@@ -34,9 +35,11 @@ import {
   TagQueryDto,
   TopicQueryDto,
   UpdateBankQuestionMetaDto,
+  ValidateCodingDto,
 } from '@secure-exam/validation';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CodingValidationService } from './coding-validation.service';
 import { QuestionBankImportService } from './question-bank-import.service';
 import { QuestionBankService } from './question-bank.service';
 
@@ -54,6 +57,7 @@ export class QuestionBankController {
   constructor(
     private readonly bank: QuestionBankService,
     private readonly importer: QuestionBankImportService,
+    private readonly validator: CodingValidationService,
   ) {}
 
   @Get('question-bank/questions')
@@ -111,6 +115,13 @@ export class QuestionBankController {
   ): Promise<BulkImportResult> {
     if (!file) throw new BadRequestException('No file uploaded (expected field name "file")');
     return this.importer.importCsv(file.buffer.toString('utf-8'), user.sub);
+  }
+
+  /** Run the reference solution (or `code`) against the problem's tests, before saving. */
+  @Post('question-bank/validate-coding')
+  @HttpCode(200)
+  validateCoding(@Body() dto: ValidateCodingDto, @CurrentUser() user: JwtPayload): Promise<ValidateCodingResponse> {
+    return this.validator.validate(dto, user.sub);
   }
 
   @Get('question-bank/topics')

@@ -257,3 +257,15 @@ export class BulkAddToExamDto {
   @IsUUID('4', { each: true })
   questionIds!: string[];
 }
+
+/** POST /question-bank/validate-coding */
+export class ValidateCodingDto {
+  @ValidateNested()
+  @Type(() => CodingProblemInputDto)
+  coding!: CodingProblemInputDto;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(CODE_MAX_LENGTH)
+  code?: string;
+}

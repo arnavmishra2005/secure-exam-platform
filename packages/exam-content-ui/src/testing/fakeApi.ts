@@ -468,5 +468,22 @@ export function createFakeApi(state: FakeState = seedState(), opts: { latencyMs?
     async getAttemptDrilldown(_examId, attemptId) {
       return wait(fakeDrilldown(state, attemptId));
     },
+    /** Fake check: every test passes unless the code contains "bug". */
+    async validateCodingProblem({ coding, code }) {
+      const src = code ?? coding.referenceSolution ?? '';
+      if (!src.trim()) throw httpError(400, 'Add a reference solution (or code to test) first');
+      const bad = src.includes('bug');
+      const tests = coding.tests.map((t, i) => ({
+        index: i + 1,
+        isSample: t.isSample,
+        verdict: bad && i === coding.tests.length - 1 ? TestCaseVerdict.WRONG_ANSWER : TestCaseVerdict.PASSED,
+        timeMs: 40,
+        expectedOutput: t.expectedOutput,
+        stdout: bad && i === coding.tests.length - 1 ? 'something else\n' : `${t.expectedOutput}\n`,
+        stderr: '',
+      }));
+      const passed = tests.filter((t) => t.verdict === TestCaseVerdict.PASSED).length;
+      return wait({ ok: passed === tests.length, passed, total: tests.length, slowestShareOfLimit: 0.02, tests });
+    },
   };
 }
