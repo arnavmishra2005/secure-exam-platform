@@ -3,6 +3,8 @@
  * Plain type/interface declarations only — no logic.
  */
 
+import type { PublicCodingProblem } from './coding.types';
+
 export enum QuestionType {
   MCQ_SINGLE = 'MCQ_SINGLE',
   MCQ_MULTI = 'MCQ_MULTI',
@@ -74,6 +76,8 @@ export type PublicQuestion = Omit<
   'explanation' | 'courseId' | 'topicId' | 'difficulty' | 'status' | 'tags'
 > & {
   options: PublicOption[];
+  /** Present for CODING questions only: statement, starter code and SAMPLE tests (never hidden ones). */
+  coding?: PublicCodingProblem;
 };
 
 /** Join row mapping a Question into an Exam, with per-exam ordering. */

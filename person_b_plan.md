@@ -40,7 +40,7 @@ These deviate slightly from the big plans where the current code makes a simpler
 | D2 | **Code size cap = 10,000 chars** for MVP (matches `SaveAnswerDto`). | Enough for an exam answer (~250 lines); avoids changing the answer DTO. Raise later if needed. |
 | D3 | **Run and Submit are synchronous HTTP calls** (`POST` waits for the result, ≤ ~10 s), behind an in-process limiter (`p-limit`, `RUNNER_MAX_CONCURRENCY`, default 4) + one-run-per-student lock + throttler. No queue/polling. | 9-day plan already drops Redis/BullMQ. Polling adds a table + endpoint + client loop for no benefit at pilot scale. `ExecutionProvider` keeps the door open for Judge0 + queue later. |
 | D4 | **Runner = Docker-per-run** (`DockerRunnerProvider`), spawned with `docker run` via `child_process` (no dockerode). Submit runs **all tests in one container** using a small harness that executes the student code once per test input with a per-test timeout and returns raw outputs as JSON. **Expected outputs never enter the container**; comparison happens in the API. | One container start per submit instead of per test. Keeping expected outputs outside means a student program that tampers with the harness can't learn or fake hidden answers. |
-| D5 | **Freeze-on-publish via edit lock, not snapshots (MVP).** A question attached to any exam that is not DRAFT can't be edited or deleted; the bank offers "Duplicate" instead. `ExamQuestionSnapshot` is deferred. | Snapshots only help if the student/grading paths read them, which means changing the attempt/answer adapter too. The lock gives the same guarantee (a live exam can't change) with B-only code. |
+| D5 | **Freeze-on-publish via edit lock, not snapshots (MVP).** A question attached to an ACTIVE or CLOSED exam can't have its content edited (metadata still can); such exams' question lists can't change either. The bank offers "Duplicate" instead. `ExamQuestionSnapshot` is deferred. | Snapshots only help if the student/grading paths read them, which means changing the attempt/answer adapter too. The lock gives the same guarantee (a live exam can't change) with B-only code. |
 | D6 | **Matrix reads `QuestionScore`** (A's table). Until A's real `ScoreRecorder` lands, B's analytics computes MCQ correctness directly from `answers` + `options` (B owns options) behind the same service method. | Keeps "single source for analytics" while B isn't blocked by A. |
 | D7 | Output comparison modes: `EXACT`, `TRIM` (default: trim trailing whitespace per line + trailing newlines), `TOKENS` (whitespace-insensitive). | Covers typical judges; "TRIM" avoids failing students on a stray newline. |
 
@@ -73,11 +73,13 @@ Because there is no contract session, **B defines its own contracts in B-owned f
 **Small edits B makes in A's attempt/answer code** (needed for coding questions to work end to end; list them in the PR):
 1. `QuestionAnswerFormat` gets `'CODE'`. `QuestionLookupAdapter` maps `QuestionType.CODING → 'CODE'` (unknown types → `TEXT`, not `SINGLE_CHOICE`). `saveAnswer` accepts `textResponse` for `CODE`. `computeScore` adds `CODE` marks to `maxScore`, gives no MCQ credit, doesn't flag manual review; B's grader adds the code score.
 2. `getPublicQuestionsForExam` adds an optional `coding` field from B's `CodingService.getPublicProblem()` (statement, starter code, limits, **sample** tests only).
-3. A grading hook after finalization (event `attempt.submitted` if A adds `@nestjs/event-emitter`; otherwise a direct call from the finalize path to B's grader). Decide at merge.
+3. ~~A grading hook after finalization~~ Not needed: B's `CodeGradingService` sweeps finalized attempts every 15 s (no edit to the finalize path).
+
+Items 1–2 are **done** (Day 3) and listed in the Day 3 log below so A can review them at merge.
 
 **What B needs from A (stubbed by B until merge):**
 1. `apps/web` shell, router/nav registries, UI kit. B's UI is built as self-contained feature folders.
-2. `ScoreRecorder.record(attemptId, questionId, score, maxScore, 'AUTO_CODE')`. B codes against its own `CODE_SCORE_SINK` port (stub logs + writes `code_submissions.is_final`); at merge it binds to A's recorder.
+2. `ScoreRecorder.record(attemptId, questionId, score, maxScore, 'AUTO_CODE')`. B codes against its own `CODE_SCORE_SINK` port; today `ResultTableScoreSink` adds the code score to `results.score`. At merge, bind the port to A's recorder (one line in `coding.module.ts`). If A's results start being computed from `QuestionScore`, drop the interim sink so the score isn't counted twice.
 3. `courses` table: B stores `course_id` as a plain uuid with no FK until merge.
 4. `results/tabs.registry.ts` line for `QuestionsTab`; questions renderer registry line for `CodingQuestionView`.
 
@@ -136,7 +138,9 @@ Security note for `docs/execution-security.md`: the API's Docker socket access i
 
 ---
 
-## 8. Frontend (`apps/web/src/features/`, against A's kit)
+## 8. Frontend — `packages/exam-content-ui` (was planned as `apps/web/src/features/`)
+
+> Updated 2026-10-16: A's `apps/web` is more than 9 days away, so B's UI is a self-contained package that `apps/web` mounts later (see the package README). The folder layout below is mirrored under `packages/exam-content-ui/src/`.
 
 ```
 question-bank/
@@ -223,3 +227,57 @@ Still open:
 - **Abuse suite** (`npm run test:runner`): fork bomb, 1 GB allocation, growing memory, endless output, writes outside `/tmp`, uid/env check, killing the harness, forging harness output, background process outliving the run — all contained. 20 simultaneous runs complete in ~4.4 s with ≤ 4 containers at once.
 - **End-to-end (curl, scratch DB):** custom run, samples, MCQ question → 400, oversized code → 400, parallel runs by one student → 429 + 200, other student's attempt → 403.
 - **Still to fix on Day 3:** a CODING question in an exam is currently listed by `GET /attempts/:id/questions` with no options and would be scored like a single-choice MCQ (0 marks) — the `'CODE'` answer-format change in §5.
+
+### Day 3 (2026-10-16) — done
+- **`POST /attempts/:attemptId/code/submit`** `{ questionId, language, code }`: runs **all** test cases (samples + hidden), partial marks by weight (`grading/scoring.ts`, 2-decimal rounding), stores a non-final `code_submissions` row, audit `CODE_SUBMITTED`. Students get `{ passed, total, score, maxScore, tests: [{ index, isSample, verdict, timeMs }] }` — no hidden inputs/outputs. Sandbox failure → 503 and nothing stored. Attempt re-checked after execution: if it ended meanwhile → 409, not counted.
+- **End-of-attempt grading** (`CodeGradingService`, `@Interval` 15 s): for each finalized attempt × CODING question without a final row: last GRADED submit with `created_at <= submittedAt` → final; else the saved draft (`answers.textResponse`) run against all tests → final (`from_draft`); else 0. Final row + score in one transaction; unique partial index `UQ_code_submissions_final` (migration `1760000100007`) makes retries/races safe; sandbox failure defers to the next sweep. Audit `CODE_GRADED`.
+- **Edits in A's attempt/answer code** (review at merge):
+  - `question-lookup.interface.ts`: `QuestionAnswerFormat` + `'CODE'`.
+  - `question-lookup.adapter.ts`: `CODING → 'CODE'`, unknown types → `'TEXT'` (was `SINGLE_CHOICE`); `getPublicQuestionsForExam` adds `coding` (statement, starter code, limits, samples) via B's `CodingContentService`.
+  - `answer.service.ts`: `CODE` accepts `textResponse` (the code draft), rejects options.
+  - `submission.service.ts` `computeScore`: `CODE` adds marks to `maxScore`, gives 0, doesn't set `needsManualReview`.
+  - `answer.module.ts`: imports `CodingContentModule`.
+  - Specs: adapter (new ctor arg, CODE/TEXT mapping, coding field), computeScore (CODE case).
+- **Module split:** `CodingContentModule` (problem content; no attempt/answer imports) is imported by the answer module; `CodingModule` (run/submit/grade) imports the answer module. No cycle.
+- **Shared types:** `PublicQuestion.coding?`, `HiddenTestResult.isSample`, `AuditEventType.CODE_SUBMITTED/CODE_GRADED`, `CodeSubmitDto`.
+- **Tests:** 117 unit tests pass (30 in coding), Docker suite 17/17. End-to-end on a migrations-only DB, API in production mode: alice submit 4/8 counted, bob draft-only 8/8, carol nothing 0; results `maxScore` 19 (11 MCQ + 8), no manual-review flag; code submit after finishing → 409; question list includes samples only.
+
+### Day 4 (2026-10-16) — backend done, UI waits for `apps/web`
+- **Question bank API** (`modules/question-bank/`, admin only). New routes under `/question-bank`, so the legacy `/questions` routes (used by `admin-web` until it is retired) keep their response shapes:
+  - `GET /question-bank/questions` — search (literal, case-insensitive), filters `courseId/topicId/difficulty/type/status/tag`, `excludeExamId` (for the picker), pagination (`limit` ≤ 100). Rows include `tags`, `topicName`, `usedInExams`, `locked`.
+  - `GET /question-bank/questions/:id` — full detail incl. options, coding problem and all tests.
+  - `POST` / `PUT /question-bank/questions[/:id]` — create / replace the whole question; CODING saves the problem + tests in the same transaction (this is the coding authoring API).
+  - `PATCH /question-bank/questions/:id/meta` — course, topic, difficulty, status, tags; allowed when locked.
+  - `POST /question-bank/questions/:id/duplicate` — copy as DRAFT (incl. coding problem + tests).
+  - `DELETE /question-bank/questions/:id` — only if in no exam; with student answers → 409 "archive instead".
+  - `POST /question-bank/import` — header-based CSV (column names, quoted fields, `option1..10` + `correct` numbers, topic by name auto-created, tags `;`/`|`); per-line errors, valid rows in one transaction. CODING rows rejected.
+  - `GET|POST|DELETE /question-bank/topics`, `GET /question-bank/tags?search=` (with counts).
+  - `POST /exams/:examId/questions/bulk` — adds READY questions in order after the last one; skipped ones come back with a reason.
+- **Lock rule** (`question/question-lock.service.ts`): an exam that is ACTIVE or CLOSED can't have questions added/removed/reordered, and its questions' content can't change. Applied to the legacy endpoints too (`PATCH /questions/:id`, option CRUD, add/remove/reorder on an exam), which previously allowed changing a live exam. DRAFT and SCHEDULED stay editable. At merge, check whether A's `publishedAt` should also lock.
+- **Shared:** `question-bank.types.ts`, `question-bank.schema.ts` (DTOs + `BANK_LIMITS`), `option-rules.ts` (MCQ rules used by legacy, bank and import), api-client `question-bank.api.ts` + `coding.api.ts`.
+- **Tests:** 136 unit tests pass (19 new for the bank: content rules, lock refusal, delete rules, bulk-add skips, CSV parser, import rows). End-to-end over HTTP on a migrations-only DB (production mode): 39 checks covering every route, filters, lock on new and legacy routes, duplicate, bulk add, import, topics, tags.
+- **Not done yet:** bank UI (`features/question-bank/`) and coding authoring UI — they need A's `apps/web` shell. Creating `apps/web` on B's branch would collide with A's version of the same files at merge.
+
+### Day 5 (2026-10-16) — done (UI as a package)
+- **`packages/exam-content-ui`** (`@secure-exam/exam-content-ui`), consumed as TS source by Vite apps. React 18 + React Query 5 + Tailwind 3, matching the exam client. All server calls go through an `ExamContentApi` interface (real api-client by default; in-memory fake for tests/playground). Navigation is the host's (callbacks). `src/ui/` holds stand-ins for A's kit — the one file to swap.
+- **Admin:** `QuestionBankPage` (search, filters, paging, lock badge, edit/duplicate/archive/delete, CSV import dialog with template + per-line errors), `QuestionForm` (MCQ / True-False / Coding; client checks mirror the API; locked questions edit metadata only, "Duplicate to edit"), `CodingProblemEditor` (Markdown statement with preview, limits, comparison mode, starter code + reference solution in Monaco, `TestCaseTable` with sample flag, weight, reorder), `PickForExamDialog` (READY questions not already in the exam, pick order kept, skip reasons shown).
+- **Student:** `CodingQuestionView` — statement (Markdown; links/images inert, no raw HTML), examples, Monaco editor, custom input, Run / Run samples / Submit, results (per-sample diff, score with sample/hidden labels), draft autosave via the host's `saveAnswer` (debounced, flushed on unmount), offline/attempt-ended/too-long states, friendly 409/429/503 messages, exam-mode paste blocking (`onBlockedPaste` for audit).
+- **Playground:** `npm run content-ui:dev` → http://localhost:3005. Fake mode (in-memory) or Real API mode through a Vite `/api` proxy to `:3000` with a login bar.
+- **Tests:** 25 Vitest/Testing Library tests (draft hook timing, run/submit flows and errors, offline, length limit, statement sanitizing, paste blocking, form validation + payloads for MCQ and coding, locked-edit path, bank list/filter/archive/delete rules, picker). Production build verified (Monaco bundled locally, worker included). Screens checked in headless Chrome.
+- **Shared-file touches:** root `package.json` (3 `content-ui:*` scripts) and `package-lock.json` (new package deps: `monaco-editor@0.52.2`, `@monaco-editor/react@4.7.0`, `react-markdown@9.0.1`).
+
+### Day 6 (2026-10-17) — done
+- **API** (`modules/question-analytics/`, admin only, read-only):
+  - `GET /exams/:examId/question-analytics` — questions (with options + key), one row per attempt (name, email, status, score/max, answered count), one cell per attempt × question (`CORRECT / PARTIAL / WRONG / NOT_ANSWERED / PENDING`, score, marked-for-review), and per-question stats (counts per state, accuracy, average score, option pick counts, coding test pass rate).
+  - `GET /exams/:examId/question-analytics/attempts/:attemptId` — drill-down: selected vs correct options; for coding the code that counted (last submit / graded draft / ungraded draft), every test with input, expected, output and verdict, plus submit and run counts.
+  - Rules in a pure `matrix.ts` (MCQ = same exact-set rule as the attempt scorer; coding = final code submission; ungraded coding work = PENDING with no score). Reads of attempts/answers/users are isolated in `exam-attempt-data.adapter.ts`. Swap MCQ scoring to A's `QuestionScore` at merge.
+- **UI:** `QuestionsTab` in `exam-content-ui` (for A's results page tab registry): stats table with stacked result bars and per-option breakdown, the students × questions matrix (symbols + color + labels, review dot, sticky header/first column, student search, legend), CSV export, live refresh every 30 s while the exam is ACTIVE, and `AttemptDrilldownDialog` (options, read-only code in Monaco, test results).
+- **Tests:** API 141 pass (5 new matrix tests); UI 32 pass (7 new). End-to-end on a scratch DB with real attempts (MCQ right/wrong, partial code submit, draft-only, nothing, marked for review): 22 checks incl. live PENDING states, grading results, stats, drill-down, 403/404 — one real bug found and fixed (empty "no code" row showed as code). Grid totals match the `results` table exactly.
+- **Not included:** students who are registered but never started (registration is A's; rows come from attempts only).
+
+### Day 7 (2026-10-17) — B-only follow-ups while waiting for A's app
+- **Test reference solution:** `POST /question-bank/validate-coding` runs the reference solution (or given code) against the problem *as edited*, before saving; returns per-test verdicts, expected vs printed output, and the slowest test's share of the time limit. Shares the sandbox and run limiter (keyed by admin id). UI: `ValidateSolution` inside `CodingProblemEditor` (warns when the slowest test uses > 50% of the limit).
+- **Load test:** `apps/api/scripts/load-test-runner.ts` (local/scratch only — creates students, signs tokens with the local JWT secret). 100 simultaneous Run samples / Submit: 100 % success, all verdicts correct, API stays responsive (p50 45 ms), but throughput is ~1.5 runs/s on Docker Desktop → last of 100 submits waits ~75 s. Bottleneck is Docker's container start rate, not concurrency (4 → 8 barely helps).
+- **`docs/execution-security.md`:** sandbox controls and why, abuse results, deployment requirements (dedicated runner host, pinned digest, userns-remap/gVisor, single API instance), capacity numbers and the options ladder (measure on the Linux runner host → size labs → warm pool → async submit + polling → Judge0).
+- **Decision needed from the team:** expected simultaneous submitters per exam. ≤ ~40: current design is fine. More: measure on the real runner host first; then async submit or Judge0.
+- Provider passes `SSH_AUTH_SOCK` so `DOCKER_HOST=ssh://runner-host` works.

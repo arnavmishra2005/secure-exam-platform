@@ -11,6 +11,7 @@ import { AttemptExpirySweepService } from './attempt-expiry-sweep.service';
 import { QUESTION_LOOKUP_SERVICE } from './question-lookup/question-lookup.interface';
 import { QuestionLookupAdapter } from './question-lookup/question-lookup.adapter';
 import { AttemptModule } from '../attempt/attempt.module';
+import { CodingContentModule } from '../coding/coding-content.module';
 import { QuestionModule } from '../question/question.module';
 
 // Note: AuditModule is @Global() in Person A's AppModule, so AuditService
@@ -21,6 +22,7 @@ import { QuestionModule } from '../question/question.module';
     TypeOrmModule.forFeature([AnswerEntity, SubmissionEntity, ResultEntity]),
     AttemptModule,
     QuestionModule,
+    CodingContentModule, // Person B: coding problems in the student question list
   ],
   controllers: [AnswerController, AttemptQuestionController, SubmissionController, SubmissionAdminController],
   providers: [

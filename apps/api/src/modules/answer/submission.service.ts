@@ -456,6 +456,9 @@ function computeScore(
       const isCorrect =
         correct.size > 0 && correct.size === selected.size && [...correct].every((id) => selected.has(id));
       if (isCorrect) score += q.marks;
+    } else if (q.answerFormat === 'CODE') {
+      // Person B: graded after finalization by the coding module, which
+      // adds the code score to this Result. Counted in maxScore only.
     } else {
       // TEXT / subjective — cannot be auto-graded.
       needsManualReview = true;

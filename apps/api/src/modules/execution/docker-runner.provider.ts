@@ -186,6 +186,8 @@ const DOCKER_CLI_ENV_KEYS = [
   'DOCKER_CONFIG',
   'DOCKER_CERT_PATH',
   'DOCKER_TLS_VERIFY',
+  // DOCKER_HOST=ssh://… needs the SSH agent.
+  'SSH_AUTH_SOCK',
 ];
 
 function dockerCliEnv(): Record<string, string> {

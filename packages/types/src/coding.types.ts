@@ -153,6 +153,8 @@ export interface CodeSubmitRequest {
 /** Hidden-test result shown to a student: verdict only, no input or expected output. */
 export interface HiddenTestResult {
   index: number;
+  /** Lets the UI label tests "Sample 1" vs "Test 3". */
+  isSample: boolean;
   verdict: TestCaseVerdict;
   timeMs: number;
 }
