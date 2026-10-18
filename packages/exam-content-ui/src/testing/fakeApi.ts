@@ -5,6 +5,7 @@
  */
 import {
   AttemptStatus,
+  CodingGradingMode,
   CodeLanguage,
   QuestionCellState,
   CodeRunKind,
@@ -19,6 +20,8 @@ import {
   type BankQuestionDetail,
   type QuestionAnalyticsMatrix,
   type BankQuestionQuery,
+  type CodingClientConfig,
+  type LocalRunner,
   type PublicQuestion,
   type SaveBankQuestionRequest,
   type Topic,
@@ -65,6 +68,7 @@ function detailFrom(req: SaveBankQuestionRequest, qid: string, topics: Topic[], 
           tests: req.coding.tests.map((t, i) => ({ id: id('test'), ...t, weight: t.weight ?? 1, order: i })),
         }
       : null,
+    liveExams: prev?.liveExams ?? [],
   };
 }
 
@@ -100,7 +104,7 @@ export function seedState(): FakeState {
           { text: 'loop', isCorrect: false, order: 2 },
         ],
       },
-      { usedInExams: 1, locked: true },
+      { usedInExams: 1, locked: true, liveExams: [{ id: 'exam-demo', title: 'Python basics', status: 'CLOSED' }] },
     ),
     mk('q-tf', {
       text: 'Lists in Python are mutable.',
@@ -166,6 +170,7 @@ export function publicCodingQuestion(state: FakeState): PublicQuestion {
       allowedLanguages: q.coding!.allowedLanguages,
       timeLimitMs: q.coding!.timeLimitMs,
       memoryLimitMb: q.coding!.memoryLimitMb,
+      comparisonMode: q.coding!.comparisonMode,
       samples: q.coding!.tests
         .filter((t) => t.isSample)
         .map((t, i) => ({ index: i + 1, input: t.input, expectedOutput: t.expectedOutput })),
@@ -288,7 +293,33 @@ export function fakeDrilldown(state: FakeState, attemptId: string): AttemptDrill
   };
 }
 
-export function createFakeApi(state: FakeState = seedState(), opts: { latencyMs?: number } = {}): ExamContentApi {
+/**
+ * A pretend "Run on this PC" for tests and the playground. It doesn't execute
+ * Python: code containing `sum(` prints the sum of the input's integers,
+ * anything else prints 0; code containing `crash-runner` makes the runner fail.
+ */
+export function createFakeLocalRunner(): LocalRunner {
+  return {
+    async run(job) {
+      if (job.code.includes('crash-runner')) throw new Error('python3 not found');
+      return job.inputs.map((input) => ({
+        status: ExecutionStatus.OK,
+        stdout: job.code.includes('sum(')
+          ? `${input.split(/\s+/).filter(Boolean).map(Number).reduce((a, b) => a + b, 0)}\n`
+          : '0\n',
+        stderr: '',
+        exitCode: 0,
+        timeMs: 3,
+      }));
+    },
+  };
+}
+
+export function createFakeApi(
+  state: FakeState = seedState(),
+  opts: { latencyMs?: number; config?: Partial<CodingClientConfig> } = {},
+): ExamContentApi {
+  const config: CodingClientConfig = { gradingMode: CodingGradingMode.DEFERRED, serverRunEnabled: true, ...opts.config };
   const wait = <T>(v: T): Promise<T> =>
     new Promise((r) => (opts.latencyMs ? setTimeout(() => r(v), opts.latencyMs) : r(v)));
   const find = (qid: string) => {
@@ -329,7 +360,10 @@ export function createFakeApi(state: FakeState = seedState(), opts: { latencyMs?
     },
     async replaceBankQuestion(qid, data) {
       const prev = find(qid);
-      if (prev.locked) throw httpError(409, 'This question is part of an exam that has started, so its content is locked.');
+      if (prev.locked && data.type !== prev.type) throw httpError(409, "Students have answered this question, so its type can't change.");
+      if (prev.locked && (data.options ?? []).length !== prev.options.length) {
+        throw httpError(409, "Students have answered this question, so options can't be added or removed.");
+      }
       const next = detailFrom(data, qid, state.topics, prev);
       state.questions = state.questions.map((q) => (q.id === qid ? next : q));
       return wait(structuredClone(next));
@@ -441,6 +475,10 @@ export function createFakeApi(state: FakeState = seedState(), opts: { latencyMs?
       });
     },
     async submitCode(_attemptId, data) {
+      const savedAt = new Date().toISOString();
+      if (config.gradingMode === CodingGradingMode.DEFERRED) {
+        return wait({ submissionId: id('sub'), status: CodeSubmissionStatus.PENDING, savedAt });
+      }
       const q = find(data.questionId);
       const tests = q.coding!.tests;
       const pass = data.code.includes('sum(');
@@ -449,17 +487,27 @@ export function createFakeApi(state: FakeState = seedState(), opts: { latencyMs?
       return wait({
         submissionId: id('sub'),
         status: CodeSubmissionStatus.GRADED,
-        passed: pass ? tests.length : 1,
-        total: tests.length,
-        score: Math.round(((q.marks * passedWeight) / total) * 100) / 100,
-        maxScore: q.marks,
-        tests: tests.map((t, i) => ({
-          index: i + 1,
-          isSample: t.isSample,
-          verdict: pass || i === 0 ? TestCaseVerdict.PASSED : TestCaseVerdict.WRONG_ANSWER,
-          timeMs: 14,
-        })),
+        savedAt,
+        result: {
+          passed: pass ? tests.length : 1,
+          total: tests.length,
+          score: Math.round(((q.marks * passedWeight) / total) * 100) / 100,
+          maxScore: q.marks,
+          tests: tests.map((t, i) => ({
+            index: i + 1,
+            isSample: t.isSample,
+            verdict: pass || i === 0 ? TestCaseVerdict.PASSED : TestCaseVerdict.WRONG_ANSWER,
+            timeMs: 14,
+          })),
+        },
       });
+    },
+    async getCodingConfig() {
+      return wait({ ...config });
+    },
+    async recalculateResults(examId) {
+      if (examId !== 'exam-demo') throw httpError(404, `Exam ${examId} not found`);
+      return wait({ attempts: 2, recalculatedNow: 1, queuedToRerun: 1 });
     },
     async getQuestionAnalytics(examId) {
       if (examId !== 'exam-demo') throw httpError(404, `Exam ${examId} not found`);

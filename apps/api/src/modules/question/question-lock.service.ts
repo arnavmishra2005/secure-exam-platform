@@ -1,14 +1,14 @@
 /**
  * Owner: Person B.
  *
- * Freezes exam content once attempts can exist. While an exam is ACTIVE or
- * CLOSED:
- *  - its question list can't change (add / remove / reorder), and
- *  - the content of its questions (text, type, marks, options, coding
- *    problem, tests) can't change — the bank offers "Duplicate" instead.
- * Question metadata (course, topic, difficulty, status, tags) stays editable.
+ * Protects exams once attempts can exist (ACTIVE or CLOSED):
+ *  - their question list can't change (add / remove / reorder);
+ *  - their questions stay editable through the question bank (decision log:
+ *    professors may fix tests, marks and answer keys after an exam, then
+ *    recalculate), except the type and the number of options, which student
+ *    answers depend on. The legacy /questions endpoints keep refusing edits.
  *
- * DRAFT and SCHEDULED exams have no attempts yet, so they stay editable.
+ * DRAFT and SCHEDULED exams have no attempts yet, so they stay fully editable.
  */
 
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
@@ -54,6 +54,18 @@ export class QuestionLockService {
       result.set(r.questionId, { usedInExams: Number(r.used), locked: r.locked === true });
     }
     return result;
+  }
+
+  /** ACTIVE / CLOSED exams that use this question. */
+  async liveExams(questionId: string): Promise<{ id: string; title: string; status: string }[]> {
+    const exams = await this.examRepo
+      .createQueryBuilder('e')
+      .innerJoin(ExamQuestionEntity, 'eq', 'eq.exam_id = e.id')
+      .where('eq.question_id = :questionId', { questionId })
+      .andWhere('e.status IN (:...live)', { live: LIVE_EXAM_STATUSES })
+      .orderBy('e.start_time', 'DESC')
+      .getMany();
+    return exams.map((e) => ({ id: e.id, title: e.title, status: e.status }));
   }
 
   async isLocked(questionId: string): Promise<boolean> {

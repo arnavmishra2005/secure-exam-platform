@@ -7,9 +7,18 @@
  *  - `onSaveDraft(code)` must persist through the exam's saveAnswer()
  *    ({ textResponse: code }) so drafts survive offline and are graded at the
  *    end if the student never presses Submit.
+ *  - `localRunner` runs Run / Run samples on this PC (Person C's Electron app:
+ *    `desktopLocalRunner()`). Without it, Run uses the server if allowed.
  */
 import { useCallback, useState } from 'react';
-import { CODE_MAX_LENGTH, CodeLanguage, CodeRunKind, type PublicQuestion } from '@secure-exam/types';
+import {
+  CODE_MAX_LENGTH,
+  CodeLanguage,
+  CodeRunKind,
+  CodeSubmissionStatus,
+  type LocalRunner,
+  type PublicQuestion,
+} from '@secure-exam/types';
 import { Alert, Badge, Button, Textarea, cx } from '../ui';
 import { CodeEditor } from './editor/CodeEditor';
 import { friendlyRunError, useCodeRun, type LastAction } from './hooks/useCodeRun';
@@ -30,6 +39,8 @@ export interface CodingQuestionViewProps {
   online?: boolean;
   /** True once the attempt has ended. */
   readOnly?: boolean;
+  /** Runs code on this PC (Person C's Electron app). */
+  localRunner?: LocalRunner;
 }
 
 const DRAFT_TEXT: Record<DraftStatus, string> = {
@@ -50,6 +61,7 @@ export function CodingQuestionView({
   onBlockedPaste,
   online = true,
   readOnly = false,
+  localRunner,
 }: CodingQuestionViewProps) {
   const problem = question.coding;
   const starter = problem?.starterCode?.[CodeLanguage.PYTHON] ?? '';
@@ -60,7 +72,7 @@ export function CodingQuestionView({
   const [pasteBlocked, setPasteBlocked] = useState(false);
 
   const { status: draftStatus } = useDebouncedDraft(code, onSaveDraft, draftDelayMs);
-  const { run, submit, busy } = useCodeRun(attemptId, question.id);
+  const { run, submit, busy, canRun, configLoading } = useCodeRun(attemptId, question.id, problem, localRunner);
 
   const handleBlockedPaste = useCallback(() => {
     setPasteBlocked(true);
@@ -75,18 +87,31 @@ export function CodingQuestionView({
   const empty = code.trim().length === 0;
   const blockedReason = readOnly
     ? 'The attempt has ended.'
-    : !online
-      ? 'You are offline. Your draft is saved on this device; Run and Submit need the server.'
-      : tooLong
-        ? `Code is longer than ${CODE_MAX_LENGTH.toLocaleString()} characters.`
-        : null;
-  const canAct = !busy && !blockedReason && !empty;
+    : tooLong
+      ? `Code is longer than ${CODE_MAX_LENGTH.toLocaleString()} characters.`
+      : null;
+  // Local runs work offline; the server is needed for Submit and for server runs.
+  const runReason =
+    blockedReason ??
+    (configLoading && !localRunner
+      ? 'Checking where code can run…'
+      : !canRun
+        ? "Running code isn't available on this computer. Your answer is still saved."
+        : !localRunner && !online
+          ? 'You are offline. Your draft is saved on this device; running code needs the server.'
+          : null);
+  const submitReason = blockedReason ?? (!online ? 'You are offline. Your draft is saved on this device; Submit needs the server.' : null);
+  const canRun2 = !busy && !runReason && !empty;
+  const canSubmit = !busy && !submitReason && !empty;
 
   const doRun = (kind: CodeRunKind) => {
     setError(null);
     run.mutate(
       { code, kind, stdin: kind === CodeRunKind.CUSTOM ? stdin : undefined },
-      { onSuccess: (result) => setLast({ kind: 'run', result }), onError: (e) => setError(friendlyRunError(e)) },
+      {
+        onSuccess: ({ result, where }) => setLast({ kind: 'run', result, where }),
+        onError: (e) => setError(friendlyRunError(e)),
+      },
     );
   };
   const doSubmit = () => {
@@ -96,6 +121,12 @@ export function CodingQuestionView({
       onError: (e) => setError(friendlyRunError(e)),
     });
   };
+  const submittedAt =
+    last?.kind === 'submit'
+      ? last.result.status === CodeSubmissionStatus.PENDING
+        ? new Date(last.result.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : `· ${last.result.result?.score} / ${last.result.result?.maxScore}`
+      : null;
   const resetToStarter = () => {
     if (code === starter || window.confirm('Replace your code with the starter code?')) setCode(starter);
   };
@@ -154,22 +185,22 @@ export function CodingQuestionView({
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-2">
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => doRun(CodeRunKind.CUSTOM)} disabled={!canAct} busy={run.isPending && run.variables?.kind === CodeRunKind.CUSTOM}>
+                <Button onClick={() => doRun(CodeRunKind.CUSTOM)} disabled={!canRun2} busy={run.isPending && run.variables?.kind === CodeRunKind.CUSTOM}>
                   Run
                 </Button>
                 <Button
                   onClick={() => doRun(CodeRunKind.SAMPLES)}
-                  disabled={!canAct || problem.samples.length === 0}
+                  disabled={!canRun2 || problem.samples.length === 0}
                   busy={run.isPending && run.variables?.kind === CodeRunKind.SAMPLES}
                 >
                   Run samples
                 </Button>
-                <Button variant="primary" onClick={doSubmit} disabled={!canAct} busy={submit.isPending}>
+                <Button variant="primary" onClick={doSubmit} disabled={!canSubmit} busy={submit.isPending}>
                   Submit
                 </Button>
-                {last?.kind === 'submit' && <Badge tone="blue">Last submission: {last.result.score} / {last.result.maxScore}</Badge>}
+                {submittedAt && <Badge tone="blue">Submitted {submittedAt}</Badge>}
               </div>
-              {blockedReason && <p className="text-xs text-slate-500">{blockedReason}</p>}
+              {(runReason ?? submitReason) && <p className="text-xs text-slate-500">{runReason ?? submitReason}</p>}
               {error && <Alert>{error}</Alert>}
               <div className="max-h-72 overflow-y-auto">
                 <RunResults last={last} />

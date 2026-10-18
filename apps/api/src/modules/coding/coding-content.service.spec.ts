@@ -39,6 +39,7 @@ describe('CodingContentService.getPublicProblems', () => {
       allowedLanguages: [CodeLanguage.PYTHON],
       timeLimitMs: 2000,
       memoryLimitMb: 256,
+      comparisonMode: OutputComparisonMode.TRIM,
       samples: [{ index: 1, input: '1 2', expectedOutput: '3' }],
     });
     expect(map.has('q2')).toBe(false);

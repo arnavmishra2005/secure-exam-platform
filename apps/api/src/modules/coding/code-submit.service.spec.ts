@@ -2,6 +2,7 @@ import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CodeLanguage,
+  CodeSubmissionStatus,
   ExecutionOutcome,
   ExecutionStatus,
   OutputComparisonMode,
@@ -25,7 +26,7 @@ const ok = (stdout: string): ExecutionOutcome => ({
   timeMs: 10,
 });
 
-function setup() {
+function setup(env: Record<string, unknown> = {}) {
   const attempts = {
     assertWritable: jest.fn().mockResolvedValue({ id: ATTEMPT_ID, examId: 'exam-1', studentId: 'student-1' }),
   };
@@ -48,7 +49,7 @@ function setup() {
   };
   const submissionRepo = {
     create: jest.fn((x) => x),
-    save: jest.fn(async (x) => ({ ...x, id: 'sub-1' })),
+    save: jest.fn(async (x) => ({ ...x, id: 'sub-1', createdAt: new Date('2026-10-18T10:42:00Z') })),
   };
   const auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
   const service = new CodeSubmitService(
@@ -58,60 +59,88 @@ function setup() {
     resolver as never,
     submissionRepo as never,
     auditService as never,
+    new ConfigService(env),
   );
-  return { service, attempts, executor, submissionRepo };
+  return { service, attempts, executor, submissionRepo, resolver };
 }
 
 const dto = { questionId: QUESTION_ID, language: CodeLanguage.PYTHON, code: 'print(1)' };
 
-describe('CodeSubmitService.submit', () => {
-  it('grades against all tests with partial marks and stores a non-final submission', async () => {
+describe('CodeSubmitService.submit — DEFERRED grading (default)', () => {
+  it('only saves the code as a pending submission; nothing runs and no score is returned', async () => {
     const { service, executor, submissionRepo } = setup();
+
+    const res = await service.submit(ATTEMPT_ID, dto, student);
+
+    expect(executor.runBatch).not.toHaveBeenCalled();
+    expect(submissionRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: CodeSubmissionStatus.PENDING,
+        code: 'print(1)',
+        isFinal: false,
+        fromDraft: false,
+        maxScore: 10,
+        studentId: 'student-1',
+      }),
+    );
+    expect(res).toEqual({
+      submissionId: 'sub-1',
+      status: CodeSubmissionStatus.PENDING,
+      savedAt: '2026-10-18T10:42:00.000Z',
+    });
+  });
+
+  it('still checks the attempt first', async () => {
+    const { service, attempts, submissionRepo } = setup();
+    attempts.assertWritable.mockRejectedValue(new ConflictException('This attempt has already been submitted'));
+    await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toBeInstanceOf(ConflictException);
+    expect(submissionRepo.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('CodeSubmitService.submit — LIVE grading (CODING_GRADING_MODE=LIVE)', () => {
+  const live = { CODING_GRADING_MODE: 'LIVE' };
+
+  it('grades against all tests with partial marks and returns verdicts only', async () => {
+    const { service, executor, submissionRepo } = setup(live);
     executor.runBatch.mockResolvedValue([ok('3\n'), ok('wrong\n'), ok('10\n')]);
 
     const res = await service.submit(ATTEMPT_ID, dto, student);
 
-    expect(executor.runBatch).toHaveBeenCalledWith(
-      expect.objectContaining({ inputs: ['1 2', 'SECRET-IN', '5 5'] }),
-    );
-    // weights 1 + 2 passed out of 4 → 7.5 / 10
-    expect(res).toMatchObject({ submissionId: 'sub-1', passed: 2, total: 3, score: 7.5, maxScore: 10 });
-    expect(res.tests).toEqual([
+    expect(executor.runBatch).toHaveBeenCalledWith(expect.objectContaining({ inputs: ['1 2', 'SECRET-IN', '5 5'] }));
+    expect(res.status).toBe(CodeSubmissionStatus.GRADED);
+    expect(res.result).toMatchObject({ passed: 2, total: 3, score: 7.5, maxScore: 10 });
+    expect(res.result!.tests).toEqual([
       { index: 1, isSample: true, verdict: TestCaseVerdict.PASSED, timeMs: 10 },
       { index: 2, isSample: false, verdict: TestCaseVerdict.WRONG_ANSWER, timeMs: 10 },
       { index: 3, isSample: false, verdict: TestCaseVerdict.PASSED, timeMs: 10 },
     ]);
     expect(JSON.stringify(res)).not.toMatch(/SECRET/);
     expect(submissionRepo.save).toHaveBeenCalledWith(
-      expect.objectContaining({ isFinal: false, fromDraft: false, score: 7.5, studentId: 'student-1' }),
+      expect.objectContaining({ status: CodeSubmissionStatus.GRADED, isFinal: false, score: 7.5 }),
     );
   });
 
   it('does not store anything when the sandbox fails', async () => {
-    const { service, executor, submissionRepo } = setup();
-    executor.runBatch.mockResolvedValue([
-      ok('3\n'),
-      { ...ok(''), status: ExecutionStatus.INTERNAL_ERROR },
-      ok('10\n'),
-    ]);
+    const { service, executor, submissionRepo } = setup(live);
+    executor.runBatch.mockResolvedValue([ok('3\n'), { ...ok(''), status: ExecutionStatus.INTERNAL_ERROR }, ok('10\n')]);
     await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(submissionRepo.save).not.toHaveBeenCalled();
   });
 
   it('does not count a submit that finishes after the attempt ended', async () => {
-    const { service, attempts, executor, submissionRepo } = setup();
+    const { service, attempts, executor, submissionRepo } = setup(live);
     executor.runBatch.mockResolvedValue([ok('3'), ok('x'), ok('10')]);
     attempts.assertWritable
       .mockResolvedValueOnce({ id: ATTEMPT_ID, examId: 'exam-1', studentId: 'student-1' })
       .mockRejectedValueOnce(new ConflictException('This attempt has already been submitted'));
-
     await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toThrow('was not counted');
     expect(submissionRepo.save).not.toHaveBeenCalled();
   });
 
   it('refuses a question with no test cases', async () => {
-    const { service, executor } = setup();
-    (service as unknown as { resolver: { allTests: jest.Mock } }).resolver.allTests.mockResolvedValue([]);
+    const { service, executor, resolver } = setup(live);
+    resolver.allTests.mockResolvedValue([]);
     await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toBeInstanceOf(ConflictException);
     expect(executor.runBatch).not.toHaveBeenCalled();
   });

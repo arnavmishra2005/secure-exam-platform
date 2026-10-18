@@ -13,6 +13,7 @@ const CodeEditor = lazy(() => import('../coding/editor/CodeEditor').then((m) => 
 const CODE_SOURCE = {
   FINAL_SUBMIT: 'Last submission before the end (counted)',
   FINAL_DRAFT: 'Saved draft, graded at the end (never submitted)',
+  SUBMITTED: 'Submitted (not graded yet)',
   DRAFT: 'Saved draft (not graded yet)',
 } as const;
 
@@ -59,7 +60,8 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
         (q.code ? (
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
-              {CODE_SOURCE[q.code.source]} · {q.code.submitCount} submit{q.code.submitCount === 1 ? '' : 's'},{' '}
+              {CODE_SOURCE[q.code.source]}
+              {q.code.status === 'PENDING' && q.code.source.startsWith('FINAL') && ' · being graded again'} · {q.code.submitCount} submit{q.code.submitCount === 1 ? '' : 's'},{' '}
               {q.code.runCount} run{q.code.runCount === 1 ? '' : 's'}
               {q.code.total > 0 && ` · ${q.code.passed}/${q.code.total} tests passed`}
             </p>

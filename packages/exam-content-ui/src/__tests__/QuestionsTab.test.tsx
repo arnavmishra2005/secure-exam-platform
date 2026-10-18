@@ -47,7 +47,7 @@ describe('QuestionsTab', () => {
     expect(spy).toHaveBeenCalledWith('exam-demo', 'att-1');
     expect(await within(dialog).findByText(/Last submission before the end/)).toBeTruthy();
     expect(within(dialog).getByText(/2 submits, 5 runs · 2\/3 tests passed/)).toBeTruthy();
-    expect((within(dialog).getByLabelText('Q3 submitted code') as HTMLTextAreaElement).value).toContain('print(sum(');
+    expect(((await within(dialog).findByLabelText('Q3 submitted code')) as HTMLTextAreaElement).value).toContain('print(sum(');
     expect(within(dialog).getAllByText('Correct answer').length).toBeGreaterThan(0);
     expect(within(dialog).getByText('Wrong answer')).toBeTruthy(); // hidden test 3 verdict
   });
@@ -72,6 +72,32 @@ describe('QuestionsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('3 attempts · 3 questions')).toBeTruthy();
+  });
+});
+
+describe('QuestionsTab recalculation', () => {
+  it('asks for confirmation, recalculates, and reports what happened', async () => {
+    const api = createFakeApi();
+    const spy = vi.spyOn(api, 'recalculateResults');
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    renderWithApi(<QuestionsTab examId="exam-demo" />, api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Recalculate results' }));
+    expect(spy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recalculate results' }));
+    expect(await screen.findByText(/Recalculated 1 of 2 results; 1 coding answers are being graded again/)).toBeTruthy();
+    expect(spy).toHaveBeenCalledWith('exam-demo');
+    expect(confirm.mock.calls[0][0]).toMatch(/replaces any score you adjusted by hand/);
+    confirm.mockRestore();
+  });
+
+  it('shows that grading is still in progress for finished attempts', async () => {
+    const api = createFakeApi();
+    const m = fakeAnalytics(seedState());
+    m.students[2].status = 'SUBMITTED' as never; // Carol finished; her coding answer is still PENDING
+    vi.spyOn(api, 'getQuestionAnalytics').mockResolvedValue(m);
+    renderWithApi(<QuestionsTab examId="exam-demo" />, api);
+    expect(await screen.findByText(/Grading in progress: 1 coding answer from finished attempts/)).toBeTruthy();
   });
 });
 

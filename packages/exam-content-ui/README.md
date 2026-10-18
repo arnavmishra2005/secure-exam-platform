@@ -7,7 +7,8 @@ Person B's UI, built as a package so it doesn't depend on any one app:
 | `QuestionBankPage`, `QuestionForm`, `ImportDialog` | Admin | `features/question-bank/` routes |
 | `PickForExamDialog` | Admin, from the exam editor (Person A) | exam detail page, "Add from bank" button |
 | `CodingProblemEditor` | Admin (inside `QuestionForm`) | — |
-| `CodingQuestionView` | Student, inside the exam page | exam page's question renderer registry: `CODING → CodingQuestionView` |
+| `CodingQuestionView`, `desktopLocalRunner` | Student, inside the exam page | exam page's question renderer registry: `CODING → CodingQuestionView` |
+| `QuestionsTab` | Admin, results page | results tab registry (Person A) |
 
 ```bash
 npm run content-ui:dev        # playground on http://localhost:3005 (Fake API, or Real API via /api → :3000)
@@ -58,15 +59,22 @@ function BankEdit() {
 ### In the exam page
 
 ```tsx
+import { CodingQuestionView, desktopLocalRunner } from '@secure-exam/exam-content-ui';
+
 <CodingQuestionView
   attemptId={attemptId}
   question={question}                 // PublicQuestion from GET /attempts/:id/questions (has .coding)
   savedCode={answer?.textResponse}    // saved draft
   onSaveDraft={(code) => saveAnswer(question.id, { textResponse: code })}  // the exam's offline-safe save
+  localRunner={desktopLocalRunner()}  // Run / Run samples on this PC (Person C's window.desktop.runCode)
   online={isOnline}                   // from useNetworkStatus
   hardened                            // block external paste + context menu (default true)
   onBlockedPaste={() => logSecurityEvent('CLIPBOARD_BLOCKED')}
 />
 ```
 
-Drafts go through the exam's own `saveAnswer()`, so they sync offline like any answer, and the server grades the latest draft at the end if the student never pressed Submit.
+- **Run / Run samples** use `localRunner` (contract: `docs/local-code-runner.md`). Without one — or if it fails — they use the server only when `GET /coding/config` says `serverRunEnabled` (development by default).
+- **Submit** saves the code as the final answer; the server grades it on all tests after the attempt ends (`CODING_GRADING_MODE=DEFERRED`). In `LIVE` mode the score appears immediately.
+- Drafts go through the exam's own `saveAnswer()`, so they sync offline like any answer, and the server grades the latest draft if the student never pressed Submit.
+
+See the decision log in `person_b_plan.md` (§13) for why, and how to switch modes.

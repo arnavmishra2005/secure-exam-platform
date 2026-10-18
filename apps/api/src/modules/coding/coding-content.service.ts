@@ -46,6 +46,7 @@ export class CodingContentService {
         allowedLanguages: [...p.allowedLanguages],
         timeLimitMs: p.timeLimitMs,
         memoryLimitMb: p.memoryLimitMb,
+        comparisonMode: p.comparisonMode,
         samples: samples
           .filter((t) => t.questionId === p.questionId)
           .map((t, i) => ({ index: i + 1, input: t.input, expectedOutput: t.expectedOutput })),

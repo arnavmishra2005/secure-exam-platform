@@ -50,10 +50,14 @@ export enum CodeRunKind {
 }
 
 export enum CodeSubmissionStatus {
+  /** Saved, not run yet: graded on the server after the attempt ends (or queued for regrading). */
+  PENDING = 'PENDING',
   /** All test cases were executed (some may have failed). */
   GRADED = 'GRADED',
   /** The sandbox failed; the submission didn't count. */
   ERROR = 'ERROR',
+  /** Saved but replaced by a later Submit before the attempt ended; never graded. */
+  SUPERSEDED = 'SUPERSEDED',
 }
 
 // ---- Authoring (admin only) ----
@@ -101,6 +105,8 @@ export interface PublicCodingProblem {
   allowedLanguages: CodeLanguage[];
   timeLimitMs: number;
   memoryLimitMb: number;
+  /** Lets the exam app compare sample outputs locally with the same rule the server grades with. */
+  comparisonMode: OutputComparisonMode;
   samples: PublicCodingTestCase[];
 }
 
@@ -159,14 +165,22 @@ export interface HiddenTestResult {
   timeMs: number;
 }
 
+/**
+ * DEFERRED grading (default): status PENDING, no `result` — the code is
+ * saved as final and graded after the attempt ends.
+ * LIVE grading: status GRADED with `result`.
+ */
 export interface CodeSubmitResponse {
   submissionId: string;
   status: CodeSubmissionStatus;
-  passed: number;
-  total: number;
-  score: number;
-  maxScore: number;
-  tests: HiddenTestResult[];
+  savedAt: string;
+  result?: {
+    passed: number;
+    total: number;
+    score: number;
+    maxScore: number;
+    tests: HiddenTestResult[];
+  };
 }
 
 /** Full per-test detail stored on a submission; admin-only. */
@@ -185,3 +199,43 @@ export interface StoredTestResult {
 export const CODE_MAX_LENGTH = 10_000;
 /** Max characters of custom stdin per run. */
 export const CODE_STDIN_MAX_LENGTH = 65_536;
+
+// ---- Execution modes (see "Decision log" in person_b_plan.md) ----
+
+/** When Submit is graded. Server setting CODING_GRADING_MODE. */
+export enum CodingGradingMode {
+  /** Submit only saves; all tests run on the server after the attempt ends. */
+  DEFERRED = 'DEFERRED',
+  /** Submit runs all tests immediately and returns the score. */
+  LIVE = 'LIVE',
+}
+
+/** GET /coding/config — what the exam app may do. */
+export interface CodingClientConfig {
+  gradingMode: CodingGradingMode;
+  /** Whether Run / Run samples may execute on the server (fallback when the PC can't run code). */
+  serverRunEnabled: boolean;
+}
+
+// ---- Local runner contract (implemented by Person C's Electron app) ----
+
+/** One program, run once per input on the student's PC. */
+export interface LocalRunJob {
+  language: CodeLanguage;
+  code: string;
+  inputs: string[];
+  timeLimitMs: number;
+  memoryLimitMb: number;
+  /** Max bytes kept per stream per input. */
+  outputLimitBytes: number;
+}
+
+/**
+ * Runs code on the student's PC (e.g. python3 inside bubblewrap with no
+ * network). Resolves with one outcome per input, using the same statuses as
+ * the server. Rejects only when the runner itself can't work (Python
+ * missing, sandbox failed) — never because of the student's program.
+ */
+export interface LocalRunner {
+  run(job: LocalRunJob): Promise<ExecutionOutcome[]>;
+}

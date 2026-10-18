@@ -5,7 +5,13 @@ import { AttemptStatus } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { AnswerEntity } from '../../answer/entities/answer.entity';
 import { SubmissionService } from '../../answer/submission.service';
-import { IAttemptAccess, PendingCodeGrade, WritableAttempt } from './attempt-access.interface';
+import {
+  AttemptAnswer,
+  FinishedAttempt,
+  IAttemptAccess,
+  PendingCodeGrade,
+  WritableAttempt,
+} from './attempt-access.interface';
 
 /**
  * The only file in the coding module that knows the attempt/answer
@@ -57,5 +63,40 @@ export class AttemptAccessAdapter implements IAttemptAccess {
       .getRepository(AnswerEntity)
       .findOne({ where: { attemptId, questionId } });
     return answer?.textResponse ?? null;
+  }
+
+  async listFinishedAttempts(examId: string, attemptIds?: string[]): Promise<FinishedAttempt[]> {
+    const rows: Array<{ attemptId: string; examId: string; studentId: string; submittedAt: Date }> =
+      await this.dataSource.query(
+        `
+        SELECT a.id AS "attemptId", a."examId", a."studentId", a."submittedAt"
+        FROM attempts a
+        WHERE a."examId" = $1 AND a.status IN ($2, $3) AND a."submittedAt" IS NOT NULL
+          ${attemptIds ? 'AND a.id = ANY($4::uuid[])' : ''}
+        `,
+        attemptIds
+          ? [examId, AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED, attemptIds]
+          : [examId, AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED],
+      );
+    return rows.map((r) => ({ ...r, submittedAt: new Date(r.submittedAt) }));
+  }
+
+  async getFinishedAttempt(attemptId: string): Promise<FinishedAttempt | null> {
+    const rows: Array<{ examId: string }> = await this.dataSource.query(`SELECT "examId" FROM attempts WHERE id = $1`, [
+      attemptId,
+    ]);
+    if (!rows[0]) return null;
+    const [attempt] = await this.listFinishedAttempts(rows[0].examId, [attemptId]);
+    return attempt ?? null;
+  }
+
+  async getAnswers(attemptId: string): Promise<AttemptAnswer[]> {
+    const rows = await this.dataSource.getRepository(AnswerEntity).find({ where: { attemptId } });
+    return rows.map((a) => ({
+      questionId: a.questionId,
+      selectedOptionIds: a.selectedOptionIds,
+      textResponse: a.textResponse,
+      state: a.state,
+    }));
   }
 }

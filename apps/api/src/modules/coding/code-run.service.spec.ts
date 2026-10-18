@@ -28,7 +28,9 @@ const ok = (stdout: string): ExecutionOutcome => ({
   timeMs: 12,
 });
 
-function setup(overrides: { inExam?: boolean; type?: QuestionType; problem?: object | null } = {}) {
+function setup(
+  overrides: { inExam?: boolean; type?: QuestionType; problem?: object | null; env?: Record<string, unknown> } = {},
+) {
   const attempts = {
     assertWritable: jest.fn().mockResolvedValue({ id: ATTEMPT_ID, examId: EXAM_ID, studentId: 'student-1' }),
   };
@@ -69,6 +71,8 @@ function setup(overrides: { inExam?: boolean; type?: QuestionType; problem?: obj
       testCaseRepo as never,
     ),
     runRepo as never,
+    // A stub: ConfigService itself would prefer process.env (Jest sets NODE_ENV=test).
+    { get: (key: string) => (overrides.env ?? {})[key] } as unknown as ConfigService,
   );
   return { service, attempts, executor, testCaseRepo, runRepo, examQuestionRepo };
 }
@@ -160,5 +164,17 @@ describe('CodeRunService.run', () => {
     const res = await service.run(ATTEMPT_ID, dto(CodeRunKind.CUSTOM, { stdin: '3 4' }), student);
     expect(res.runId).toBeNull();
     expect(res.outcome?.stdout).toBe('7\n');
+  });
+
+  it('refuses server runs in production unless CODING_SERVER_RUN allows them (decision log)', async () => {
+    const off = setup({ env: { NODE_ENV: 'production' } });
+    await expect(off.service.run(ATTEMPT_ID, dto(CodeRunKind.CUSTOM), student)).rejects.toThrow(
+      'Running code on the server is turned off',
+    );
+    expect(off.attempts.assertWritable).not.toHaveBeenCalled();
+
+    const on = setup({ env: { NODE_ENV: 'production', CODING_SERVER_RUN: 'true' } });
+    on.executor.runBatch.mockResolvedValue([ok('1\n')]);
+    await expect(on.service.run(ATTEMPT_ID, dto(CodeRunKind.CUSTOM), student)).resolves.toMatchObject({ kind: CodeRunKind.CUSTOM });
   });
 });

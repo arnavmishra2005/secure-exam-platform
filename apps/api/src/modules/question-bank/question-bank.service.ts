@@ -122,10 +122,11 @@ export class QuestionBankService {
     });
     if (!question) throw new NotFoundException(`Question ${id} not found`);
 
-    const [usage, problem, tests] = await Promise.all([
+    const [usage, problem, tests, liveExams] = await Promise.all([
       this.lockService.usage([id]),
       this.problemRepo.findOne({ where: { questionId: id } }),
       this.testCaseRepo.find({ where: { questionId: id }, order: { order: 'ASC' } }),
+      this.lockService.liveExams(id),
     ]);
     return toDetail(
       question,
@@ -133,6 +134,7 @@ export class QuestionBankService {
       usage.get(id),
       problem,
       tests,
+      liveExams,
     );
   }
 
@@ -165,12 +167,27 @@ export class QuestionBankService {
     return this.get(id);
   }
 
-  /** Replaces the whole question (content + metadata). Refused while locked. */
+  /**
+   * Replaces the whole question (content + metadata). For a question in a
+   * started exam the type and the number of options must stay the same, and
+   * options keep their ids (student answers point at them); the caller
+   * should then recalculate those exams' results.
+   */
   async replace(id: string, dto: SaveBankQuestionDto, actorId: string): Promise<BankQuestionDetail> {
-    const existing = await this.questionRepo.findOne({ where: { id } });
+    const existing = await this.questionRepo.findOne({ where: { id }, relations: ['options'] });
     if (!existing) throw new NotFoundException(`Question ${id} not found`);
-    await this.lockService.assertContentEditable(id);
     await this.validateContent(dto);
+    const locked = await this.lockService.isLocked(id);
+    if (locked) {
+      if (dto.type !== existing.type) {
+        throw new ConflictException("Students have answered this question, so its type can't change. Duplicate it instead.");
+      }
+      if (isOptionType(dto.type) && (dto.options ?? []).length !== (existing.options ?? []).length) {
+        throw new ConflictException(
+          "Students have answered this question, so options can't be added or removed. Edit their text or correct answers, or duplicate the question.",
+        );
+      }
+    }
 
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(QuestionEntity).update(
@@ -181,11 +198,11 @@ export class QuestionBankService {
           status: dto.status ?? existing.status,
         },
       );
-      await this.writeChildren(manager, id, dto);
+      await this.writeChildren(manager, id, dto, locked ? existing.options : undefined);
     });
     await this.auditService.logEvent(
       AuditEventType.QUESTION_UPDATED,
-      { questionId: id, action: 'REPLACED', type: dto.type },
+      { questionId: id, action: locked ? 'EDITED_AFTER_EXAM_STARTED' : 'REPLACED', type: dto.type, changes: dto },
       actorId,
     );
     return this.get(id);
@@ -423,40 +440,77 @@ export class QuestionBankService {
     };
   }
 
-  /** Replaces options, coding problem + tests, and tags to match `dto`. */
-  private async writeChildren(manager: EntityManager, questionId: string, dto: SaveBankQuestionDto) {
+  /**
+   * Replaces options, coding problem + tests, and tags to match `dto`.
+   * With `keepOptions` (question already answered), options are updated in
+   * place by position so their ids — which student answers reference — survive.
+   */
+  private async writeChildren(
+    manager: EntityManager,
+    questionId: string,
+    dto: SaveBankQuestionDto,
+    keepOptions?: OptionEntity[],
+  ) {
     const optionRepo = manager.getRepository(OptionEntity);
     const problemRepo = manager.getRepository(CodingProblemEntity);
     const testRepo = manager.getRepository(CodingTestCaseEntity);
 
+    if (keepOptions && isOptionType(dto.type)) {
+      const existing = [...keepOptions].sort((a, b) => a.order - b.order);
+      for (const [i, o] of (dto.options ?? []).entries()) {
+        await optionRepo.update({ id: existing[i].id }, { text: o.text.trim(), isCorrect: o.isCorrect, order: i });
+      }
+      await this.replaceTags(manager, questionId, dto.tags ?? []);
+      return;
+    }
+
     await optionRepo.delete({ questionId });
-    await testRepo.delete({ questionId });
 
     if (dto.type === QuestionType.CODING && dto.coding) {
       const c = dto.coding;
-      await problemRepo.save(
-        problemRepo.create({
-          questionId,
-          statementMd: c.statementMd,
-          starterCode: c.starterCode ?? {},
-          allowedLanguages: [CodeLanguage.PYTHON],
-          timeLimitMs: c.timeLimitMs ?? 2000,
-          memoryLimitMb: c.memoryLimitMb ?? 256,
-          comparisonMode: c.comparisonMode ?? OutputComparisonMode.TRIM,
-          referenceSolution: c.referenceSolution ?? null,
-        }),
-      );
-      await testRepo.insert(
-        c.tests.map((t, i) => ({
-          questionId,
-          input: t.input,
-          expectedOutput: t.expectedOutput,
-          isSample: t.isSample,
-          weight: t.weight ?? 1,
-          order: i,
-        })),
-      );
+      const previous = await problemRepo.findOne({ where: { questionId } });
+      const existingTests = await testRepo.find({ where: { questionId }, order: { order: 'ASC' } });
+      const problem = problemRepo.create({
+        questionId,
+        statementMd: c.statementMd,
+        starterCode: c.starterCode ?? {},
+        allowedLanguages: [CodeLanguage.PYTHON],
+        timeLimitMs: c.timeLimitMs ?? 2000,
+        memoryLimitMb: c.memoryLimitMb ?? 256,
+        comparisonMode: c.comparisonMode ?? OutputComparisonMode.TRIM,
+        referenceSolution: c.referenceSolution ?? null,
+      });
+      await problemRepo.save(problem);
+
+      // Keep test ids when nothing that decides a verdict changed (inputs,
+      // expected outputs, comparison, limits): recalculation can then rescale
+      // stored results to new marks/weights instead of rerunning everyone.
+      const sameVerdicts =
+        !!previous &&
+        previous.comparisonMode === problem.comparisonMode &&
+        previous.timeLimitMs === problem.timeLimitMs &&
+        previous.memoryLimitMb === problem.memoryLimitMb &&
+        existingTests.length === c.tests.length &&
+        existingTests.every((t, i) => t.input === c.tests[i].input && t.expectedOutput === c.tests[i].expectedOutput);
+      if (sameVerdicts) {
+        for (const [i, t] of c.tests.entries()) {
+          await testRepo.update({ id: existingTests[i].id }, { isSample: t.isSample, weight: t.weight ?? 1, order: i });
+        }
+      } else {
+        await testRepo.delete({ questionId });
+        await testRepo.insert(
+          c.tests.map((t, i) => ({
+            questionId,
+            input: t.input,
+            expectedOutput: t.expectedOutput,
+            isSample: t.isSample,
+            weight: t.weight ?? 1,
+            order: i,
+          })),
+        );
+      }
     } else {
+      await testRepo.delete({ questionId });
       await problemRepo.delete({ questionId });
       await optionRepo.insert(
         (dto.options ?? []).map((o, i) => ({

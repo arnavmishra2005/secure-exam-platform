@@ -33,9 +33,10 @@ export interface BankQuestionSummary {
   /** Number of exams the question is attached to. */
   usedInExams: number;
   /**
-   * True when the question is in an ACTIVE or CLOSED exam: its content
-   * (text, type, marks, options, coding problem, tests) can't change.
-   * Metadata (course, topic, difficulty, status, tags) still can.
+   * True when the question is in an ACTIVE or CLOSED exam (students have
+   * answered it). It can still be edited — text, marks, correct options,
+   * coding problem and tests — but its type and its number of options are
+   * fixed, and results of those exams should be recalculated afterwards.
    */
   locked: boolean;
   createdAt: string;
@@ -52,6 +53,11 @@ export interface BankQuestionDetail extends BankQuestionSummary {
   options: Option[];
   /** Present for CODING questions. */
   coding: BankCodingProblem | null;
+  /**
+   * ACTIVE / CLOSED exams using this question. Editing it changes grading
+   * for students who already took them, so recalculate those exams after saving.
+   */
+  liveExams: { id: string; title: string; status: string }[];
 }
 
 export interface BankQuestionPage {
@@ -168,4 +174,20 @@ export interface ValidateCodingResponse {
   /** Slowest test as a share of the time limit, 0–1+: warns about limits that are too tight. */
   slowestShareOfLimit: number;
   tests: ValidateCodingTestResult[];
+}
+
+// ---- Recalculate results after editing questions ----
+
+export interface RecalculateRequest {
+  /** Limit to one question; omit for the whole exam. */
+  questionId?: string;
+}
+
+export interface RecalculateResponse {
+  /** Finished attempts in scope. */
+  attempts: number;
+  /** Totals updated right away (MCQ changes, coding marks rescaled from stored test results). */
+  recalculatedNow: number;
+  /** Coding answers queued to run again because their tests changed; totals update as each finishes. */
+  queuedToRerun: number;
 }

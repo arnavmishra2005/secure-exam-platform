@@ -2,11 +2,16 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AnswerModule } from '../answer/answer.module';
 import { ExecutionModule } from '../execution/execution.module';
+import { ExamEntity } from '../exam/entities/exam.entity';
 import { ExamQuestionEntity } from '../question/entities/exam-question.entity';
 import { QuestionEntity } from '../question/entities/question.entity';
 import { AttemptAccessAdapter } from './attempt-access/attempt-access.adapter';
 import { ATTEMPT_ACCESS } from './attempt-access/attempt-access.interface';
 import { CodeRunController } from './code-run.controller';
+import { CodingConfigController } from './coding-config.controller';
+import { ResultRecalculationController } from './result-recalculation.controller';
+import { ResultRecalculationService } from './result-recalculation.service';
+import { ResultTotalsService } from './result-totals.service';
 import { CodeGradingService } from './code-grading.service';
 import { CodeRunService } from './code-run.service';
 import { CodeSubmitService } from './code-submit.service';
@@ -32,17 +37,20 @@ import { CodingTestCaseEntity } from './entities/coding-test-case.entity';
       CodeSubmissionEntity,
       QuestionEntity,
       ExamQuestionEntity,
+      ExamEntity,
     ]),
     ExecutionModule,
     // For SubmissionService, behind ATTEMPT_ACCESS.
     AnswerModule,
   ],
-  controllers: [CodeRunController],
+  controllers: [CodeRunController, CodingConfigController, ResultRecalculationController],
   providers: [
     CodingQuestionResolver,
     CodeRunService,
     CodeSubmitService,
     CodeGradingService,
+    ResultTotalsService,
+    ResultRecalculationService,
     { provide: ATTEMPT_ACCESS, useClass: AttemptAccessAdapter },
     // Swap for Person A's ScoreRecorder at merge (see score-sink/).
     { provide: CODE_SCORE_SINK, useClass: ResultTableScoreSink },

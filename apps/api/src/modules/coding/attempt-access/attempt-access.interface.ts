@@ -6,7 +6,7 @@
  * the attempt owner's real services; tests bind a fake.
  */
 
-import type { JwtPayload } from '@secure-exam/types';
+import type { JwtPayload, QuestionState } from '@secure-exam/types';
 
 export const ATTEMPT_ACCESS = Symbol('ATTEMPT_ACCESS');
 
@@ -34,6 +34,29 @@ export interface IAttemptAccess {
 
   /** The student's saved code draft (the answer's textResponse), or null. */
   getDraftCode(attemptId: string, questionId: string): Promise<string | null>;
+
+  /** Finished (SUBMITTED / AUTO_SUBMITTED) attempts at an exam. */
+  listFinishedAttempts(examId: string, attemptIds?: string[]): Promise<FinishedAttempt[]>;
+
+  /** One finished attempt, or null if it doesn't exist or isn't finished. */
+  getFinishedAttempt(attemptId: string): Promise<FinishedAttempt | null>;
+
+  /** All saved answers of one attempt (for recomputing its total). */
+  getAnswers(attemptId: string): Promise<AttemptAnswer[]>;
+}
+
+export interface FinishedAttempt {
+  attemptId: string;
+  examId: string;
+  studentId: string;
+  submittedAt: Date;
+}
+
+export interface AttemptAnswer {
+  questionId: string;
+  selectedOptionIds: string[] | null;
+  textResponse: string | null;
+  state: QuestionState;
 }
 
 export interface PendingCodeGrade {

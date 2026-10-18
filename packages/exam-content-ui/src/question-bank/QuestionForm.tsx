@@ -2,10 +2,11 @@
  * Owner: Person B. Create or edit a bank question (MCQ, True/False, Coding).
  *
  * - New question: everything editable; saves with POST.
- * - Existing, unlocked: everything editable; saves the whole question (PUT).
- * - Existing, locked (in an ACTIVE/CLOSED exam): content is read-only;
- *   only course/topic/difficulty/status/tags save (PATCH meta). "Duplicate"
- *   makes an editable copy.
+ * - Existing: everything editable; saves the whole question (PUT).
+ * - Existing and already answered (in an ACTIVE/CLOSED exam): still editable
+ *   (decision log: professors may fix tests, marks and answer keys), but the
+ *   type and the number of options are fixed. After saving, the form offers to
+ *   recalculate the affected exams' results.
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import {
@@ -17,7 +18,7 @@ import {
   type CreateOptionRequest,
   type SaveBankQuestionRequest,
 } from '@secure-exam/types';
-import { errorMessage } from '../api/ExamContentApi';
+import { errorMessage, useExamContentApi } from '../api/ExamContentApi';
 import { CodingProblemEditor, EMPTY_PROBLEM } from '../coding/authoring/CodingProblemEditor';
 import { Alert, Button, Field, Input, Select, Spinner, Textarea } from '../ui';
 import { useBankMutations, useBankQuestion, useTopics } from './hooks';
@@ -143,6 +144,8 @@ export function QuestionForm({
   const [touched, setTouched] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [newTopic, setNewTopic] = useState('');
+  /** Set after saving a question that live exams use: offer to recalculate them. */
+  const [savedAnswered, setSavedAnswered] = useState<BankQuestionDetail | null>(null);
   const topics = useTopics(form.courseId || undefined);
   const m = useBankMutations();
 
@@ -172,8 +175,8 @@ export function QuestionForm({
     });
   };
 
-  const validation = locked ? null : formError(form);
-  const saving = m.create.isPending || m.replace.isPending || m.updateMeta.isPending;
+  const validation = formError(form);
+  const saving = m.create.isPending || m.replace.isPending;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -181,21 +184,11 @@ export function QuestionForm({
     setServerError(null);
     if (validation) return;
     try {
-      let saved: BankQuestionDetail;
-      if (!questionId) saved = await m.create.mutateAsync(toRequest(form));
-      else if (locked)
-        saved = await m.updateMeta.mutateAsync({
-          id: questionId,
-          data: {
-            courseId: form.courseId || null,
-            topicId: form.topicId || null,
-            difficulty: form.difficulty || null,
-            status: form.status,
-            tags: form.tags,
-          },
-        });
-      else saved = await m.replace.mutateAsync({ id: questionId, data: toRequest(form) });
-      onSaved(saved);
+      const saved = questionId
+        ? await m.replace.mutateAsync({ id: questionId, data: toRequest(form) })
+        : await m.create.mutateAsync(toRequest(form));
+      if (saved.liveExams?.length) setSavedAnswered(saved);
+      else onSaved(saved);
     } catch (err) {
       setServerError(errorMessage(err));
     }
@@ -223,18 +216,24 @@ export function QuestionForm({
     }
   };
 
+  if (savedAnswered) {
+    return <RecalculatePrompt question={savedAnswered} onDone={() => onSaved(savedAnswered)} />;
+  }
+
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
       {locked && (
         <Alert tone="amber">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span>
-              This question is in an exam that has started, so its content is locked. You can still change the
-              course, topic, difficulty, status and tags.
+              Students have already answered this question
+              {detail.data?.liveExams.length ? ` (in ${detail.data.liveExams.map((e) => e.title).join(', ')})` : ''}.
+              You can still fix it — text, marks, correct answers, tests — and recalculate results afterwards. Its type
+              and number of options can't change.
             </span>
             {onDuplicated && (
               <Button size="sm" onClick={duplicate} busy={m.duplicate.isPending}>
-                Duplicate to edit
+                Duplicate instead
               </Button>
             )}
           </div>
@@ -247,7 +246,7 @@ export function QuestionForm({
             <Select
               id={id}
               value={form.type}
-              disabled={locked || !!questionId}
+              disabled={!!questionId}
               onChange={(e) => changeType(e.target.value as QuestionType)}
             >
               {Object.values(QuestionType).map((t) => (
@@ -267,7 +266,6 @@ export function QuestionForm({
               step={0.5}
               className="w-28"
               value={form.marks}
-              disabled={locked}
               onChange={(e) => set({ marks: Number(e.target.value) })}
             />
           )}
@@ -282,7 +280,6 @@ export function QuestionForm({
                 step={0.25}
                 className="w-28"
                 value={form.negativeMarks}
-                disabled={locked}
                 onChange={(e) => set({ negativeMarks: e.target.value })}
               />
             )}
@@ -293,14 +290,13 @@ export function QuestionForm({
       <Field label={form.type === QuestionType.CODING ? 'Title' : 'Question'}>
         {(id) =>
           form.type === QuestionType.CODING ? (
-            <Input id={id} value={form.text} disabled={locked} onChange={(e) => set({ text: e.target.value })} />
+            <Input id={id} value={form.text} onChange={(e) => set({ text: e.target.value })} />
           ) : (
             <Textarea
               id={id}
               rows={3}
               className="font-sans"
               value={form.text}
-              disabled={locked}
               onChange={(e) => set({ text: e.target.value })}
             />
           )
@@ -308,12 +304,17 @@ export function QuestionForm({
       </Field>
 
       {form.type === QuestionType.CODING ? (
-        <CodingProblemEditor value={form.coding} onChange={(coding) => set({ coding })} disabled={locked} />
+        <CodingProblemEditor value={form.coding} onChange={(coding) => set({ coding })} />
       ) : (
         <>
           <div className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Options</span>
-            <OptionEditor type={form.type} options={form.options} onChange={(options) => set({ options })} disabled={locked} />
+            <OptionEditor
+              type={form.type}
+              options={form.options}
+              onChange={(options) => set({ options })}
+              fixedCount={locked}
+            />
           </div>
           <Field label="Explanation (optional)" hint="Admin-only for now">
             {(id) => (
@@ -322,7 +323,6 @@ export function QuestionForm({
                 rows={2}
                 className="font-sans"
                 value={form.explanation}
-                disabled={locked}
                 onChange={(e) => set({ explanation: e.target.value })}
               />
             )}
@@ -420,9 +420,62 @@ export function QuestionForm({
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="primary" busy={saving}>
-          {!questionId ? 'Create question' : locked ? 'Save details' : 'Save question'}
+          {!questionId ? 'Create question' : 'Save question'}
         </Button>
       </div>
     </form>
+  );
+}
+
+/** After saving an answered question: recalculate the exams that use it. */
+function RecalculatePrompt({ question, onDone }: { question: BankQuestionDetail; onDone: () => void }) {
+  const api = useExamContentApi();
+  const [done, setDone] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const recalc = async (examId: string) => {
+    setBusy(examId);
+    try {
+      const r = await api.recalculateResults(examId, { questionId: question.id });
+      setDone((d) => ({
+        ...d,
+        [examId]:
+          `Updated ${r.recalculatedNow} of ${r.attempts} results` +
+          (r.queuedToRerun ? `; ${r.queuedToRerun} coding answers are being graded again` : ''),
+      }));
+    } catch (err) {
+      setDone((d) => ({ ...d, [examId]: `Failed: ${errorMessage(err)}` }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Alert tone="green">Question saved.</Alert>
+      <p className="text-sm text-slate-700">
+        Students already answered this question. Recalculate each exam's results so their marks reflect your changes.
+        Recalculating replaces any score you adjusted by hand for those students.
+      </p>
+      <ul className="space-y-2">
+        {question.liveExams.map((e) => (
+          <li key={e.id} className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 p-3">
+            <span className="flex-1 text-sm font-medium text-slate-900">
+              {e.title} <span className="font-normal text-slate-500">({e.status.toLowerCase()})</span>
+            </span>
+            {done[e.id] ? (
+              <span className="text-sm text-slate-600">{done[e.id]}</span>
+            ) : (
+              <Button size="sm" variant="primary" busy={busy === e.id} onClick={() => recalc(e.id)}>
+                Recalculate results
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex justify-end">
+        <Button onClick={onDone}>Done</Button>
+      </div>
+    </div>
   );
 }

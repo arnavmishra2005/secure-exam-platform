@@ -100,27 +100,45 @@ describe('QuestionForm (edit)', () => {
     );
   });
 
-  it('locks content of a question in a live exam and saves only metadata', async () => {
+  it('lets a professor fix an answered question, keeping type and option count, then recalculate', async () => {
     const state = seedState();
     const api = createFakeApi(state);
-    const meta = vi.spyOn(api, 'updateBankQuestionMeta');
     const replace = vi.spyOn(api, 'replaceBankQuestion');
-    const locked = state.questions.find((q) => q.locked)!;
-    const onDuplicated = vi.fn();
-    renderWithApi(
-      <QuestionForm questionId={locked.id} onSaved={vi.fn()} onCancel={vi.fn()} onDuplicated={onDuplicated} />,
-      api,
+    const recalc = vi.spyOn(api, 'recalculateResults');
+    const answered = state.questions.find((q) => q.locked)!;
+    const onSaved = vi.fn();
+    renderWithApi(<QuestionForm questionId={answered.id} onSaved={onSaved} onCancel={vi.fn()} onDuplicated={vi.fn()} />, api);
+
+    expect(await screen.findByText(/Students have already answered this question \(in Python basics\)/)).toBeTruthy();
+    expect((screen.getByLabelText('Question') as HTMLTextAreaElement).disabled).toBe(false);
+    expect((screen.getByLabelText('Type') as HTMLSelectElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Add option' })).toBeNull();
+    expect(screen.queryByLabelText('Remove option 1')).toBeNull();
+
+    // Fix the answer key and the marks.
+    fireEvent.click(screen.getByLabelText('Option 2 is correct'));
+    fireEvent.change(screen.getByLabelText('Marks'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save question' }));
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        answered.id,
+        expect.objectContaining({
+          marks: 2,
+          options: [
+            expect.objectContaining({ text: 'for', isCorrect: false }),
+            expect.objectContaining({ text: 'foreach', isCorrect: true }),
+            expect.objectContaining({ text: 'loop', isCorrect: false }),
+          ],
+        }),
+      ),
     );
-
-    expect(await screen.findByText(/its content is locked/)).toBeTruthy();
-    expect((screen.getByLabelText('Question') as HTMLTextAreaElement).disabled).toBe(true);
-    expect((screen.getByLabelText('Option 1') as HTMLInputElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Difficulty'), { target: { value: 'HARD' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
-    await waitFor(() => expect(meta).toHaveBeenCalledWith(locked.id, expect.objectContaining({ difficulty: 'HARD' })));
-    expect(replace).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Duplicate to edit' }));
-    await waitFor(() => expect(onDuplicated).toHaveBeenCalledWith(expect.objectContaining({ status: QuestionStatus.DRAFT })));
+    expect(await screen.findByText('Question saved.')).toBeTruthy();
+    expect(onSaved).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recalculate results' }));
+    expect(await screen.findByText(/Updated 1 of 2 results; 1 coding answers are being graded again/)).toBeTruthy();
+    expect(recalc).toHaveBeenCalledWith('exam-demo', { questionId: answered.id });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onSaved).toHaveBeenCalled();
   });
 });

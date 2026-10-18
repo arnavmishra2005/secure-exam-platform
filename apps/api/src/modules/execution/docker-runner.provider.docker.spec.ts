@@ -89,12 +89,14 @@ describeDocker('DockerRunnerProvider (real Docker)', () => {
     });
 
     it('stops a single huge allocation as a memory limit error', async () => {
-      const [r] = await run('x = bytearray(1024 * 1024 * 1024)\nprint(len(x))');
+      // Generous time limit: on a slow Docker VM, memory reclaim before the OOM kill can outlast 2 s.
+      const [r] = await run('x = bytearray(1024 * 1024 * 1024)\nprint(len(x))', [''], 10_000);
       expect(r.status).toBe(ExecutionStatus.MEMORY_LIMIT_EXCEEDED);
     });
 
     it('stops gradually growing memory as a memory limit error', async () => {
-      const [r] = await run('a = []\nwhile True:\n    a.append(" " * 10**6)');
+      // 10 MB steps and a generous time limit, so a slow Docker VM can't turn this into a timeout.
+      const [r] = await run('a = []\nwhile True:\n    a.append(" " * 10**7)', [''], 10_000);
       expect(r.status).toBe(ExecutionStatus.MEMORY_LIMIT_EXCEEDED);
     });
 

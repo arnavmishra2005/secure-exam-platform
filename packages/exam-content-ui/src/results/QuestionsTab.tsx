@@ -5,7 +5,7 @@
  * Refreshes every 30 s while the exam is ACTIVE.
  */
 import { Fragment, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { QuestionType, type AnalyticsCell, type QuestionAnalyticsMatrix, type QuestionStats } from '@secure-exam/types';
 import { errorMessage, useExamContentApi } from '../api/ExamContentApi';
 import { TYPE_LABEL } from '../question-bank/labels';
@@ -227,13 +227,28 @@ function Matrix({ m, onOpen }: { m: QuestionAnalyticsMatrix; onOpen: (attemptId:
   );
 }
 
+/** Finished attempts whose coding answers are still being graded. */
+function gradingPending(m: QuestionAnalyticsMatrix): number {
+  const finished = new Set(m.students.filter((s) => s.status !== 'IN_PROGRESS').map((s) => s.attemptId));
+  return m.cells.filter((c) => finished.has(c.attemptId) && c.state === 'PENDING').length;
+}
+
 export function QuestionsTab({ examId }: { examId: string }) {
   const api = useExamContentApi();
+  const qc = useQueryClient();
   const [openAttempt, setOpenAttempt] = useState<string | null>(null);
   const q = useQuery({
     queryKey: ['question-analytics', examId],
     queryFn: () => api.getQuestionAnalytics(examId),
-    refetchInterval: (query) => (query.state.data?.exam.status === 'ACTIVE' ? 30_000 : false),
+    // Live while the exam runs or while answers are being graded.
+    refetchInterval: (query) =>
+      query.state.data && (query.state.data.exam.status === 'ACTIVE' || gradingPending(query.state.data) > 0)
+        ? 10_000
+        : false,
+  });
+  const recalc = useMutation({
+    mutationFn: () => api.recalculateResults(examId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['question-analytics', examId] }),
   });
 
   if (q.isLoading) {
@@ -264,17 +279,47 @@ export function QuestionsTab({ examId }: { examId: string }) {
     URL.revokeObjectURL(url);
   };
 
+  const pending = gradingPending(m);
+  const confirmRecalc = () => {
+    if (
+      window.confirm(
+        'Recalculate every finished attempt with the current questions (marks, correct answers, tests)? ' +
+          'This replaces any score you adjusted by hand.',
+      )
+    ) {
+      recalc.mutate();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-slate-600">
           {m.students.length} attempt{m.students.length === 1 ? '' : 's'} · {m.questions.length} questions
-          {m.exam.status === 'ACTIVE' && ' · live, refreshes every 30 s'}
+          {m.exam.status === 'ACTIVE' && ' · live'}
         </p>
-        <Button size="sm" onClick={exportCsv} disabled={m.students.length === 0}>
-          Export CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={confirmRecalc} busy={recalc.isPending} disabled={m.students.length === 0}>
+            Recalculate results
+          </Button>
+          <Button size="sm" onClick={exportCsv} disabled={m.students.length === 0}>
+            Export CSV
+          </Button>
+        </div>
       </div>
+      {pending > 0 && (
+        <Alert tone="blue">
+          Grading in progress: {pending} coding answer{pending === 1 ? '' : 's'} from finished attempts still to grade.
+          This page updates on its own.
+        </Alert>
+      )}
+      {recalc.isError && <Alert>{errorMessage(recalc.error)}</Alert>}
+      {recalc.data && (
+        <Alert tone="green">
+          Recalculated {recalc.data.recalculatedNow} of {recalc.data.attempts} results
+          {recalc.data.queuedToRerun > 0 && `; ${recalc.data.queuedToRerun} coding answers are being graded again`}.
+        </Alert>
+      )}
 
       <section className="space-y-2">
         <h2 className="text-base font-semibold text-slate-900">By question</h2>

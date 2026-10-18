@@ -27,4 +27,10 @@ export interface ICodeScoreSink {
    * the grade back; it is retried on the next sweep.
    */
   record(manager: EntityManager, record: CodeScoreRecord): Promise<void>;
+
+  /**
+   * Sets an attempt's total and maximum outright (after a professor edited
+   * questions and recalculated). Replaces any manual score override.
+   */
+  replaceTotals(manager: EntityManager, attemptId: string, score: number, maxScore: number): Promise<void>;
 }

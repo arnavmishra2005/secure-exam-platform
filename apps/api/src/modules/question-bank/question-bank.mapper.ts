@@ -53,6 +53,7 @@ export function toDetail(
   usage: QuestionUsage | undefined,
   problem: CodingProblemEntity | null,
   tests: CodingTestCaseEntity[],
+  liveExams: BankQuestionDetail['liveExams'] = [],
 ): BankQuestionDetail {
   return {
     ...toSummary(q, tags, usage),
@@ -80,5 +81,6 @@ export function toDetail(
           })),
         }
       : null,
+    liveExams,
   };
 }
