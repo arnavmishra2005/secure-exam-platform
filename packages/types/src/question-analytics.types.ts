@@ -111,8 +111,12 @@ export interface DrilldownCode {
   /** The code that counted (final submission), else the saved draft. */
   code: string;
   language: CodeLanguage;
-  /** FINAL_SUBMIT: last Submit before the end; FINAL_DRAFT: draft graded at the end; DRAFT: not graded yet. */
-  source: 'FINAL_SUBMIT' | 'FINAL_DRAFT' | 'DRAFT';
+  /**
+   * FINAL_SUBMIT: last Submit before the end (graded, or being regraded if status is PENDING);
+   * FINAL_DRAFT: draft graded at the end; SUBMITTED: saved with Submit, not graded yet;
+   * DRAFT: autosaved draft, not graded yet.
+   */
+  source: 'FINAL_SUBMIT' | 'FINAL_DRAFT' | 'SUBMITTED' | 'DRAFT';
   status: CodeSubmissionStatus | null;
   passed: number;
   total: number;

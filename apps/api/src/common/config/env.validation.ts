@@ -28,4 +28,9 @@ export const envValidationSchema = Joi.object({
   RUNNER_RUNS_PER_MINUTE: Joi.number().integer().min(1).default(20),
   RUNNER_OUTPUT_LIMIT_BYTES: Joi.number().integer().min(1024).default(65536),
   RUNNER_STARTUP_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
+  // Person B: execution modes — see "Decision log" in person_b_plan.md.
+  // DEFERRED: Submit only saves; grading runs after the attempt ends. LIVE: Submit grades immediately.
+  CODING_GRADING_MODE: Joi.string().valid('DEFERRED', 'LIVE').default('DEFERRED'),
+  // Whether Run / Run samples may execute on the server. Unset = on in development, off in production.
+  CODING_SERVER_RUN: Joi.boolean(),
 });

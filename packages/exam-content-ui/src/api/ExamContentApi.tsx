@@ -18,8 +18,11 @@ import type {
   CodeRunResponse,
   CodeSubmitRequest,
   CodeSubmitResponse,
+  CodingClientConfig,
   CreateTopicRequest,
   QuestionAnalyticsMatrix,
+  RecalculateRequest,
+  RecalculateResponse,
   SaveBankQuestionRequest,
   TagCount,
   Topic,
@@ -46,6 +49,8 @@ export interface ExamContentApi {
   getQuestionAnalytics(examId: string): Promise<QuestionAnalyticsMatrix>;
   getAttemptDrilldown(examId: string, attemptId: string): Promise<AttemptDrilldown>;
   validateCodingProblem(data: ValidateCodingRequest): Promise<ValidateCodingResponse>;
+  getCodingConfig(): Promise<CodingClientConfig>;
+  recalculateResults(examId: string, data?: RecalculateRequest): Promise<RecalculateResponse>;
 }
 
 /** The real API through @secure-exam/api-client (shared axios instance and token). */
@@ -67,6 +72,8 @@ export const defaultExamContentApi: ExamContentApi = {
   getQuestionAnalytics: client.getQuestionAnalytics,
   getAttemptDrilldown: client.getAttemptDrilldown,
   validateCodingProblem: client.validateCodingProblem,
+  getCodingConfig: client.getCodingConfig,
+  recalculateResults: client.recalculateResults,
 };
 
 const ApiContext = createContext<ExamContentApi>(defaultExamContentApi);

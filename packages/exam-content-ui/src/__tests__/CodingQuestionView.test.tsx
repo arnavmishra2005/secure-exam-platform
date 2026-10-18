@@ -1,13 +1,18 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { CodeRunKind } from '@secure-exam/types';
+import { CodeRunKind, CodingGradingMode, type CodingClientConfig, type LocalRunner } from '@secure-exam/types';
 import { CodingQuestionView } from '../coding/CodingQuestionView';
-import { createFakeApi, httpError, publicCodingQuestion, seedState } from '../testing/fakeApi';
+import { createFakeApi, createFakeLocalRunner, httpError, publicCodingQuestion, seedState } from '../testing/fakeApi';
 import { renderWithApi } from './render';
 
-function setup(props: Partial<Parameters<typeof CodingQuestionView>[0]> = {}) {
+const SUM = 'print(sum(map(int, input().split())))';
+
+function setup(
+  props: Partial<Parameters<typeof CodingQuestionView>[0]> = {},
+  config: Partial<CodingClientConfig> = {},
+) {
   const state = seedState();
-  const api = createFakeApi(state);
+  const api = createFakeApi(state, { config });
   const question = publicCodingQuestion(state);
   const onSaveDraft = vi.fn();
   renderWithApi(
@@ -18,6 +23,8 @@ function setup(props: Partial<Parameters<typeof CodingQuestionView>[0]> = {}) {
 }
 
 const editor = () => screen.getByLabelText('Code editor') as HTMLTextAreaElement;
+const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+const enabled = (name: string) => waitFor(() => expect(button(name).disabled).toBe(false));
 
 describe('CodingQuestionView', () => {
   it('shows the statement, limits and sample tests, starting from the starter code', () => {
@@ -33,66 +40,120 @@ describe('CodingQuestionView', () => {
     expect(editor().value).toBe('print(42)');
   });
 
-  it('runs with custom input and shows the output', async () => {
-    const { api } = setup();
-    const spy = vi.spyOn(api, 'runCode');
-    fireEvent.change(screen.getByLabelText('Custom input'), { target: { value: '5 6' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-    expect(await screen.findByTestId('run-result')).toBeTruthy();
-    expect(spy).toHaveBeenCalledWith('att-1', expect.objectContaining({ kind: CodeRunKind.CUSTOM, stdin: '5 6' }));
-    expect(screen.getByText(/stdin was: 5 6/)).toBeTruthy();
+  describe('with a local runner (exam app)', () => {
+    it('runs custom input on this PC, without calling the server', async () => {
+      const localRunner = createFakeLocalRunner();
+      const spy = vi.spyOn(localRunner, 'run');
+      const { api } = setup({ localRunner });
+      const server = vi.spyOn(api, 'runCode');
+      fireEvent.change(editor(), { target: { value: SUM } });
+      fireEvent.change(screen.getByLabelText('Custom input'), { target: { value: '5 6' } });
+      fireEvent.click(button('Run'));
+      expect(await screen.findByTestId('run-result')).toBeTruthy();
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ code: SUM, inputs: ['5 6'], timeLimitMs: 2000, memoryLimitMb: 256 }));
+      expect(server).not.toHaveBeenCalled();
+      expect(screen.getByText('11')).toBeTruthy();
+      expect(screen.queryByText(/ran on the server/)).toBeNull();
+    });
+
+    it('checks the samples locally with the server\'s comparison rule', async () => {
+      setup({ localRunner: createFakeLocalRunner() });
+      fireEvent.change(editor(), { target: { value: SUM } });
+      fireEvent.click(button('Run samples'));
+      const result = await screen.findByTestId('samples-result');
+      expect(result.textContent).toContain('Sample 2');
+      expect(screen.getAllByText('Passed')).toHaveLength(2);
+    });
+
+    it('falls back to the server when the local runner itself fails and the server allows it', async () => {
+      const { api } = setup({ localRunner: createFakeLocalRunner() }, { serverRunEnabled: true });
+      const server = vi.spyOn(api, 'runCode');
+      fireEvent.change(editor(), { target: { value: 'print(1)  # crash-runner' } });
+      fireEvent.click(button('Run'));
+      expect(await screen.findByText(/ran on the server/)).toBeTruthy();
+      expect(server).toHaveBeenCalledWith('att-1', expect.objectContaining({ kind: CodeRunKind.CUSTOM }));
+    });
+
+    it('explains the problem when the local runner fails and server runs are off', async () => {
+      const { api } = setup({ localRunner: createFakeLocalRunner() }, { serverRunEnabled: false });
+      const server = vi.spyOn(api, 'runCode');
+      fireEvent.change(editor(), { target: { value: 'print(1)  # crash-runner' } });
+      fireEvent.click(button('Run'));
+      expect(await screen.findByText(/This computer couldn't run your code \(python3 not found\)/)).toBeTruthy();
+      expect(server).not.toHaveBeenCalled();
+    });
+
+    it('keeps Run working offline, but not Submit', async () => {
+      const { onSaveDraft } = setup({ localRunner: createFakeLocalRunner(), online: false });
+      expect(button('Run').disabled).toBe(false);
+      expect(button('Submit').disabled).toBe(true);
+      fireEvent.change(editor(), { target: { value: 'print(1)' } });
+      await waitFor(() => expect(onSaveDraft).toHaveBeenCalledWith('print(1)'));
+    });
   });
 
-  it('runs the samples and shows a verdict for each', async () => {
-    setup();
-    fireEvent.change(editor(), { target: { value: 'print(sum(map(int, input().split())))' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Run samples' }));
-    const result = await screen.findByTestId('samples-result');
-    expect(result.textContent).toContain('Sample 1');
-    expect(result.textContent).toContain('Sample 2');
-    expect(screen.getAllByText('Passed')).toHaveLength(2);
+  describe('without a local runner', () => {
+    it('runs on the server when the server allows it (development)', async () => {
+      const { api } = setup({}, { serverRunEnabled: true });
+      const server = vi.spyOn(api, 'runCode');
+      await enabled('Run');
+      fireEvent.click(button('Run'));
+      expect(await screen.findByText(/ran on the server/)).toBeTruthy();
+      expect(server).toHaveBeenCalled();
+    });
+
+    it('disables Run when server runs are off (production)', async () => {
+      setup({}, { serverRunEnabled: false });
+      expect(await screen.findByText(/Running code isn't available on this computer/)).toBeTruthy();
+      expect(button('Run').disabled).toBe(true);
+      expect(button('Run samples').disabled).toBe(true);
+      expect(button('Submit').disabled).toBe(false);
+    });
+
+    it('shows the server message on 429', async () => {
+      const { api } = setup({}, { serverRunEnabled: true });
+      vi.spyOn(api, 'runCode').mockRejectedValue(httpError(429, 'Your previous run is still in progress'));
+      await enabled('Run');
+      fireEvent.click(button('Run'));
+      expect(await screen.findByText('Your previous run is still in progress')).toBeTruthy();
+    });
   });
 
-  it('submits and shows the score with sample/hidden labels', async () => {
-    setup();
-    fireEvent.change(editor(), { target: { value: 'print(sum(map(int, input().split())))' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
-    const result = await screen.findByTestId('submit-result');
-    expect(result.textContent).toContain('Score 10 / 10');
-    expect(result.textContent).toContain('Sample 1');
-    expect(result.textContent).toContain('Test 3');
-    expect(screen.getByText('Last submission: 10 / 10')).toBeTruthy();
-  });
+  describe('Submit', () => {
+    it('saves the code as the final answer with no score (deferred grading)', async () => {
+      const { api } = setup();
+      const spy = vi.spyOn(api, 'submitCode');
+      fireEvent.change(editor(), { target: { value: SUM } });
+      fireEvent.click(button('Submit'));
+      expect(await screen.findByText(/Saved as your final answer at/)).toBeTruthy();
+      expect(screen.getByText(/graded on all test cases after the exam/)).toBeTruthy();
+      expect(spy).toHaveBeenCalledWith('att-1', expect.objectContaining({ code: SUM }));
+      expect(screen.queryByText(/Score/)).toBeNull();
+      expect(screen.getByText(/^Submitted /)).toBeTruthy();
+    });
 
-  it('shows the server message on 429 (run already in progress)', async () => {
-    const { api } = setup();
-    vi.spyOn(api, 'runCode').mockRejectedValue(httpError(429, 'Your previous run is still in progress'));
-    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-    expect(await screen.findByText('Your previous run is still in progress')).toBeTruthy();
-  });
+    it('shows the score when the server grades live', async () => {
+      setup({}, { gradingMode: CodingGradingMode.LIVE });
+      fireEvent.change(editor(), { target: { value: SUM } });
+      fireEvent.click(button('Submit'));
+      const result = await screen.findByTestId('submit-result');
+      expect(result.textContent).toContain('Score 10 / 10');
+      expect(result.textContent).toContain('Test 3');
+    });
 
-  it('explains that the attempt ended on 409 from submit', async () => {
-    const { api } = setup();
-    vi.spyOn(api, 'submitCode').mockRejectedValue(
-      httpError(409, 'The attempt ended before your submission finished, so it was not counted'),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
-    expect(await screen.findByText(/was not counted/)).toBeTruthy();
-  });
-
-  it('disables Run and Submit while offline, but keeps saving drafts', async () => {
-    const { onSaveDraft } = setup({ online: false });
-    expect((screen.getByRole('button', { name: 'Run' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/You are offline/)).toBeTruthy();
-    fireEvent.change(editor(), { target: { value: 'print(1)' } });
-    await waitFor(() => expect(onSaveDraft).toHaveBeenCalledWith('print(1)'));
+    it('explains that the attempt ended on 409', async () => {
+      const { api } = setup();
+      vi.spyOn(api, 'submitCode').mockRejectedValue(httpError(409, 'This attempt has already been submitted'));
+      fireEvent.click(button('Submit'));
+      expect(await screen.findByText('This attempt has already been submitted')).toBeTruthy();
+    });
   });
 
   it('disables actions when the code is over the length limit', () => {
-    setup();
+    setup({ localRunner: createFakeLocalRunner() });
     fireEvent.change(editor(), { target: { value: 'x'.repeat(10_001) } });
-    expect((screen.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(button('Submit').disabled).toBe(true);
+    expect(button('Run').disabled).toBe(true);
     expect(screen.getByText(/longer than 10,000 characters/)).toBeTruthy();
   });
 
@@ -115,5 +176,17 @@ describe('CodingQuestionView', () => {
     expect(paste.defaultPrevented).toBe(true);
     expect(onBlockedPaste).toHaveBeenCalled();
     expect(screen.getByText(/Pasting text from outside the editor is not allowed/)).toBeTruthy();
+  });
+});
+
+describe('desktopLocalRunner', () => {
+  it('uses window.desktop.runCode when the exam app provides it', async () => {
+    const { desktopLocalRunner } = await import('../coding/localRunner');
+    expect(desktopLocalRunner()).toBeUndefined();
+    const run = vi.fn().mockResolvedValue([]);
+    window.desktop = { runCode: run as LocalRunner['run'] };
+    await desktopLocalRunner()!.run({ language: 'python' as never, code: 'x', inputs: [], timeLimitMs: 1, memoryLimitMb: 1, outputLimitBytes: 1 });
+    expect(run).toHaveBeenCalled();
+    delete window.desktop;
   });
 });

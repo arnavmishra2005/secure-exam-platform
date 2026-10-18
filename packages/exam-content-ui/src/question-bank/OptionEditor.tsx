@@ -31,14 +31,18 @@ export function OptionEditor({
   options,
   onChange,
   disabled,
+  fixedCount,
 }: {
   type: QuestionType;
   options: CreateOptionRequest[];
   onChange: (options: CreateOptionRequest[]) => void;
   disabled?: boolean;
+  /** Students already answered: options can be edited but not added or removed. */
+  fixedCount?: boolean;
 }) {
   const single = type !== QuestionType.MCQ_MULTI;
   const fixed = type === QuestionType.TRUE_FALSE;
+  const canResize = !fixed && !fixedCount;
   const renumber = (list: CreateOptionRequest[]) => list.map((o, i) => ({ ...o, order: i }));
 
   const setCorrect = (i: number, checked: boolean) =>
@@ -63,7 +67,7 @@ export function OptionEditor({
             placeholder={`Option ${i + 1}`}
             onChange={(e) => onChange(options.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
           />
-          {!fixed && (
+          {canResize && (
             <Button
               size="sm"
               variant="ghost"
@@ -76,7 +80,7 @@ export function OptionEditor({
           )}
         </div>
       ))}
-      {!fixed && (
+      {canResize && (
         <Button
           size="sm"
           disabled={disabled || options.length >= 10}

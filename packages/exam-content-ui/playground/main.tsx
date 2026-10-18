@@ -21,7 +21,8 @@ import {
 } from '../src';
 import { errorMessage } from '../src/api/ExamContentApi';
 import { Alert, Button, Field, Input } from '../src/ui';
-import { createFakeApi, publicCodingQuestion, seedState } from '../src/testing/fakeApi';
+import { desktopLocalRunner } from '../src/coding/localRunner';
+import { createFakeApi, createFakeLocalRunner, publicCodingQuestion, seedState } from '../src/testing/fakeApi';
 
 type Mode = 'fake' | 'real';
 type Tab = 'bank' | 'picker' | 'student' | 'results';
@@ -80,6 +81,11 @@ function StudentTab({ mode, fakeQuestion }: { mode: Mode; fakeQuestion: PublicQu
   const [examId, setExamId] = useState('11111111-1111-4111-8111-111111111111');
   const [error, setError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
+  const [useLocal, setUseLocal] = useState(true);
+  const fakeRunner = useMemo(() => createFakeLocalRunner(), []);
+  // Real mode: the Electron app's runner if present; in a browser there is none, so the
+  // server runs the code (allowed in development, see the decision log).
+  const localRunner = mode === 'fake' ? (useLocal ? fakeRunner : undefined) : desktopLocalRunner();
 
   const open = async (e: FormEvent) => {
     e.preventDefault();
@@ -117,16 +123,27 @@ function StudentTab({ mode, fakeQuestion }: { mode: Mode; fakeQuestion: PublicQu
 
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-2 text-sm text-slate-600">
-        <input type="checkbox" checked={!online} onChange={(e) => setOnline(!e.target.checked)} />
-        Simulate offline
-      </label>
+      <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={!online} onChange={(e) => setOnline(!e.target.checked)} />
+          Simulate offline
+        </label>
+        {mode === 'fake' ? (
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={useLocal} onChange={(e) => setUseLocal(e.target.checked)} />
+            Run on this PC (fake local runner; "crash-runner" in the code makes it fail)
+          </label>
+        ) : (
+          <span>{localRunner ? 'Running on this PC (exam app)' : 'No local runner in a browser: Run uses the server (development only)'}</span>
+        )}
+      </div>
       <CodingQuestionView
         key={session.question.id}
         attemptId={session.attemptId}
         question={session.question}
         savedCode={session.saved}
         online={online}
+        localRunner={localRunner}
         onSaveDraft={(code) =>
           mode === 'real'
             ? client.saveAnswer(session.attemptId, session.question.id, { textResponse: code }).then(() => undefined)

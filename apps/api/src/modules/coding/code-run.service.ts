@@ -5,7 +5,8 @@
  * (CUSTOM) or the problem's sample tests (SAMPLES). Never affects marks.
  */
 
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -21,6 +22,7 @@ import { EXECUTION_PROVIDER, ExecutionProvider } from '../execution/execution-pr
 import { RunLimiterService } from '../execution/run-limiter.service';
 import { ATTEMPT_ACCESS, IAttemptAccess } from './attempt-access/attempt-access.interface';
 import { CodeRunEntity } from './entities/code-run.entity';
+import { codingClientConfig } from './coding-config';
 import { CodingQuestionResolver } from './coding-question.resolver';
 import { verdictFor } from './grading/verdict';
 
@@ -35,9 +37,14 @@ export class CodeRunService {
     private readonly resolver: CodingQuestionResolver,
     @InjectRepository(CodeRunEntity)
     private readonly runRepo: Repository<CodeRunEntity>,
+    private readonly config: ConfigService,
   ) {}
 
   async run(attemptId: string, dto: CodeRunDto, user: JwtPayload): Promise<CodeRunResponse> {
+    if (!codingClientConfig(this.config).serverRunEnabled) {
+      // Decision log: in production, practice runs happen on the student's PC (CODING_SERVER_RUN).
+      throw new ForbiddenException('Running code on the server is turned off; the exam app runs it on this computer');
+    }
     const attempt = await this.attempts.assertWritable(attemptId, user);
     const { problem } = await this.resolver.resolveInExam(attempt.examId, dto.questionId);
 

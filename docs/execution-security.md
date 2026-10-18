@@ -2,13 +2,25 @@
 
 How student code is run, what stops it from doing harm, what was tested, and how much load the current setup can take. Code lives in `apps/api/src/modules/execution/` (sandbox) and `apps/api/src/modules/coding/` (run, submit, grading).
 
+## Execution model (since 2026-10-18)
+
+| Action | Where it runs | Notes |
+|---|---|---|
+| Run / Run samples (practice) | **The student's lab PC**, inside the exam app (`docs/local-code-runner.md`) | Only the student's own input and the visible sample tests. No marks. |
+| Run on the server | Development only by default (`CODING_SERVER_RUN`) | Production fallback can be switched on if local runners fail. |
+| Submit | Server, **saves only** (`CODING_GRADING_MODE=DEFERRED`) | Instant; no code runs; the last Submit before the end counts. |
+| Grading | Server sandbox, **after each attempt ends** | All tests (sample + hidden), partial marks by weight. |
+| Regrading | Server sandbox, after a professor edits a question and clicks Recalculate | Reruns only when tests, limits or comparison changed; marks/weights edits rescale stored results. |
+
+Rationale and how to change each choice: decision log in `person_b_plan.md` (§13). Everything below about the sandbox applies to grading, regrading, admin "Test reference solution" and (when enabled) server runs.
+
 ## Summary
 
 - Student code runs only inside a throw-away Docker container: no network, read-only filesystem, non-root user, no Linux capabilities, and limits on memory, CPU, processes, open files and output.
 - Expected outputs never enter the container. A program that tampers with the in-container test harness can't learn or fake hidden answers.
 - Nine abuse scenarios are contained (fork bomb, memory bombs, endless output, filesystem writes, reading secrets, killing or forging the harness, background processes).
-- **The API's access to Docker is root-equivalent on that Docker host.** In production, Docker must run on a dedicated runner host with no secrets and no other services.
-- **Capacity is the main open issue.** On a Mac with Docker Desktop, the runner completes about 1.5 runs per second. 100 students pressing Submit at the same moment all get correct results, but the last one waits about 75 s. See [Capacity](#capacity).
+- **The API's access to Docker is root-equivalent on that Docker host.** The ideal is a dedicated runner host with no secrets. The college setup (decision log L6) runs Docker on the API/database machine to save cost: use **rootless Docker** there, and keep the machine dedicated to this system.
+- **Capacity:** with grading after the exam, students never wait on the runner. 500 submissions are graded in roughly 3–6 minutes at the measured 1.5–3 runs/s (Docker Desktop on a Mac; a native Linux host is usually faster). See [Capacity](#capacity).
 
 ## How a run works
 
@@ -72,13 +84,15 @@ The same suite also covers the normal cases: hello world, several inputs, runtim
 
 ## Deployment requirements
 
-1. **Dedicated runner host.** Anyone who can call the Docker API controls that machine. The API host's Docker access (socket or TCP) must point at a machine that runs nothing else and holds no secrets: no database, no `.env` and no credentials. Point the API at it with `DOCKER_HOST` (for example over SSH: `DOCKER_HOST=ssh://runner@runner-host`).
+1. **Runner host.** Anyone who can call the Docker API controls that machine. Best: a separate machine that runs nothing else and holds no secrets (no database, `.env` or credentials), reached with `DOCKER_HOST` (for example `DOCKER_HOST=ssh://runner@runner-host`). Chosen for now (decision log L6): Docker on the API/database machine, with **rootless Docker** so a sandbox escape doesn't give root on that machine, and with the machine used for nothing else.
 2. **Network.** The runner host needs no inbound access except from the API host for Docker. Sandboxes themselves have no network.
 3. **Pin the image** by digest (`RUNNER_PYTHON_IMAGE=python:3.12-slim@sha256:…`) and pre-pull it on the runner host. The digest used during development was `a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1`.
 4. **Recommended hardening on the runner host:** Docker's user-namespace remapping (`userns-remap`) or rootless Docker, so root inside a container isn't root on the host. Optionally use the gVisor runtime (`--runtime=runsc`) for a second kernel boundary; this needs one extra flag in `DockerRunnerProvider`.
 5. **One API instance.** The run limits are kept in the API's memory. With more than one API instance, each would admit its own runs, so limits must move to a shared store (Redis) or a real queue first.
 
 ## Capacity
+
+**With deferred grading (the default), this section matters only for how fast results appear after an exam** — students never wait on the runner, Submit is a save, and no submission is turned away. At the measured rates, 500 attempts are graded in about 3–6 minutes after they end, and the question-wise results page shows "Grading in progress" until done. The numbers below were measured with live grading (every request waiting for its result), which is what `CODING_GRADING_MODE=LIVE` would bring back.
 
 Measured on 2026-10-17 with `apps/api/scripts/load-test-runner.ts`: 100 students each start an attempt, then all of them press Run samples at once, then all press Submit at once. The coding question has 3 tests. Environment: a MacBook with Docker Desktop (8 CPUs and 4 GB RAM for the VM), with the API on the same machine in production mode.
 
@@ -122,4 +136,9 @@ STUDENTS=100 API_URL=http://localhost:3000 npx ts-node scripts/load-test-runner.
 | `RUNNER_OUTPUT_LIMIT_BYTES` | 65536 | Per stream, per test |
 | `RUNNER_STARTUP_TIMEOUT_MS` | 10000 | Allowance for container start in the overall deadline |
 
+| `CODING_GRADING_MODE` | `DEFERRED` | `DEFERRED`: Submit saves, grading after the attempt. `LIVE`: Submit grades immediately |
+| `CODING_SERVER_RUN` | unset | Run / Run samples on the server: unset = on in development, off in production; `true`/`false` to force |
+
 Each question also sets its own time limit per test (100–10,000 ms, default 2,000) and memory limit (32–512 MB, default 256).
+
+**Note on memory vs time limits:** on a heavily loaded or slow Docker host, a program that allocates a lot of memory can be stopped by the time limit before the kernel's memory killer acts, so it is reported as *Time limit exceeded* instead of *Memory limit exceeded*. It is contained either way and scores 0 for that test.

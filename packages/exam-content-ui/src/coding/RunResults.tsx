@@ -1,6 +1,6 @@
 /** Owner: Person B. Results of the last Run / Run samples / Submit. */
-import { CodeRunKind } from '@secure-exam/types';
-import { Badge } from '../ui';
+import { CodeRunKind, CodeSubmissionStatus } from '@secure-exam/types';
+import { Alert, Badge } from '../ui';
 import type { LastAction } from './hooks/useCodeRun';
 import { STATUS_LABEL, VERDICT_LABEL } from './labels';
 import { SampleBlock } from './ProblemStatement';
@@ -9,26 +9,36 @@ export function RunResults({ last }: { last: LastAction }) {
   if (!last) {
     return (
       <p className="text-sm text-slate-500">
-        <b>Run</b> uses your custom input. <b>Run samples</b> checks the examples. <b>Submit</b> grades your code
-        against all tests; your last submission counts.
+        <b>Run</b> uses your custom input. <b>Run samples</b> checks the examples. <b>Submit</b> saves this code as your
+        final answer; it's graded on all tests after the exam. You can submit again — the last submission counts.
       </p>
     );
   }
 
   if (last.kind === 'submit') {
-    const r = last.result;
+    const { status, savedAt, result } = last.result;
+    if (status === CodeSubmissionStatus.PENDING || !result) {
+      return (
+        <div data-testid="submit-result">
+          <Alert tone="green">
+            Saved as your final answer at {new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+            It will be graded on all test cases after the exam.
+          </Alert>
+        </div>
+      );
+    }
     return (
       <div className="space-y-3" data-testid="submit-result">
         <div className="flex flex-wrap items-baseline gap-3">
           <span className="text-base font-semibold text-slate-900">
-            Score {r.score} / {r.maxScore}
+            Score {result.score} / {result.maxScore}
           </span>
           <span className="text-sm text-slate-600">
-            {r.passed} of {r.total} tests passed
+            {result.passed} of {result.total} tests passed
           </span>
         </div>
         <ul className="grid gap-1.5 sm:grid-cols-2">
-          {r.tests.map((t) => {
+          {result.tests.map((t) => {
             const v = VERDICT_LABEL[t.verdict];
             return (
               <li key={t.index} className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 text-sm">
@@ -52,7 +62,9 @@ export function RunResults({ last }: { last: LastAction }) {
       <div className="space-y-2" data-testid="run-result">
         <div className="flex items-center gap-2">
           <Badge tone={s.tone}>{s.text}</Badge>
-          <span className="text-xs text-slate-500">{r.outcome.timeMs} ms</span>
+          <span className="text-xs text-slate-500">
+            {r.outcome.timeMs} ms{last.where === 'server' ? ' · ran on the server' : ''}
+          </span>
         </div>
         <SampleBlock label="Output" text={r.outcome.stdout} />
         {r.outcome.stderr && <SampleBlock label="Errors" text={r.outcome.stderr} />}

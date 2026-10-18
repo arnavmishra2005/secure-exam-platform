@@ -135,8 +135,9 @@ export class QuestionAnalyticsService {
           select: ['attemptId', 'questionId', 'isFinal', 'fromDraft', 'status', 'score', 'passed', 'total', 'code'],
         })
       : [];
+    // A final row that is PENDING is queued to run again: show it as not graded yet.
     const finals = subs
-      .filter((s) => s.isFinal)
+      .filter((s) => s.isFinal && s.status === CodeSubmissionStatus.GRADED)
       .map((s) => ({
         attemptId: s.attemptId,
         questionId: s.questionId,
@@ -147,7 +148,13 @@ export class QuestionAnalyticsService {
       }));
     const submitted: SubmittedKeys = new Set(
       subs
-        .filter((s) => !s.isFinal && !s.fromDraft && s.status === CodeSubmissionStatus.GRADED)
+        .filter(
+          (s) =>
+            (s.isFinal && s.status === CodeSubmissionStatus.PENDING) ||
+            (!s.isFinal &&
+              !s.fromDraft &&
+              (s.status === CodeSubmissionStatus.PENDING || s.status === CodeSubmissionStatus.GRADED)),
+        )
         .map((s) => `${s.attemptId}|${s.questionId}`),
     );
     return buildMatrix(questions, attempts, answers, finals, submitted);
@@ -174,12 +181,29 @@ export class QuestionAnalyticsService {
     // A final row with no code is the 0 recorded when the student wrote nothing.
     const final = subs.find((s) => s.isFinal && s.code.trim().length > 0);
     if (!final) {
-      if (!draft?.trim()) return null;
+      // Not graded yet: show the latest Submit, else the autosaved draft.
+      const lastSubmit = [...subs].reverse().find((s) => !s.isFinal && !s.fromDraft && s.code.trim());
+      const code = lastSubmit?.code ?? draft;
+      if (!code?.trim()) return null;
       return {
-        code: draft,
-        language: CodeLanguage.PYTHON,
-        source: 'DRAFT',
-        status: null,
+        code,
+        language: lastSubmit?.language ?? CodeLanguage.PYTHON,
+        source: lastSubmit ? 'SUBMITTED' : 'DRAFT',
+        status: lastSubmit?.status ?? null,
+        passed: 0,
+        total: 0,
+        tests: [],
+        submitCount,
+        runCount,
+      };
+    }
+    if (final.status === CodeSubmissionStatus.PENDING) {
+      // Queued to run again after the question was edited.
+      return {
+        code: final.code,
+        language: final.language,
+        source: final.fromDraft ? 'FINAL_DRAFT' : 'FINAL_SUBMIT',
+        status: final.status,
         passed: 0,
         total: 0,
         tests: [],

@@ -269,3 +269,10 @@ export class ValidateCodingDto {
   @MaxLength(CODE_MAX_LENGTH)
   code?: string;
 }
+
+/** POST /exams/:examId/question-analytics/recalculate */
+export class RecalculateDto {
+  @IsOptional()
+  @IsUUID('4')
+  questionId?: string;
+}

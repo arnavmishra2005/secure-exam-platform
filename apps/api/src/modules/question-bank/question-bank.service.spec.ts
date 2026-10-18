@@ -84,14 +84,53 @@ describe('QuestionBankService.validateContent', () => {
   });
 });
 
-describe('QuestionBankService.replace', () => {
-  it('refuses to change a locked question before touching the database', async () => {
-    const { service, questionRepo, lockService, dataSource } = setup();
-    questionRepo.findOne.mockResolvedValue({ id: 'q-1', status: QuestionStatus.READY });
-    lockService.assertContentEditable.mockRejectedValue(new ConflictException('locked'));
+describe('QuestionBankService.replace on a question students have answered', () => {
+  const answered = {
+    id: 'q-1',
+    type: QuestionType.MCQ_SINGLE,
+    status: QuestionStatus.READY,
+    options: [
+      { id: 'opt-b', order: 1 },
+      { id: 'opt-a', order: 0 },
+    ],
+  };
 
-    await expect(service.replace('q-1', mcq, 'admin-1')).rejects.toBeInstanceOf(ConflictException);
+  it("refuses a type change or a different number of options", async () => {
+    const { service, questionRepo, lockService, dataSource } = setup();
+    questionRepo.findOne.mockResolvedValue(answered);
+    (lockService as unknown as { isLocked: jest.Mock }).isLocked = jest.fn().mockResolvedValue(true);
+
+    await expect(service.replace('q-1', { ...mcq, type: QuestionType.MCQ_MULTI }, 'admin')).rejects.toThrow("type can't change");
+    const threeOptions = { ...mcq, options: [...mcq.options!, { text: 'c', isCorrect: false, order: 2 }] };
+    await expect(service.replace('q-1', threeOptions, 'admin')).rejects.toThrow("can't be added or removed");
     expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('updates options in place by position so student answers keep pointing at them', async () => {
+    const { service, questionRepo, lockService, dataSource } = setup();
+    questionRepo.findOne.mockResolvedValue(answered);
+    (lockService as unknown as { isLocked: jest.Mock }).isLocked = jest.fn().mockResolvedValue(true);
+    (lockService as unknown as { liveExams: jest.Mock }).liveExams = jest.fn().mockResolvedValue([]);
+    const optionRepo = { update: jest.fn(), delete: jest.fn(), insert: jest.fn() };
+    const tagRepo = { delete: jest.fn(), insert: jest.fn() };
+    const questionTxRepo = { update: jest.fn() };
+    const repos = new Map<string, unknown>([
+      ['OptionEntity', optionRepo],
+      ['QuestionTagEntity', tagRepo],
+      ['QuestionEntity', questionTxRepo],
+    ]);
+    dataSource.transaction.mockImplementation(async (cb: (m: unknown) => Promise<unknown>) =>
+      cb({ getRepository: (e: { name: string }) => repos.get(e.name) ?? { delete: jest.fn(), insert: jest.fn(), save: jest.fn(), create: (x: unknown) => x } }),
+    );
+    jest.spyOn(service, 'get').mockResolvedValue({} as never);
+
+    // Fix the answer key: the second option is the correct one.
+    await service.replace('q-1', { ...mcq, options: [{ text: 'a', isCorrect: false, order: 0 }, { text: 'b', isCorrect: true, order: 1 }] }, 'admin');
+
+    expect(optionRepo.update).toHaveBeenCalledWith({ id: 'opt-a' }, { text: 'a', isCorrect: false, order: 0 });
+    expect(optionRepo.update).toHaveBeenCalledWith({ id: 'opt-b' }, { text: 'b', isCorrect: true, order: 1 });
+    expect(optionRepo.delete).not.toHaveBeenCalled();
+    expect(optionRepo.insert).not.toHaveBeenCalled();
   });
 });
 

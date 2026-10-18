@@ -18,4 +18,9 @@ export class ResultTableScoreSink implements ICodeScoreSink {
       throw new Error(`No result row for attempt ${record.attemptId}`);
     }
   }
+
+  async replaceTotals(manager: EntityManager, attemptId: string, score: number, maxScore: number): Promise<void> {
+    const res = await manager.getRepository(ResultEntity).update({ attemptId }, { score, maxScore });
+    if (!res.affected) throw new Error(`No result row for attempt ${attemptId}`);
+  }
 }

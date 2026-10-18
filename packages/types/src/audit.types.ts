@@ -31,6 +31,7 @@ export enum AuditEventType {
   // Coding events (Person B)
   CODE_SUBMITTED = 'CODE_SUBMITTED',
   CODE_GRADED = 'CODE_GRADED',
+  RESULTS_RECALCULATED = 'RESULTS_RECALCULATED',
 
   // Student assignment events (Person B)
   STUDENT_ASSIGNED = 'STUDENT_ASSIGNED',
