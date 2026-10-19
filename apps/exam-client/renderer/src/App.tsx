@@ -18,6 +18,7 @@ import { AttemptProvider } from './contexts/AttemptContext';
 import LoginPage from './routes/login/LoginPage';
 import InstructionsPage from './routes/instructions/InstructionsPage';
 import SubmittedPage from './routes/submitted/SubmittedPage';
+import AdminRedirectPage from './routes/admin-redirect/AdminRedirectPage';
 
 // Person B owns ExamPage — lazy-loaded for code splitting.
 import { lazy, Suspense } from 'react';
@@ -32,6 +33,9 @@ export default function App() {
 
         {/* Auth-protected routes */}
         <Route element={<ProtectedRoute />}>
+          {/* Admin redirect — outside AttemptProvider, no exam context needed */}
+          <Route path="/admin-redirect" element={<AdminRedirectPage />} />
+
           {/* AttemptProvider lives here — wraps every route that needs exam context */}
           <Route element={<AttemptProvider />}>
             <Route path="/instructions" element={<InstructionsPage />} />

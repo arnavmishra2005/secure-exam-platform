@@ -53,9 +53,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  // On first load, try to silently resume a session from the stored refresh
-  // token so a page reload doesn't force a re-login every time.
+  // On first load, check URL params for seamless SSO handoff from the unified portal (:3002),
+  // then try to silently resume a session from the stored refresh token.
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('refreshToken') || urlParams.get('token');
+      if (urlToken) {
+        window.localStorage.setItem(REFRESH_TOKEN_KEY, urlToken);
+        urlParams.delete('refreshToken');
+        urlParams.delete('token');
+        const cleanSearch = urlParams.toString();
+        const cleanUrl = window.location.pathname + (cleanSearch ? `?${cleanSearch}` : '');
+        window.history.replaceState({}, '', cleanUrl);
+      }
+    }
+
     const storedRefreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
     if (!storedRefreshToken) {
       setIsLoading(false);
