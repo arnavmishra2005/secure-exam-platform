@@ -5,6 +5,9 @@ export const IPC = {
   GET_READINESS: 'desktop:get-readiness',
   EXIT_KIOSK: 'desktop:exit-kiosk',
   LOG_VIOLATION: 'desktop:log-violation',
+  NOTIFY_SUBMITTED: 'desktop:notify-submitted',
+  SET_SECURITY_MODE: 'desktop:set-security-mode',
+  OPEN_EXTERNAL: 'desktop:open-external',
   // Main → Renderer
   SECURITY_EVENT: 'desktop:security-event',
 } as const;
@@ -31,6 +34,7 @@ export interface ReadinessResult {
     singleDisplay: boolean;
     backendReachable: boolean;
     noForbiddenProcesses: boolean;
+    forbiddenList?: string[];
     // ponytail: clientVersion check deferred — needs backend ClientRelease endpoint (C backend, not yet built)
   };
 }

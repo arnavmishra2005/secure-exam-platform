@@ -6,6 +6,7 @@
  */
 
 import { useAuth } from '../../hooks/useAuth';
+import { desktop, isDesktop } from '../../hooks/useDesktop';
 
 const ADMIN_URL = import.meta.env.VITE_ADMIN_URL ?? 'http://localhost:3001';
 
@@ -16,6 +17,13 @@ export default function AdminRedirectPage() {
     ? `${ADMIN_URL}/students?refreshToken=${encodeURIComponent(refreshToken)}`
     : `${ADMIN_URL}/students`;
 
+  async function handleOpenAdmin(e: React.MouseEvent) {
+    if (isDesktop()) {
+      e.preventDefault();
+      await desktop.openExternal(targetUrl);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -25,10 +33,11 @@ export default function AdminRedirectPage() {
         </div>
         <div className="px-8 py-6 space-y-4">
           <p className="text-sm text-gray-600">
-            You are signed in as an administrator. The admin portal opens in your browser.
+            You are signed in as an administrator. The admin portal opens in your default web browser without exam kiosk restrictions.
           </p>
           <a
             href={targetUrl}
+            onClick={handleOpenAdmin}
             target="_blank"
             rel="noreferrer"
             className="block w-full text-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"

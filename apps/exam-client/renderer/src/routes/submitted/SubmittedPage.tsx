@@ -9,10 +9,12 @@
  * can be enriched once Phase 1's result publishing flow is complete.
  */
 
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useAttempt } from '../../contexts/AttemptContext';
 import { useSyncStatus } from '../../hooks/useSyncStatus';
+import { isDesktop, desktop } from '../../hooks/useDesktop';
 
 export default function SubmittedPage() {
   const { user, logout } = useAuth();
@@ -21,12 +23,28 @@ export default function SubmittedPage() {
   // Person C's queued submission (e.g. the timer ran out while offline).
   const submit = useSyncStatus((s) => s.submit);
   const isPending = submit === 'pending';
+  const isCompleted = !isPending && submit !== 'failed';
+
+  useEffect(() => {
+    if (isCompleted && isDesktop()) {
+      desktop.notifySubmitted();
+    }
+  }, [isCompleted]);
 
   async function handleLogout() {
     // Clear the attempt reference — exam is done.
     setAttemptId(null);
     await logout();
+    if (isDesktop()) {
+      await desktop.exitKiosk();
+      return;
+    }
     navigate('/login', { replace: true });
+  }
+
+  async function handleExitDesktop() {
+    setAttemptId(null);
+    await desktop.exitKiosk();
   }
 
   return (
@@ -70,6 +88,15 @@ export default function SubmittedPage() {
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-4 text-sm text-blue-700 mb-8">
             Results will be published by your institution. You will be notified when they are available.
           </div>
+        )}
+
+        {isDesktop() && isCompleted && (
+          <button
+            onClick={handleExitDesktop}
+            className="w-full mb-3 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-green-700 transition-colors shadow-sm"
+          >
+            Exit Exam & Return to Desktop
+          </button>
         )}
 
         <button

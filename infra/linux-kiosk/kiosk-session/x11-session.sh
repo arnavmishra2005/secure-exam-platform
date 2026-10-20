@@ -1,35 +1,35 @@
 #!/usr/bin/env bash
 # x11-session.sh — X11 fallback kiosk session (for machines without Wayland/cage)
 #
-# Uses xinit to start a minimal X server, then openbox in kiosk mode as the
-# window manager, then launches the Electron AppImage.
+# Uses an isolated Openbox configuration that disables all keybindings,
+# desktop menus, and window decorations, launching the Electron AppImage
+# without touching the user's home configuration or disabling sandboxing.
 #
-# Openbox kiosk config disables right-click menus, alt-tab, and all hotkeys.
-#
-# Environment variables (set by exam-kiosk.service):
+# Environment variables:
 #   INSTALL_DIR     — directory containing SecureExam.AppImage (default /opt/secure-exam)
+#   APPIMAGE        — direct path to AppImage (optional override)
 #   INVIGILATOR_PIN — PIN required to exit kiosk (default 1234)
 #   API_URL         — backend API base URL
 
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/secure-exam}"
-APPIMAGE="$INSTALL_DIR/SecureExam.AppImage"
+APPIMAGE="${APPIMAGE:-$INSTALL_DIR/SecureExam.AppImage}"
 
 if [[ ! -x "$APPIMAGE" ]]; then
-  echo "ERROR: AppImage not found or not executable: $APPIMAGE" >&2
+  echo "ERROR: Exam AppImage not found or not executable: $APPIMAGE" >&2
   exit 1
 fi
 
-# Write a minimal openbox config that disables all keybindings and menus
-OB_CONFIG_DIR="$HOME/.config/openbox"
-mkdir -p "$OB_CONFIG_DIR"
+# Isolated temporary configuration directory (never touches ~/.config/openbox or ~/.xinitrc)
+CONFIG_DIR=$(mktemp -d /tmp/secure-exam-openbox-XXXXXX)
+trap 'rm -rf "$CONFIG_DIR"' EXIT
 
-cat > "$OB_CONFIG_DIR/rc.xml" <<'OBRC'
+cat > "$CONFIG_DIR/rc.xml" <<'OBRC'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <keyboard>
-    <!-- No keybindings at all — prevents alt-F4, alt-tab, super, etc. -->
+    <!-- No keybindings — suppresses Alt+F4, Alt+Tab, Super, workspace switches -->
   </keyboard>
   <mouse>
     <context name="Root">
@@ -46,56 +46,50 @@ cat > "$OB_CONFIG_DIR/rc.xml" <<'OBRC'
     </application>
   </applications>
   <desktops>
-    <!-- Single desktop only — no workspace switching -->
     <number>1</number>
     <firstdesk>1</firstdesk>
   </desktops>
 </openbox_config>
 OBRC
 
-cat > "$OB_CONFIG_DIR/menu.xml" <<'OBMENU'
+cat > "$CONFIG_DIR/menu.xml" <<'OBMENU'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_menu xmlns="http://openbox.org/3.4/menu">
-  <!-- Empty menu — no right-click options -->
 </openbox_menu>
 OBMENU
 
-# Write the xinitrc that starts openbox and then the exam app
-XINITRC="$HOME/.xinitrc"
-cat > "$XINITRC" <<XINITEOF
+# Session script to run inside X11
+cat > "$CONFIG_DIR/xsession.sh" <<XINITEOF
 #!/bin/sh
-# Disable screen saver and power management
-xset s off
-xset s noblank
-xset -dpms
+xset s off 2>/dev/null || true
+xset s noblank 2>/dev/null || true
+xset -dpms 2>/dev/null || true
 
-# Disable Ctrl+Alt+Backspace (zap) — belt-and-suspenders with disable-escapes.sh
-setxkbmap -option "" 2>/dev/null || true
-
-# Start openbox as window manager (background)
-openbox &
+# Start Openbox with isolated config
+openbox --config-file "$CONFIG_DIR/rc.xml" &
 OB_PID=\$!
 
-# Wait briefly for openbox to initialize
-sleep 0.5
+# Brief pause to allow WM to register
+sleep 0.3
 
-# Launch the Electron kiosk app
+# Launch the Electron kiosk app with Chromium sandbox preserved
 INVIGILATOR_PIN="${INVIGILATOR_PIN:-1234}" \
 API_URL="${API_URL:-http://localhost:3000}" \
 "$APPIMAGE" \
-  --no-sandbox \
-  --disable-gpu-sandbox \
   --disable-extensions \
   --disable-plugins \
   --disable-background-networking
 
-# When app exits (invigilator exited), kill openbox
+# When app exits (invigilator exit or submission), stop openbox
 kill \$OB_PID 2>/dev/null || true
 XINITEOF
 
-chmod +x "$XINITRC"
+chmod +x "$CONFIG_DIR/xsession.sh"
 
-# xinit flags:
-#   -- :0 vt1    — use display :0 on VT1 (same VT as autologin)
-exec xinit "$XINITRC" -- :0 vt1 -nolisten tcp
-
+if [[ -n "${DISPLAY:-}" ]]; then
+  # Already in an X session (e.g. launched from Display Manager Xsession or Xephyr)
+  exec "$CONFIG_DIR/xsession.sh"
+else
+  # Running from console: start a dedicated X server
+  exec xinit "$CONFIG_DIR/xsession.sh" -- :1 -nolisten tcp
+fi

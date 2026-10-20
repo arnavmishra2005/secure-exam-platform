@@ -12,22 +12,18 @@
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/secure-exam}"
-APPIMAGE="$INSTALL_DIR/SecureExam.AppImage"
+APPIMAGE="${APPIMAGE:-$INSTALL_DIR/SecureExam.AppImage}"
 
 if [[ ! -x "$APPIMAGE" ]]; then
-  echo "ERROR: AppImage not found or not executable: $APPIMAGE" >&2
+  echo "ERROR: Exam AppImage not found or not executable: $APPIMAGE" >&2
   exit 1
 fi
 
 # cage flags:
-#   -d           — disable VT-switching inside the cage session
-# Electron flags:
-#   --no-sandbox — required when running as the 'exam' system user (no setuid helper)
-#                  Sandboxing is delegated to cage + OS-level restrictions.
-#   --disable-gpu-sandbox — avoid GPU driver sandbox issues on lab hardware
+#   -d           — disable VT-switching inside the cage session (session-level control)
+# Chromium/Electron flags:
+#   Preserves full Chromium multi-process sandbox (no --no-sandbox).
 exec cage -d -- "$APPIMAGE" \
-  --no-sandbox \
-  --disable-gpu-sandbox \
   --disable-extensions \
   --disable-plugins \
   --disable-background-networking

@@ -1,221 +1,114 @@
-# Linux Kiosk — Deployment Runbook
+# Linux Kiosk — Deployment Runbook & Safe Testing Guide
 
-> **Scope**: Person C — Linux OS-level kiosk hardening for the Secure Exam Platform.  
-> Windows kiosk is deferred. Code execution / grading / backend monitoring are out of scope here.
+> **Scope**: Linux OS- and session-level kiosk hardening for the Secure Exam Platform.
+> Provides Safe Exam Browser-like isolation on Linux without permanently altering or damaging normal Ubuntu workstations.
 
 ---
 
-## Overview
+## Architecture Overview
 
 ```
 infra/linux-kiosk/
-├── setup-exam-kiosk.sh          ← Main provisioning script (run as root)
+├── setup-exam-kiosk.sh          ← Non-destructive provisioning script (opt-in)
+├── rollback-exam-kiosk.sh       ← 100% reversible uninstaller / system restore script
+├── run-kiosk-test.sh            ← Safe user-space testing tool (nested, no root required)
+├── disable-escapes.sh           ← Optional lab PC hardening (requires --confirm-lab-hardening)
+├── sessions/
+│   ├── secure-exam-session.sh   ← Display manager session dispatcher (Wayland/X11)
+│   ├── secure-exam-kiosk-wayland.desktop ← GDM/LightDM Wayland session entry
+│   └── secure-exam-kiosk-x11.desktop     ← GDM/LightDM X11 session entry
 ├── kiosk-session/
-│   ├── cage-session.sh          ← Wayland session (preferred — cage compositor)
-│   └── x11-session.sh           ← X11 fallback (openbox kiosk mode)
-├── disable-escapes.sh           ← Blocks VT switching, SysRq, Ctrl+Alt+Del/Backspace
-├── usb-block.rules              ← udev: block USB mass storage, allow HID
-├── nftables-exam.conf           ← Per-UID egress firewall (exam user → API + DNS only)
-└── README.md                    ← This file
+│   ├── cage-session.sh          ← Wayland kiosk session (cage compositor, sandboxed)
+│   └── x11-session.sh           ← X11 fallback (isolated openbox rc.xml, sandboxed)
+├── usb-block.rules              ← udev mass storage block (non-destructive, no rmmod)
+├── nftables-exam.conf           ← Isolated 'secure_exam_filter' table (per-UID egress only)
+└── README.md                    ← This runbook
 ```
 
-The **Electron app** (`apps/exam-client/`) enforces:
-- Kiosk window (fullscreen, no frame, always-on-top, no close button)
-- Input guard (blocks Alt+F4, Alt+Tab, F5, Ctrl+R, DevTools shortcuts, Super key)
-- Navigation guard (blocks external URLs, popups, context menu)
-- Focus monitor (forces focus back after blur in 200ms)
-- Display monitor (detects external display added/removed)
-- Readiness checks (single display, no forbidden processes, backend reachable)
-- Preload bridge (`window.desktop`) for renderer ↔ main IPC
+---
+
+## Deployment Modes
+
+### Mode 1: Safe Desktop Session (Recommended for Workstations / Everyday PCs)
+- **Zero changes to your default Ubuntu desktop or shell.**
+- Registers an opt-in session (`Secure Exam Kiosk`) in your display manager (GDM/LightDM/SDDM).
+- The user logs in normally before an exam.
+- To take an exam: Log out, choose **"Secure Exam Kiosk"** at the login screen, and log in.
+- The session launches the exam in Cage (Wayland) or isolated Openbox (X11):
+  - No window decorations, no desktop shell, no workspaces.
+  - Global shortcuts (`Alt+Tab`, `Alt+F4`, `Super`, etc.) suppressed at the compositor level.
+  - Chromium multi-process sandbox remains **active and intact** (no `--no-sandbox`).
+- When the exam is submitted or an invigilator enters the PIN, the app exits with status 0, the session ends cleanly, and the display manager returns to the login screen. Normal Ubuntu desktop is completely unharmed.
+
+### Mode 2: Dedicated Lab Machine (Automated Lab Kiosk)
+- For disposable or dedicated lab computers only.
+- Run with `--enable-autologin` and optional `--lab-hardening`:
+  ```bash
+  sudo bash infra/linux-kiosk/setup-exam-kiosk.sh --enable-autologin --lab-hardening \
+      /path/to/SecureExam.AppImage http://<api-server-ip>:3000
+  ```
+- Fully reversible at any time by running:
+  ```bash
+  sudo bash infra/linux-kiosk/rollback-exam-kiosk.sh
+  ```
 
 ---
 
-## Prerequisites
+## Safe Testing Instructions
 
-| Item | Requirement |
-|------|-------------|
-| OS | Ubuntu 22.04 LTS or Debian 12 (64-bit) |
-| RAM | ≥ 4 GB |
-| Disk | ≥ 20 GB |
-| Network | LAN access to API server (port 3000) |
-| Electron AppImage | Built from `apps/exam-client/` (see Building section) |
-
----
-
-## Step 1 — Build the Electron AppImage (on dev machine)
-
+### 1. Development Mode (Non-destructive, User-space)
+Run the Vite renderer and Electron app without kiosk traps:
 ```bash
-# In the repo root:
-cd apps/exam-client
-
-# Install Electron dependencies (first time only)
-npm install
-
-# Build the renderer
-npm run build:renderer     # builds apps/exam-client/renderer → renderer/dist/
-
-# Package the Electron app as AppImage
-npm run desktop:build      # produces dist/SecureExam-*.AppImage
+npm run api:start      # Terminal 1: NestJS API (:3000)
+npm run client:dev     # Terminal 2: Vite dev server (:5173)
+npm run client:desktop # Terminal 3: Electron dev shell
 ```
+*In dev mode, window controls and DevTools remain accessible.*
 
-Copy the resulting `.AppImage` file to the lab machine (e.g., via USB before provisioning, or scp after network is set up).
-
----
-
-## Step 2 — Physical / BIOS Hardening (manual, before OS install)
-
-> [!CAUTION]
-> These steps must be done before provisioning. Skipping them means a student can boot from USB or enter BIOS settings.
-
-1. **Set a BIOS/UEFI password** — prevents entering BIOS setup.
-2. **Disable USB boot** in BIOS boot order — or enable Secure Boot.
-3. **Disable network boot (PXE)** if not needed.
-4. **Set GRUB password**:
-   ```bash
-   grub-mkpasswd-pbkdf2    # generates hash
-   # Add to /etc/grub.d/40_custom:
-   # set superusers="admin"
-   # password_pbkdf2 admin <hash>
-   update-grub
-   ```
-
----
-
-## Step 3 — Run the Provisioning Script
-
+### 2. Nested Kiosk Window Test (Unprivileged, No Root)
+Test the kiosk session inside a nested window without altering the host desktop:
 ```bash
-# Transfer scripts to the lab machine first
-scp -r infra/linux-kiosk/ labmachine:/tmp/linux-kiosk/
-scp dist/SecureExam-*.AppImage labmachine:/tmp/SecureExam.AppImage
-
-# On the lab machine:
-sudo bash /tmp/linux-kiosk/setup-exam-kiosk.sh \
-    /tmp/SecureExam.AppImage \
-    http://192.168.1.100:3000    # ← replace with your API server IP
+bash infra/linux-kiosk/run-kiosk-test.sh
 ```
+- If running under Wayland, launches nested inside a Cage window.
+- If Xephyr is available, launches an isolated X11 test screen on `:2`.
+- Verifies shortcut suppression and exit flow without system modifications.
 
-The script will:
-1. Create an unprivileged `exam` OS user (locked password, no login shell)
-2. Install `cage`, `openbox`, `xorg`, `nftables`
-3. Copy AppImage to `/opt/secure-exam/SecureExam.AppImage`
-4. Configure **systemd autologin** on TTY1 for the `exam` user
-5. Install `exam-kiosk.service` (systemd user service) + `.bashrc` fallback
-6. Apply nftables firewall rules
-7. Install USB block udev rules
-8. Call `disable-escapes.sh` to mask VT gettys, disable SysRq, Ctrl+Alt+Del
+### 3. Disposable VM Full Lockdown Testing
+For testing system-level provisioning (`setup-exam-kiosk.sh`):
+1. Use an Ubuntu 22.04 LTS or 24.04 VM (VirtualBox or QEMU/KVM).
+2. Take a VM snapshot.
+3. Run `sudo bash infra/linux-kiosk/setup-exam-kiosk.sh /tmp/SecureExam.AppImage http://192.168.1.100:3000`.
+4. Test session launch, network egress rules, and exit flow.
+5. Run `sudo bash infra/linux-kiosk/rollback-exam-kiosk.sh --purge` to verify complete cleanup.
 
 ---
 
-## Step 4 — Set the Invigilator PIN
+## Exit and Recovery Procedures
 
-The PIN protects the "Exit Kiosk" button inside the Electron app.
+### Standard Exit Flows
+1. **Upon Successful Submission:**
+   - Once answers are submitted, the `SubmittedPage` displays an **"Exit Exam & Return to Desktop"** button.
+   - Clicking it calls `desktop.exitKiosk()`, closing the window and terminating the kiosk session cleanly.
+2. **Invigilator Exit During Active Exam:**
+   - Click the "Exit Kiosk" button at the bottom-right corner of the exam screen.
+   - Enter the invigilator PIN (default: `1234` or set via `INVIGILATOR_PIN`).
+   - The application immediately closes and returns to the desktop/login screen.
 
-```bash
-# Edit the systemd user service for the exam user
-sudo nano /home/exam/.config/systemd/user/exam-kiosk.service
-# Change: Environment=INVIGILATOR_PIN=1234
-# To:     Environment=INVIGILATOR_PIN=<your-secure-pin>
-
-# Reload
-sudo loginctl enable-linger exam
-sudo -u exam XDG_RUNTIME_DIR=/run/user/$(id -u exam) \
-    systemctl --user daemon-reload
-```
-
----
-
-## Step 5 — Reboot and Verify
-
-```bash
-sudo reboot
-```
-
-After reboot, the machine should:
-- Boot directly into the kiosk session (TTY1, Wayland via cage or X11)
-- Show the Secure Exam app fullscreen with no taskbar/decorations
-- Pass all readiness checks before allowing exam start
-
-### Verification Matrix
-
-| Check | Expected | How to verify |
-|-------|----------|---------------|
-| No desktop shell | Only exam app visible | Look at screen |
-| Alt+Tab blocked | Window doesn't switch | Press Alt+Tab |
-| Alt+F4 blocked | Window stays open | Press Alt+F4 |
-| VT switching blocked | Ctrl+Alt+F2 does nothing | Press Ctrl+Alt+F2 |
-| SysRq disabled | `cat /proc/sys/kernel/sysrq` → `0` | SSH in as root |
-| USB stick blocked | Plugging USB drive shows no mount | Plug USB stick |
-| Firewall active | `nft list ruleset` shows exam_filter | SSH in as root |
-| External display | Readiness check fails if 2nd display added | Connect HDMI |
-| Forbidden process | Discord/OBS detected → readiness fail | Install & run Discord |
-| Invigilator PIN | Exit dialog requires correct PIN | Click Exit in app |
+### System Rollback
+If provisioned via `setup-exam-kiosk.sh`, running `rollback-exam-kiosk.sh` restores:
+- Systemd TTY1 autologin overrides removed.
+- All masked TTY consoles (`tty2`–`tty6`) and `ctrl-alt-del.target` unmasked and restarted.
+- `/etc/sysctl.d/99-exam-kiosk.conf` removed and `kernel.sysrq` restored.
+- udev USB storage blocking rules removed and reloaded.
+- Isolated nftables table `secure_exam_filter` deleted (`nft delete table inet secure_exam_filter`).
+- Display manager session entries removed.
+- Kiosk user services stopped and disabled.
 
 ---
 
-## Session Flow
+## Security & Firewall Specifications
 
-```
-Boot → TTY1 autologin (exam user)
-  └─► cage-session.sh (Wayland) OR x11-session.sh (X11)
-        └─► SecureExam.AppImage
-              ├─► ReadinessGate (checks: display count, processes, backend)
-              ├─► Student enters Exam ID → /exam
-              ├─► ViolationBanner monitors: focus, display, nav, shortcuts
-              └─► Invigilator enters PIN → exit()
-```
-
----
-
-## Rollback / Recovery
-
-To recover a machine (e.g., after exam or if kiosk is stuck):
-
-```bash
-# SSH in as root from another machine on the same LAN
-ssh root@<lab-machine-ip>
-
-# Stop the kiosk service
-loginctl enable-linger exam
-XDG_RUNTIME_DIR=/run/user/$(id -u exam) \
-  sudo -u exam systemctl --user stop exam-kiosk.service
-
-# Remove autologin to get normal TTY login back
-rm /etc/systemd/system/getty@tty1.service.d/autologin.conf
-systemctl daemon-reload
-systemctl restart getty@tty1.service
-```
-
----
-
-## Building from Scratch
-
-```bash
-# Full dev workflow (on dev machine, not kiosk)
-npm run api:start          # terminal 1 — NestJS API on :3000
-npm run client:dev         # terminal 2 — Vite renderer on :5173
-npm run client:desktop     # terminal 3 — Electron dev shell (loads :5173)
-```
-
-`npm run client:desktop` uses `wait-on` to wait for the Vite server before launching Electron.
-
----
-
-## Firewall Notes
-
-The nftables config (`nftables-exam.conf`) restricts the `exam` OS user's outbound traffic to:
-- `TCP :3000` — API server
-- `UDP/TCP :53` — DNS resolution
-
-All other outbound from `exam` uid is dropped. Other users (root, sysadmin) are unrestricted.
-
-To allow a different API port, edit `define API_PORT` in `/etc/nftables.conf`.
-
----
-
-## Known Limitations
-
-- **`setContentProtection`** (prevents screen capture) is not available on Linux in Electron — rely on OS-level kiosk (cage/X11 fullscreen) and physical camera policies instead.
-- **Wayland preferred**: `cage` provides stronger isolation than X11; fall back to X11 only on older hardware.
-- **No automatic USB re-enable**: after the exam, a reboot or `udevadm trigger` clears the USB block. Invigilators can plug USB after rebooting to recovery mode.
-- **nftables UID matching** requires nft ≥ 0.9.3 and kernel ≥ 4.10. Verify with `nft --version`.
-
+- **Chromium Sandbox:** Kept active across both Cage and X11 sessions.
+- **Firewall Isolation:** The `secure_exam_filter` nftables table restricts **only** the `exam` OS user's outbound traffic to TCP 3000 (API) and UDP/TCP 53 (DNS). Host inbound traffic (including SSH) and all other users remain unrestricted.
+- **USB Device Policy:** Mass storage interfaces (class 08) are blocked from automounting via udev authorization rules without unloading kernel modules. Keyboards and mice remain operational.

@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron';
 import type { ViolationType } from '../shared/types';
+import { isSecurityActive } from './ipc/channels';
 
 // Key combos that must be blocked in kiosk mode.
 // Format: { key (lowercase), modifiers that must ALL be pressed }
@@ -43,10 +44,10 @@ export function installInputGuard(win: BrowserWindow): void {
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
 
-    // DevTools shortcut detection (report even if devTools is open in dev)
+    // DevTools shortcut detection
     if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
       emitViolation(win, 'DEVTOOLS_ATTEMPT', input.key);
-      if (process.env.NODE_ENV === 'production') {
+      if (process.env.NODE_ENV === 'production' || isSecurityActive()) {
         event.preventDefault();
         return;
       }
@@ -55,7 +56,9 @@ export function installInputGuard(win: BrowserWindow): void {
     for (const rule of BLOCKED) {
       if (matches(input, rule)) {
         emitViolation(win, 'BLOCKED_SHORTCUT', `${input.key}`);
-        event.preventDefault();
+        if (process.env.NODE_ENV === 'production' || isSecurityActive()) {
+          event.preventDefault();
+        }
         return;
       }
     }

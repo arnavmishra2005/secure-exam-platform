@@ -27,10 +27,15 @@ export function ReadinessGate({ onReady }: { onReady: () => void }) {
   if (checking) return <p className="text-sm text-gray-500 mt-2">Running readiness checks…</p>;
   if (!result) return null;
 
+  const forbiddenNames =
+    result.checks.forbiddenList && result.checks.forbiddenList.length > 0
+      ? ` (${result.checks.forbiddenList.join(', ')})`
+      : '';
+
   const items = [
     { label: 'Single display', ok: result.checks.singleDisplay },
     { label: 'Exam server reachable', ok: result.checks.backendReachable },
-    { label: 'No forbidden applications', ok: result.checks.noForbiddenProcesses },
+    { label: `No forbidden applications${forbiddenNames}`, ok: result.checks.noForbiddenProcesses },
   ];
 
   return (

@@ -4,7 +4,7 @@ import { installNavigationGuard } from './navigationGuard';
 import { installInputGuard } from './inputGuard';
 import { installFocusMonitor } from './focusMonitor';
 import { installDisplayMonitor } from './displayMonitor';
-import { registerIpcHandlers } from './ipc/channels';
+import { registerIpcHandlers, isSecurityActive, setQuitting } from './ipc/channels';
 
 // Single-instance lock: if a second copy is launched, focus the existing window and quit.
 if (!app.requestSingleInstanceLock()) {
@@ -12,8 +12,25 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
+app.on('before-quit', () => {
+  setQuitting(true);
+});
+
 app.whenReady().then(() => {
   const win = createKioskWindow();
+
+  // Intercept window close (Alt+F4 / window close button) during active exam
+  win.on('close', (event) => {
+    // If exam is active and not submitted, prevent closing without invigilator PIN
+    if (isSecurityActive()) {
+      event.preventDefault();
+      win.webContents.send('desktop:security-event', {
+        type: 'BLOCKED_SHORTCUT',
+        detail: 'Alt+F4 / Close blocked during active exam',
+        ts: Date.now(),
+      });
+    }
+  });
 
   installNavigationGuard(win);
   installInputGuard(win);

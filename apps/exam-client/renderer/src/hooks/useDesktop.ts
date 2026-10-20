@@ -10,7 +10,7 @@ export interface SecurityEvent { type: ViolationType; detail?: string; ts: numbe
 
 export interface ReadinessResult {
   ok: boolean;
-  checks: { singleDisplay: boolean; backendReachable: boolean; noForbiddenProcesses: boolean; };
+  checks: { singleDisplay: boolean; backendReachable: boolean; noForbiddenProcesses: boolean; forbiddenList?: string[]; };
 }
 
 // Augment Window so TypeScript knows about window.desktop
@@ -19,7 +19,10 @@ declare global {
     desktop?: {
       isDesktop: () => boolean;
       getReadiness: () => Promise<ReadinessResult>;
-      exitKiosk: (pin: string) => Promise<{ ok: boolean; reason?: string }>;
+      exitKiosk: (pin?: string) => Promise<{ ok: boolean; reason?: string }>;
+      notifySubmitted: () => void;
+      setSecurityMode: (active: boolean) => void;
+      openExternal: (url: string) => Promise<boolean>;
       logViolation: (type: string, detail?: string) => void;
       onSecurityEvent: (cb: (event: SecurityEvent) => void) => () => void;
     };
@@ -47,8 +50,14 @@ export function useDesktopSecurityEvents(
 export const desktop = {
   getReadiness: (): Promise<ReadinessResult> | null =>
     window.desktop?.getReadiness() ?? null,
-  exitKiosk: (pin: string) =>
+  exitKiosk: (pin?: string) =>
     window.desktop?.exitKiosk(pin) ?? Promise.resolve({ ok: false, reason: 'Not in kiosk' }),
+  notifySubmitted: () =>
+    window.desktop?.notifySubmitted?.(),
+  setSecurityMode: (active: boolean) =>
+    window.desktop?.setSecurityMode?.(active),
+  openExternal: (url: string) =>
+    window.desktop?.openExternal?.(url) ?? Promise.resolve(false),
   logViolation: (type: string, detail?: string) =>
     window.desktop?.logViolation(type, detail),
 };

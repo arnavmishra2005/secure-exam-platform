@@ -6,6 +6,9 @@ const IPC = {
   GET_READINESS: 'desktop:get-readiness',
   EXIT_KIOSK: 'desktop:exit-kiosk',
   LOG_VIOLATION: 'desktop:log-violation',
+  NOTIFY_SUBMITTED: 'desktop:notify-submitted',
+  SET_SECURITY_MODE: 'desktop:set-security-mode',
+  OPEN_EXTERNAL: 'desktop:open-external',
   SECURITY_EVENT: 'desktop:security-event',
 } as const;
 
@@ -19,9 +22,21 @@ contextBridge.exposeInMainWorld('desktop', {
   getReadiness: (): Promise<ReadinessResult> =>
     ipcRenderer.invoke(IPC.GET_READINESS),
 
-  /** Exit kiosk — requires invigilator PIN. Returns { ok, reason? }. */
-  exitKiosk: (pin: string): Promise<{ ok: boolean; reason?: string }> =>
+  /** Exit kiosk — requires invigilator PIN during exam; no PIN needed after submission. */
+  exitKiosk: (pin?: string): Promise<{ ok: boolean; reason?: string }> =>
     ipcRenderer.invoke(IPC.EXIT_KIOSK, pin),
+
+  /** Notify main process that exam submission is complete. */
+  notifySubmitted: (): void =>
+    ipcRenderer.send(IPC.NOTIFY_SUBMITTED),
+
+  /** Set active exam lockdown mode (enables fullscreen, shortcut blocking, refocusing). */
+  setSecurityMode: (active: boolean): void =>
+    ipcRenderer.send(IPC.SET_SECURITY_MODE, active),
+
+  /** Open external URL (e.g. Admin portal) in host system default browser. */
+  openExternal: (url: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.OPEN_EXTERNAL, url),
 
   /** Log a violation event that the renderer detected (e.g. HEARTBEAT_LOST). */
   logViolation: (type: ViolationType, detail?: string): void =>

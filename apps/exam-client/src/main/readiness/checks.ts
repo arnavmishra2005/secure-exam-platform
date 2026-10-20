@@ -25,11 +25,13 @@ export async function runReadinessChecks(): Promise<ReadinessResult> {
   const singleDisplay = screen.getAllDisplays().length === 1;
 
   return {
-    ok: singleDisplay && backendReachable && forbidden.length === 0,
+    // ponytail: backendReachable is informational only — exam can start offline/demo
+    ok: singleDisplay && forbidden.length === 0,
     checks: {
       singleDisplay,
       backendReachable,
       noForbiddenProcesses: forbidden.length === 0,
+      forbiddenList: forbidden,
     },
   };
 }

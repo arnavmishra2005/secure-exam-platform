@@ -24,6 +24,7 @@ import { SubmitConfirmationModal } from '../../components/exam/SubmitConfirmatio
 import { isFixtureAttempt } from '../../contexts/AttemptContext';
 import { requestSubmit } from '../../persistence';
 import { ViolationBanner } from '../../components/kiosk/ViolationBanner';
+import { desktop, isDesktop } from '../../hooks/useDesktop';
 
 export default function ExamPage() {
   const navigate = useNavigate();
@@ -67,6 +68,13 @@ export default function ExamPage() {
   const isSubmitPending = isSyncedAttempt && submitStatus === 'pending';
 
   const questionsCount = questions?.length || 0;
+
+  // Lock down window when student enters active exam screen
+  useEffect(() => {
+    if (isDesktop()) {
+      desktop.setSecurityMode(true);
+    }
+  }, []);
 
   // No attempt to take, or it is already finished: leave the exam screen.
   useEffect(() => {

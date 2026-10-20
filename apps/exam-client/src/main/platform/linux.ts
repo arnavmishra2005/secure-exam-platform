@@ -10,19 +10,29 @@ const FORBIDDEN_PROCESS_NAMES = [
   'obs', 'obs-studio', 'kazam', 'recordmydesktop',
   'teamviewer', 'anydesk', 'rustdesk', 'remmina',
   'telegram', 'whatsapp', 'signal',
+];
+
+const TERMINAL_EMULATORS = [
   'xterm', 'konsole', 'gnome-terminal', 'xfce4-terminal', 'alacritty', 'kitty',
 ];
+
+const IS_DEV = process.env.NODE_ENV !== 'production';
 
 export const linuxSecurity: PlatformSecurity = {
   async scanForbiddenProcesses(): Promise<string[]> {
     try {
+      // In dev mode, don't flag terminals since the tester must run dev servers from terminal
+      const list = IS_DEV
+        ? FORBIDDEN_PROCESS_NAMES
+        : [...FORBIDDEN_PROCESS_NAMES, ...TERMINAL_EMULATORS];
+
       // Read /proc/<pid>/comm for every running process — no external binary needed.
       const { stdout } = await execFileAsync('bash', [
         '-c',
         "cat /proc/*/comm 2>/dev/null | sort -u",
       ]);
       const running = stdout.toLowerCase().split('\n').map((s) => s.trim());
-      return FORBIDDEN_PROCESS_NAMES.filter((name) =>
+      return list.filter((name) =>
         running.some((proc) => proc.includes(name)),
       );
     } catch {

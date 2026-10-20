@@ -3,24 +3,11 @@
 # Reload: udevadm control --reload-rules && udevadm trigger
 #
 # Strategy:
-#   - Blacklist usb_storage and uas kernel modules via modprobe
-#   - Prevent auto-mount of any USB block device that appears while kiosk is running
-#
-# NOTE: This blocks storage only. USB keyboards/mice (HID) are allowed
-#       because the exam needs input devices. If a stricter policy is required
-#       (block ALL USB), change SUBSYSTEM=="usb" with ATTR{authorized}="0".
+#   - Block auto-authorization of USB mass storage interfaces (class 08)
+#   - Input devices (keyboards, mice, webcams) remain allowed
+#   - Does NOT forcibly unload kernel modules (preserves host driver stability)
 
-# ── Block USB mass storage auto-mount ────────────────────────────────────────
-# Any USB block device (USB stick, external HDD) → deny automount by
-# setting authorized=0 on the interface (storage interface class 0x08)
+# Deny authorization for USB mass storage class 0x08
 ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="08", \
     ATTR{authorized}="0", \
-    RUN+="/bin/logger -t exam-kiosk USB mass storage device blocked: %k"
-
-# ── Unload usb_storage module if somehow loaded ──────────────────────────────
-ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="08", \
-    RUN+="/sbin/rmmod usb_storage 2>/dev/null || true"
-
-ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="08", \
-    RUN+="/sbin/rmmod uas 2>/dev/null || true"
-
+    RUN+="/bin/logger -t exam-kiosk USB mass storage interface blocked: %k"

@@ -75,7 +75,7 @@ export default function LoginPage() {
 
     setIsSubmitting(false);
     if (role?.toLowerCase() === 'admin') {
-      window.location.href = `${ADMIN_URL}/students?refreshToken=${encodeURIComponent(refreshToken)}`;
+      navigate('/admin-redirect', { replace: true });
     } else {
       navigate('/instructions', { replace: true });
     }

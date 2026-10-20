@@ -6,15 +6,16 @@ const DEV_URL = 'http://localhost:3002';
 
 export function createKioskWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    fullscreen: true,
-    kiosk: true,           // prevents resize, maximise, OS chrome
-    alwaysOnTop: true,
-    frame: false,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    closable: false,       // prevent OS close button
+    fullscreen: !IS_DEV,
+    kiosk: !IS_DEV,           // prevents resize, maximise, OS chrome in production
+    alwaysOnTop: !IS_DEV,
+    frame: true,
+    resizable: true,
+    movable: true,
+    minimizable: true,
+    maximizable: true,
+    closable: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -27,6 +28,13 @@ export function createKioskWindow(): BrowserWindow {
 
   // Remove all application menus (File, Edit, View…)
   Menu.setApplicationMenu(null);
+
+  // Start window maximized by default
+  win.maximize();
+  win.show();
+  win.once('ready-to-show', () => {
+    win.maximize();
+  });
 
   if (IS_DEV) {
     win.loadURL(DEV_URL);
