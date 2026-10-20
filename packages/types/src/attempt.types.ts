@@ -53,4 +53,17 @@ export interface AttemptMonitorView extends Attempt {
    * attempt is live.
    */
   isOverdue: boolean;
+
+  /** Person C (monitoring): display fields joined in from Student/Exam. */
+  studentName?: string | null;
+  collegeId?: string | null;
+  examTitle?: string | null;
+  /** True when IN_PROGRESS and no heartbeat arrived within the disconnect window. */
+  isDisconnected?: boolean;
+  /** Minutes added to this attempt by time extensions. */
+  extendedMinutes?: number;
+  /** Person C security module (contract): null until it is merged. */
+  violationCount?: number | null;
+  /** Person C security module (contract): true once violations pass the policy threshold. */
+  isFlagged?: boolean;
 }

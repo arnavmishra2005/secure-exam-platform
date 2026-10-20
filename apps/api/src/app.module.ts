@@ -8,6 +8,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ConfigModule } from './common/config/config.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -22,12 +23,21 @@ import { ExamModule } from './modules/exam/exam.module';
 import { QuestionModule } from './modules/question/question.module';
 import { AttemptModule } from './modules/attempt/attempt.module';
 import { AnswerModule } from './modules/answer/answer.module';
+import { CourseModule } from './modules/course/course.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { PublishModule } from './modules/publish/publish.module';
+import { ResultsModule } from './modules/results/results.module';
+import { ExtensionModule } from './modules/extension/extension.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
     ConfigModule, // validated env, isGlobal
 
     ScheduleModule.forRoot(), // Required by AttemptExpirySweepService (@Cron)
+
+    // Day 1 contract: domain events (common/events/events.ts).
+    EventEmitterModule.forRoot({ wildcard: false, ignoreErrors: false }),
 
     TypeOrmModule.forRootAsync({
       imports: [NestConfigModule],
@@ -65,6 +75,16 @@ import { AnswerModule } from './modules/answer/answer.module';
     // Person C modules
     AttemptModule,
     AnswerModule,
+
+    // Phase 4 — Person A
+    CourseModule,
+    NotificationModule,
+    PublishModule,
+    ResultsModule, // @Global: provides SCORE_RECORDER
+
+    // Phase 4 — Person C
+    ExtensionModule,
+    DashboardModule,
   ],
   providers: [
     // Rate limiting on every route by default.

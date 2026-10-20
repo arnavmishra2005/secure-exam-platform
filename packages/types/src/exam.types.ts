@@ -29,6 +29,10 @@ export interface Exam {
   startTime: string; // ISO 8601
   endTime: string; // ISO 8601
   status: ExamStatus;
+  /** Person A (publish): ISO 8601 once published to registered students, else null. */
+  publishedAt: string | null;
+  /** Person A (publish): pass mark as a percentage of the maximum score. */
+  passPercentage: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +46,7 @@ export interface ExamAssignment {
   assignedAt: string;
   /** Populated by the backend join — always present on list responses */
   studentInfo?: {
+    userId?: string;
     collegeId: string;
     fullName: string;
     email: string;
@@ -56,6 +61,7 @@ export interface CreateExamRequest {
   durationMinutes: number;
   startTime: string;
   endTime: string;
+  passPercentage?: number;
 }
 
 export interface UpdateExamRequest {
@@ -64,6 +70,7 @@ export interface UpdateExamRequest {
   durationMinutes?: number;
   startTime?: string;
   endTime?: string;
+  passPercentage?: number;
 }
 
 export interface AssignStudentRequest {

@@ -1,18 +1,24 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, FindOptionsWhere, IsNull, LessThan, Repository } from 'typeorm';
+import { EntityManager, FindOptionsWhere, In, IsNull, LessThan, Repository } from 'typeorm';
 import { AttemptEntity } from './entities/attempt.entity';
 import { ExamSessionEntity } from './entities/exam-session.entity';
 import { TimerService } from './timer.service';
 import { EXAM_LOOKUP_SERVICE, IExamLookupService } from './exam-lookup/exam-lookup.interface';
-import { AttemptStatus, Role } from '@secure-exam/types';
-import type { Attempt, AttemptMonitorView, JwtPayload } from '@secure-exam/types';
+import { AttemptStatus, ExtensionScope, Role } from '@secure-exam/types';
+import type { Attempt, AttemptMonitorView, HeartbeatResponse, JwtPayload } from '@secure-exam/types';
 import { ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
 // Person A's contract (assumed to exist per Day-0 foundation — see
 // task-breakdown doc, section 2 & 3): AuditService.logEvent(type, metadata, actorId).
 import { AuditService } from '../audit/audit.service';
 import { logAuditSafely } from './audit-safe.util';
 import { isUniqueViolation } from './postgres-error.util';
+import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity';
+import { UserService } from '../user/user.service';
+
+/** Default seconds without a heartbeat before monitoring shows an attempt as disconnected. */
+const DEFAULT_DISCONNECT_SECONDS = 45;
 
 @Injectable()
 export class AttemptService {
@@ -25,6 +31,10 @@ export class AttemptService {
     private readonly timerService: TimerService,
     @Inject(EXAM_LOOKUP_SERVICE) private readonly examLookup: IExamLookupService,
     private readonly auditService: AuditService,
+    @InjectRepository(ExamExtensionEntity)
+    private readonly extensionRepository: Repository<ExamExtensionEntity>,
+    private readonly userService: UserService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -61,6 +71,18 @@ export class AttemptService {
       throw new ForbiddenException('This exam is not currently active');
     }
 
+    // Phase 4: unpublished exams are invisible to students, so they can't be started either.
+    if (!exam.publishedAt) {
+      await logAuditSafely(
+        this.logger,
+        this.auditService,
+        'SECURITY_CHECK_FAILED',
+        { reason: 'EXAM_NOT_PUBLISHED', examId: dto.examId },
+        studentId,
+      );
+      throw new ForbiddenException('This exam has not been published');
+    }
+
     const isAssigned = await this.examLookup.isStudentAssignedToExam(dto.examId, studentId);
     if (!isAssigned) {
       await logAuditSafely(
@@ -80,7 +102,9 @@ export class AttemptService {
       throw new ConflictException('You have already attempted this exam');
     }
 
-    const expiresAt = this.timerService.computeExpiresAt(now, exam.durationMinutes, examEnd);
+    // Per-student extra time granted before the student started (Phase 4).
+    const extraMinutes = await this.pendingStudentExtensionMinutes(dto.examId, studentId);
+    const expiresAt = this.timerService.computeExpiresAt(now, exam.durationMinutes, examEnd, extraMinutes);
 
     const attempt = this.attemptRepository.create({
       examId: dto.examId,
@@ -118,11 +142,20 @@ export class AttemptService {
       this.logger,
       this.auditService,
       'EXAM_STARTED',
-      { attemptId: saved.id, examId: dto.examId },
+      { attemptId: saved.id, examId: dto.examId, extraMinutes },
       studentId,
     );
 
     return toAttemptDto(saved);
+  }
+
+  /** Sum of STUDENT-scope extensions for this student. All of them predate the attempt, which is unique per exam+student. */
+  private async pendingStudentExtensionMinutes(examId: string, studentId: string): Promise<number> {
+    const rows = await this.extensionRepository.find({
+      where: { examId, studentId, scope: ExtensionScope.STUDENT },
+      select: ['minutes'],
+    });
+    return rows.reduce((sum, row) => sum + row.minutes, 0);
   }
 
   /**
@@ -209,13 +242,36 @@ export class AttemptService {
       }
     }
 
+    const [students, examTitles, extensions] = await Promise.all([
+      this.userService.findStudentsByUserIds([...new Set(attempts.map((a) => a.studentId))]),
+      this.examLookup.getExamTitles([...new Set(attempts.map((a) => a.examId))]),
+      attempts.length
+        ? this.extensionRepository.find({ where: { examId: In([...new Set(attempts.map((a) => a.examId))]) } })
+        : Promise.resolve([] as ExamExtensionEntity[]),
+    ]);
+    const studentByUser = new Map(students.map((st) => [st.userId, st]));
+    const disconnectMs =
+      (Number(this.config.get('HEARTBEAT_DISCONNECT_SECONDS')) || DEFAULT_DISCONNECT_SECONDS) * 1000;
+
     const now = new Date();
     const items: AttemptMonitorView[] = attempts.map((a) => {
       const remainingSeconds = this.timerService.remainingSeconds(now, a.expiresAt);
+      const lastSeen = lastSeenByAttempt.get(a.id) ?? null;
+      const student = studentByUser.get(a.studentId);
       return {
         ...toAttemptDto(a),
         remainingSeconds,
-        lastSeenAt: lastSeenByAttempt.get(a.id)?.toISOString() ?? null,
+        lastSeenAt: lastSeen?.toISOString() ?? null,
+        studentName: student?.user?.fullName ?? null,
+        collegeId: student?.collegeId ?? null,
+        examTitle: examTitles.get(a.examId) ?? null,
+        isDisconnected:
+          a.status === AttemptStatus.IN_PROGRESS &&
+          (!lastSeen || now.getTime() - lastSeen.getTime() > disconnectMs),
+        extendedMinutes: extendedMinutesFor(a, extensions),
+        // Person C's client-security module fills these in.
+        violationCount: null,
+        isFlagged: false,
         // True when the server-authoritative timer has already reached
         // zero but the row hasn't been finalized yet (either the periodic
         // expiry sweep hasn't reached it, or nobody has touched the
@@ -229,18 +285,30 @@ export class AttemptService {
     return { items, total, page, limit };
   }
 
-  /** Lightweight liveness signal for the monitoring screen. */
+  /**
+   * Liveness signal for the monitoring screen, and the exam client's clock
+   * source: the response carries the server's time and the attempt's
+   * current expiry, so a time extension reaches a running client within
+   * one heartbeat and client clock skew is corrected.
+   */
   async heartbeat(
     attemptId: string,
     user: JwtPayload,
     meta: { ipAddress?: string; userAgent?: string },
-  ): Promise<void> {
+  ): Promise<HeartbeatResponse> {
     const attempt = await this.findOwnedAttemptOrThrow(attemptId, user);
+    const now = new Date();
+    const response: HeartbeatResponse = {
+      serverTime: now.toISOString(),
+      expiresAt: attempt.expiresAt.toISOString(),
+      remainingSeconds:
+        attempt.status === AttemptStatus.IN_PROGRESS ? this.timerService.remainingSeconds(now, attempt.expiresAt) : 0,
+      status: attempt.status,
+    };
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
-      return; // nothing to track once finalized
+      return response; // nothing to track once finalized
     }
 
-    const now = new Date();
     const latest = await this.examSessionRepository.findOne({
       where: { attemptId, endedAt: IsNull() },
       order: { lastSeenAt: 'DESC' },
@@ -263,6 +331,7 @@ export class AttemptService {
         }),
       );
     }
+    return response;
   }
 
   /**
@@ -317,6 +386,21 @@ export class AttemptService {
 
     await sessionRepo.update({ attemptId, endedAt: IsNull() }, { endedAt: now });
   }
+}
+
+/**
+ * Minutes of extra time an attempt has received: whole-exam extensions
+ * granted while it was running, plus every extension for this student.
+ */
+function extendedMinutesFor(attempt: AttemptEntity, extensions: ExamExtensionEntity[]): number {
+  return extensions
+    .filter((e) => e.examId === attempt.examId)
+    .filter((e) =>
+      e.scope === ExtensionScope.STUDENT
+        ? e.studentId === attempt.studentId
+        : e.createdAt.getTime() > attempt.startedAt.getTime(),
+    )
+    .reduce((sum, e) => sum + e.minutes, 0);
 }
 
 export function toAttemptDto(entity: AttemptEntity): Attempt {

@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 48 22% 95%; /* paper */
+    --foreground: 222 29% 15%; /* ink */
+    --card: 45 40% 98%; /* paper raised */
+    --card-foreground: 222 29% 15%;
+    --popover: 45 40% 98%;
+    --popover-foreground: 222 29% 15%;
+    --primary: 171 44% 30%; /* verdigris */
+    --primary-foreground: 45 40% 98%;
+    --secondary: 47 22% 91%;
+    --secondary-foreground: 222 29% 15%;
+    --muted: 47 22% 91%;
+    --muted-foreground: 37 9% 38%;
+    --accent: 167 25% 89%; /* verdigris light */
+    --accent-foreground: 171 44% 22%;
+    --destructive: 5 54% 43%; /* brick */
+    --destructive-foreground: 45 40% 98%;
+    --success: 152 45% 34%;
+    --success-foreground: 45 40% 98%;
+    --warning: 38 50% 48%; /* gold */
+    --warning-foreground: 222 29% 15%;
+    --review: 239 64% 60%;
+    --review-answered: 262 60% 58%;
+    --border: 43 16% 83%; /* hairline */
+    --input: 43 16% 80%;
+    --ring: 171 44% 30%;
+    --radius: 0.5rem;
+    --sidebar: 222 29% 15%;
+    --sidebar-foreground: 48 22% 95%;
+    --sidebar-accent: 222 26% 22%;
+    --chart-1: 171 44% 34%;
+    --chart-2: 38 50% 48%;
+    --chart-3: 5 54% 47%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+}

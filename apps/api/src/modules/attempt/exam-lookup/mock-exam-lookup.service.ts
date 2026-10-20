@@ -26,11 +26,16 @@ export class MockExamLookupService implements IExamLookupService {
       startTime: new Date(now - 5 * 60_000).toISOString(),
       endTime: new Date(now + 2 * 60 * 60_000).toISOString(),
       durationMinutes: 60,
+      publishedAt: new Date(now - 10 * 60_000).toISOString(),
     };
   }
 
   async isStudentAssignedToExam(_examId: string, _studentId: string): Promise<boolean> {
     return true;
+  }
+
+  async getExamTitles(examIds: string[]): Promise<Map<string, string>> {
+    return new Map(examIds.map((id) => [id, 'Mock exam']));
   }
 }
 

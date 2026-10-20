@@ -96,6 +96,8 @@ const FIXTURE_EXAM: Exam = {
   startTime: new Date().toISOString(),
   endTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
   status: 'ACTIVE' as Exam['status'],
+  publishedAt: new Date().toISOString(),
+  passPercentage: 40,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
