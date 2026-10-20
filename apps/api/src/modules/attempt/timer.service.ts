@@ -22,15 +22,19 @@ export class TimerService {
   }
 
   /**
-   * expiresAt = min(startedAt + durationMinutes, examEndTime).
+   * expiresAt = min(startedAt + durationMinutes, examEndTime) + extraMinutes.
    *
    * Ensures an attempt can never run past the exam's own scheduled window,
    * even if the student starts with little time left before the exam
-   * closes.
+   * closes. `extraMinutes` is per-student extra time granted before the
+   * student started (Phase 4 extensions); it deliberately applies on top of
+   * the cap, since its purpose is to let that one student run past the end.
+   * Whole-exam extensions move `examEndTime` itself instead.
    */
-  computeExpiresAt(startedAt: Date, durationMinutes: number, examEndTime: Date): Date {
-    const byDuration = new Date(startedAt.getTime() + durationMinutes * 60_000);
-    return byDuration.getTime() < examEndTime.getTime() ? byDuration : examEndTime;
+  computeExpiresAt(startedAt: Date, durationMinutes: number, examEndTime: Date, extraMinutes = 0): Date {
+    const byDuration = startedAt.getTime() + durationMinutes * 60_000;
+    const capped = Math.min(byDuration, examEndTime.getTime());
+    return new Date(capped + Math.max(0, extraMinutes) * 60_000);
   }
 
   /** Whole seconds remaining; never negative. */

@@ -89,7 +89,7 @@ export function OptionEditor({
           Add option
         </Button>
       )}
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-foreground">
         {single ? 'Select the one correct option.' : 'Tick every correct option. Students must pick exactly these to score.'}
       </p>
     </div>

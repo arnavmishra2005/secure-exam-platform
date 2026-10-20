@@ -1,5 +1,6 @@
 /**
- * Dev Seed Script — creates an admin user, 3 test students, and an active evaluation exam.
+ * Dev Seed Script — creates an admin user, 3 test students, a course they are
+ * enrolled in, and an active, published exam registered to that course.
  *
  * Run once after migrations:
  *   npm run db:seed --workspace=apps/api
@@ -47,14 +48,16 @@ const STUDENTS = [
 // Must be a v4 UUID: StartAttemptDto rejects any other version.
 const SAMPLE_EXAM_ID = '11111111-1111-4111-8111-111111111111';
 
+const SAMPLE_COURSE = { code: 'CS201', name: 'Operating Systems & Networks' };
+
 const BCRYPT_ROUNDS = 10;
 
 // ── DB setup ───────────────────────────────────────────────────────────────
 
 // Outside production the API runs with synchronize: true (app.module.ts), and
 // the entities don't exactly match the migrations. Sync the schema the same way
-// before inserting: once exam_assignments has rows, synchronize can no longer
-// rebuild its student_id column, and the API would then fail to start.
+// before inserting, so the tables the seed writes to (including Phase 4's
+// courses and exam_registrations) exist with the shape the API expects.
 const ds = new DataSource({
   ...(cliDataSource.options as PostgresConnectionOptions),
   url: process.env.DATABASE_URL ?? 'postgres://exam_user:exam_pass@localhost:5432/secure_exam',
@@ -96,25 +99,54 @@ async function upsertStudent(
   ds: DataSource,
   userId: string,
   collegeId: string,
-): Promise<{ created: boolean }> {
+): Promise<{ id: string; created: boolean }> {
   const existing = await ds.query<{ id: string }[]>(
     `SELECT id FROM students WHERE "collegeId" = $1 LIMIT 1`,
     [collegeId],
   );
 
   if (existing.length > 0) {
-    return { created: false };
+    return { id: existing[0].id, created: false };
   }
 
-  await ds.query(
-    `INSERT INTO students ("userId", "collegeId") VALUES ($1, $2)`,
+  const [row] = await ds.query<{ id: string }[]>(
+    `INSERT INTO students ("userId", "collegeId") VALUES ($1, $2) RETURNING id`,
     [userId, collegeId],
   );
 
-  return { created: true };
+  return { id: row.id, created: true };
 }
 
-async function seedActiveExam(ds: DataSource, studentUserIds: string[]) {
+/** A course with every seeded student enrolled, assigned to the sample exam (Phase 4). */
+async function seedCourse(ds: DataSource, studentIds: string[]) {
+  console.log('\n🏫 Seeding course…');
+  const [course] = await ds.query<{ id: string }[]>(
+    `INSERT INTO courses ("code", "name") VALUES ($1, $2)
+     ON CONFLICT ("code") DO UPDATE SET "name" = EXCLUDED."name"
+     RETURNING id`,
+    [SAMPLE_COURSE.code, SAMPLE_COURSE.name],
+  );
+  for (const studentId of studentIds) {
+    await ds.query(
+      `INSERT INTO course_enrollments ("courseId", "studentId") VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [course.id, studentId],
+    );
+  }
+  await ds.query(
+    `INSERT INTO exam_courses ("examId", "courseId") VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [SAMPLE_EXAM_ID, course.id],
+  );
+  for (const studentId of studentIds) {
+    await ds.query(
+      `INSERT INTO exam_registrations ("examId", "studentId", "source", "courseId")
+       VALUES ($1, $2, 'COURSE', $3) ON CONFLICT DO NOTHING`,
+      [SAMPLE_EXAM_ID, studentId, course.id],
+    );
+  }
+  console.log(`   ✅ ${SAMPLE_COURSE.code} with ${studentIds.length} students, assigned to the sample exam`);
+}
+
+async function seedActiveExam(ds: DataSource) {
   console.log('\n📝 Seeding active exam…');
 
   const existingExam = await ds.query<{ id: string }[]>(
@@ -128,8 +160,8 @@ async function seedActiveExam(ds: DataSource, studentUserIds: string[]) {
 
   if (existingExam.length === 0) {
     await ds.query(
-      `INSERT INTO exams ("id", "title", "description", "duration_minutes", "start_time", "end_time", "status")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO exams ("id", "title", "description", "duration_minutes", "start_time", "end_time", "status", "published_at", "pass_percentage")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 40)`,
       [
         SAMPLE_EXAM_ID,
         'Midterm Evaluation - OS & Networking',
@@ -144,20 +176,11 @@ async function seedActiveExam(ds: DataSource, studentUserIds: string[]) {
   } else {
     // Keep it active and within time window
     await ds.query(
-      `UPDATE exams SET "status" = 'ACTIVE', "start_time" = $1, "end_time" = $2 WHERE id = $3`,
+      `UPDATE exams SET "status" = 'ACTIVE', "start_time" = $1, "end_time" = $2,
+              "published_at" = COALESCE("published_at", now()) WHERE id = $3`,
       [startTime, endTime, SAMPLE_EXAM_ID],
     );
     console.log(`   ✅ Refreshed active exam: ${SAMPLE_EXAM_ID}`);
-  }
-
-  // Assign students to this exam
-  for (const uid of studentUserIds) {
-    await ds.query(
-      `INSERT INTO exam_assignments ("exam_id", "student_id")
-       VALUES ($1, $2)
-       ON CONFLICT DO NOTHING`,
-      [SAMPLE_EXAM_ID, uid],
-    );
   }
 
   // Seed sample questions if not present
@@ -284,12 +307,12 @@ async function seed() {
 
   // ── Students ───────────────────────────────────────────────────────────
   console.log('\n🎓 Seeding students…');
-  const studentUserIds: string[] = [];
+  const studentIds: string[] = [];
 
   for (const s of STUDENTS) {
     const userResult = await upsertUser(ds, s.email, s.fullName, s.password, 'student');
-    studentUserIds.push(userResult.id);
     const studentResult = await upsertStudent(ds, userResult.id, s.collegeId);
+    studentIds.push(studentResult.id);
 
     if (userResult.created || studentResult.created) {
       console.log(`   ✅ Created  ${s.fullName.padEnd(20)} | ${s.email.padEnd(28)} | password: ${s.password} | collegeId: ${s.collegeId}`);
@@ -299,16 +322,18 @@ async function seed() {
   }
 
   // ── Active Exam ────────────────────────────────────────────────────────
-  await seedActiveExam(ds, studentUserIds);
+  await seedActiveExam(ds);
+  await seedCourse(ds, studentIds);
 
   console.log('\n──────────────────────────────────────────────────────');
   console.log('📋 Credentials & Exam Summary:');
   console.log('');
-  console.log('  Admin Portal (http://localhost:3001)');
+  console.log('  Web app — one login for both roles (http://localhost:3003)');
+  console.log('  Legacy admin portal (http://localhost:3001)');
   console.log(`    Email:    ${ADMIN.email}`);
   console.log(`    Password: ${ADMIN.password}`);
   console.log('');
-  console.log('  Exam Client (http://localhost:3002)');
+  console.log('  Students (web app, or legacy exam client on http://localhost:3002)');
   for (const s of STUDENTS) {
     console.log(`    ${s.fullName.padEnd(18)} → ${s.email} / ${s.password}`);
   }

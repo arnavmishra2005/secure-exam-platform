@@ -11,3 +11,12 @@ export * from './question-bank.types';
 export * from './question-analytics.types';
 export * from './attempt.types';
 export * from './answer.types';
+
+// Phase 4 (9-day plan) — one file per feature, agreed in the Day 1 contract session.
+export * from './course.types';         // A
+export * from './publish.types';        // A
+export * from './notification.types';   // A
+export * from './results.types';        // A
+export * from './extension.types';      // C
+export * from './dashboard.types';      // C
+export * from './client-security.types'; // C (contract only)

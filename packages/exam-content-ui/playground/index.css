@@ -1,3 +1,38 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Same values as apps/web/src/index.css, so the package looks right standalone. */
+@layer base {
+  :root {
+    --background: 48 22% 95%;
+    --foreground: 222 29% 15%;
+    --card: 45 40% 98%;
+    --card-foreground: 222 29% 15%;
+    --primary: 171 44% 30%;
+    --primary-foreground: 45 40% 98%;
+    --secondary: 47 22% 91%;
+    --secondary-foreground: 222 29% 15%;
+    --muted: 47 22% 91%;
+    --muted-foreground: 37 9% 38%;
+    --accent: 167 25% 89%;
+    --accent-foreground: 171 44% 22%;
+    --destructive: 5 54% 43%;
+    --destructive-foreground: 45 40% 98%;
+    --success: 152 45% 34%;
+    --success-foreground: 45 40% 98%;
+    --warning: 38 50% 48%;
+    --warning-foreground: 222 29% 15%;
+    --border: 43 16% 83%;
+    --input: 43 16% 80%;
+    --ring: 171 44% 30%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}

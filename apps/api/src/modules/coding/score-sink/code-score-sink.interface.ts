@@ -1,9 +1,9 @@
 /**
  * Owner: Person B.
  *
- * Where a graded coding score goes. Today: added to the attempt's Result
- * row (ResultTableScoreSink). At merge, bind this to Person A's
- * ScoreRecorder (`record(..., 'AUTO_CODE')`) instead; callers don't change.
+ * Where a graded coding score goes: Person A's ScoreRecorder, as AUTO_CODE
+ * (ScoreRecorderCodeScoreSink). ResultTableScoreSink is the old interim
+ * binding and is no longer used.
  */
 
 import type { EntityManager } from 'typeorm';

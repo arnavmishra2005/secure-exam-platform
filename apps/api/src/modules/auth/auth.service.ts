@@ -107,6 +107,11 @@ export class AuthService {
     return tokens;
   }
 
+  async me(userId: string): Promise<LoginResponse['user']> {
+    const user = await this.userService.findById(userId);
+    return { id: user.id, email: user.email, fullName: user.fullName, role: user.role };
+  }
+
   async logout(userId: string, ipAddress: string | null): Promise<void> {
     await this.userService.setRefreshTokenHash(userId, null);
     await this.auditService.logEvent(AuditEventType.LOGOUT, {}, userId, ipAddress);

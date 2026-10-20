@@ -58,7 +58,7 @@ export function PickForExamDialog({
       onClose={close}
       footer={
         <>
-          <span className="mr-auto self-center text-sm text-slate-600">{selected.length} selected (added in this order)</span>
+          <span className="mr-auto self-center text-sm text-muted-foreground">{selected.length} selected (added in this order)</span>
           <Button onClick={close}>Close</Button>
           <Button variant="primary" disabled={selected.length === 0} busy={addToExam.isPending} onClick={add}>
             Add to exam
@@ -88,10 +88,10 @@ export function PickForExamDialog({
         ) : list.data!.items.length === 0 ? (
           <EmptyState title="No more Ready questions match">Questions already in this exam are hidden.</EmptyState>
         ) : (
-          <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+          <ul className="divide-y divide-border rounded-md border border-border">
             {list.data!.items.map((q) => (
               <li key={q.id}>
-                <label className="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-slate-50">
+                <label className="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-muted">
                   <input
                     type="checkbox"
                     className="mt-1"
@@ -100,8 +100,8 @@ export function PickForExamDialog({
                     aria-label={`Select ${q.text}`}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-slate-900">{q.text}</span>
-                    <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="block text-sm text-foreground">{q.text}</span>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span>{TYPE_LABEL[q.type]}</span>
                       <span>{q.marks} marks</span>
                       {q.topicName && <span>{q.topicName}</span>}

@@ -81,7 +81,7 @@ export function CodeEditor({
   }, [hardened, onBlockedPaste]);
 
   return (
-    <div ref={containerRef} className="h-full min-h-[200px] overflow-hidden rounded-md border border-slate-300">
+    <div ref={containerRef} className="h-full min-h-[200px] overflow-hidden rounded-md border border-border">
       <Editor
         height={height}
         language={language}

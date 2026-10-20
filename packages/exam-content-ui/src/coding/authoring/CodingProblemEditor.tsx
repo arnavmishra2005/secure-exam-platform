@@ -46,13 +46,13 @@ export function CodingProblemEditor({
     <div className="space-y-5">
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-slate-700">Problem statement (Markdown)</span>
-          <button type="button" className="text-xs text-emerald-700 underline" onClick={() => setPreview((p) => !p)}>
+          <span className="text-sm font-medium text-foreground">Problem statement (Markdown)</span>
+          <button type="button" className="text-xs text-accent-foreground underline" onClick={() => setPreview((p) => !p)}>
             {preview ? 'Edit' : 'Preview'}
           </button>
         </div>
         {preview ? (
-          <div className="min-h-[160px] rounded-md border border-slate-200 p-3">
+          <div className="min-h-[160px] rounded-md border border-border p-3">
             <Markdown source={value.statementMd || '_Nothing yet._'} />
           </div>
         ) : (
@@ -115,7 +115,7 @@ export function CodingProblemEditor({
       <Suspense fallback={<Spinner />}>
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Starter code (shown to students)</span>
+            <span className="text-sm font-medium text-foreground">Starter code (shown to students)</span>
             <div className="h-56">
               <CodeEditor
                 ariaLabel="Starter code"
@@ -126,7 +126,7 @@ export function CodingProblemEditor({
             </div>
           </div>
           <div className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Reference solution (never shown to students)</span>
+            <span className="text-sm font-medium text-foreground">Reference solution (never shown to students)</span>
             <div className="h-56">
               <CodeEditor
                 ariaLabel="Reference solution"
@@ -140,7 +140,7 @@ export function CodingProblemEditor({
       </Suspense>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-slate-900">Test cases</h3>
+        <h3 className="text-sm font-semibold text-foreground">Test cases</h3>
         <TestCaseTable tests={value.tests} onChange={(tests) => set({ tests })} disabled={disabled} />
       </div>
 

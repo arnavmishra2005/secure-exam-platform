@@ -1,14 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ExamEntity } from './entities/exam.entity';
-import { ExamAssignmentEntity } from './entities/exam-assignment.entity';
 import { ExamService } from './exam.service';
 import { ExamController } from './exam.controller';
-import { StudentEntity } from '../user/entities/student.entity';
+import { CourseModule } from '../course/course.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ExamEntity, ExamAssignmentEntity, StudentEntity]),
+    TypeOrmModule.forFeature([ExamEntity]),
+    // Person A: assignments are exam registrations now.
+    CourseModule,
   ],
   controllers: [ExamController],
   providers: [ExamService],

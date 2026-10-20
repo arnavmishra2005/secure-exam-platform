@@ -50,7 +50,7 @@ export function QuestionBankPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-slate-900">Question bank</h1>
+        <h1 className="text-xl font-semibold text-foreground">Question bank</h1>
         <div className="flex gap-2">
           <Button onClick={() => setImportOpen(true)}>Import CSV</Button>
           <Button variant="primary" onClick={onCreate}>
@@ -76,9 +76,9 @@ export function QuestionBankPage({
       ) : list.data && list.data.items.length === 0 ? (
         <EmptyState title="No questions match">Try other filters, or create a question.</EmptyState>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Question</th>
                 <th className="px-3 py-2">Type</th>
@@ -90,33 +90,33 @@ export function QuestionBankPage({
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {list.data!.items.map((q) => (
-                <tr key={q.id} className="align-top hover:bg-slate-50">
+                <tr key={q.id} className="align-top hover:bg-muted">
                   <td className="max-w-md px-3 py-2">
-                    <button type="button" className="text-left font-medium text-slate-900 hover:underline" onClick={() => onEdit(q.id)}>
+                    <button type="button" className="text-left font-medium text-foreground hover:underline" onClick={() => onEdit(q.id)}>
                       {q.text.length > 140 ? `${q.text.slice(0, 140)}…` : q.text}
                     </button>
                     {q.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {q.tags.map((t) => (
-                          <span key={t} className="text-xs text-slate-500">
+                          <span key={t} className="text-xs text-muted-foreground">
                             #{t}
                           </span>
                         ))}
                       </div>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-700">{TYPE_LABEL[q.type]}</td>
-                  <td className="px-3 py-2 text-slate-700">{q.marks}</td>
-                  <td className="px-3 py-2 text-slate-700">{q.topicName ?? '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-foreground">{TYPE_LABEL[q.type]}</td>
+                  <td className="px-3 py-2 text-foreground">{q.marks}</td>
+                  <td className="px-3 py-2 text-foreground">{q.topicName ?? '—'}</td>
                   <td className="px-3 py-2">
                     {q.difficulty ? <Badge tone={DIFFICULTY_LABEL[q.difficulty].tone}>{DIFFICULTY_LABEL[q.difficulty].text}</Badge> : '—'}
                   </td>
                   <td className="px-3 py-2">
                     <Badge tone={STATUS_LABEL[q.status].tone}>{STATUS_LABEL[q.status].text}</Badge>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                  <td className="whitespace-nowrap px-3 py-2 text-foreground">
                     {q.usedInExams}
                     {q.locked && (
                       <span className="ml-1" title="In an exam that has started: content is locked">
@@ -137,7 +137,7 @@ export function QuestionBankPage({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-red-700"
+                      className="text-destructive"
                       disabled={q.usedInExams > 0}
                       title={q.usedInExams > 0 ? 'Remove it from its exams first, or archive it' : undefined}
                       onClick={() => remove(q)}

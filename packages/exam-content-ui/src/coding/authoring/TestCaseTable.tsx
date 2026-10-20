@@ -26,7 +26,7 @@ export function TestCaseTable({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           {tests.length} tests · {samples} shown to students as examples · marks split by weight (total {totalWeight})
         </p>
         <Button
@@ -38,11 +38,11 @@ export function TestCaseTable({
         </Button>
       </div>
       {tests.map((t, i) => (
-        <fieldset key={i} className="rounded-md border border-slate-200 p-3" aria-label={`Test ${i + 1}`}>
+        <fieldset key={i} className="rounded-md border border-border p-3" aria-label={`Test ${i + 1}`}>
           <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
-            <span className="font-medium text-slate-800">Test {i + 1}</span>
+            <span className="font-medium text-foreground">Test {i + 1}</span>
             {t.isSample ? <Badge tone="blue">Sample</Badge> : <Badge>Hidden</Badge>}
-            <label className="flex items-center gap-1.5 text-slate-700">
+            <label className="flex items-center gap-1.5 text-foreground">
               <input
                 type="checkbox"
                 checked={t.isSample}
@@ -51,7 +51,7 @@ export function TestCaseTable({
               />
               Show as example
             </label>
-            <label className="flex items-center gap-1.5 text-slate-700">
+            <label className="flex items-center gap-1.5 text-foreground">
               Weight
               <Input
                 type="number"

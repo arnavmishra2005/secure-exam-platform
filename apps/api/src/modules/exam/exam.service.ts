@@ -5,24 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { EXAM_STATUS_TRANSITIONS, ExamStatus } from '@secure-exam/types';
 import { AuditEventType } from '@secure-exam/types';
 import { AuditService } from '../audit/audit.service';
 import { ExamEntity } from './entities/exam.entity';
-import { ExamAssignmentEntity } from './entities/exam-assignment.entity';
 import { CreateExamDto, UpdateExamDto } from '@secure-exam/validation';
-import { StudentEntity } from '../user/entities/student.entity';
+import { RegistrationService } from '../course/registration.service';
 
 @Injectable()
 export class ExamService {
   constructor(
     @InjectRepository(ExamEntity)
     private readonly examRepo: Repository<ExamEntity>,
-    @InjectRepository(ExamAssignmentEntity)
-    private readonly assignmentRepo: Repository<ExamAssignmentEntity>,
-    @InjectRepository(StudentEntity)
-    private readonly studentRepo: Repository<StudentEntity>,
+    private readonly registrationService: RegistrationService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -40,6 +36,8 @@ export class ExamService {
       startTime: new Date(dto.startTime),
       endTime: new Date(dto.endTime),
       status: ExamStatus.DRAFT,
+      passPercentage: dto.passPercentage ?? 40,
+      publishedAt: null,
     });
     const saved = await this.examRepo.save(exam);
 
@@ -53,6 +51,11 @@ export class ExamService {
 
   findAll(): Promise<ExamEntity[]> {
     return this.examRepo.find({ order: { createdAt: 'DESC' } });
+  }
+
+  findManyByIds(ids: string[]): Promise<ExamEntity[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.examRepo.find({ where: { id: In(ids) } });
   }
 
   async findOne(id: string): Promise<ExamEntity> {
@@ -80,6 +83,7 @@ export class ExamService {
       durationMinutes: dto.durationMinutes ?? exam.durationMinutes,
       startTime: nextStart,
       endTime: nextEnd,
+      passPercentage: dto.passPercentage ?? exam.passPercentage,
     });
     const saved = await this.examRepo.save(exam);
 
@@ -144,85 +148,70 @@ export class ExamService {
   }
 
   // ---------------------------------------------------------------------
-  // Student assignment
+  // Time extension (Person A implements; Person C's ExtensionService calls it)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Pushes the exam's end time by `minutes`, so students who haven't started
+   * yet can still start and running attempts aren't capped by the old end.
+   * Running attempts' own expiry is moved by the caller (ExtensionService),
+   * inside the same transaction via `manager`.
+   */
+  async extendEndTime(examId: string, minutes: number, manager?: EntityManager): Promise<ExamEntity> {
+    if (!Number.isInteger(minutes) || minutes <= 0) {
+      throw new BadRequestException('minutes must be a positive whole number');
+    }
+    const repo = manager ? manager.getRepository(ExamEntity) : this.examRepo;
+    const exam = await repo.findOne({ where: { id: examId }, lock: manager ? { mode: 'pessimistic_write' } : undefined });
+    if (!exam) throw new NotFoundException(`Exam ${examId} not found`);
+    if (exam.status === ExamStatus.CLOSED || exam.status === ExamStatus.DRAFT) {
+      throw new BadRequestException(`A ${exam.status} exam cannot be extended`);
+    }
+
+    exam.endTime = new Date(exam.endTime.getTime() + minutes * 60_000);
+    return repo.save(exam);
+  }
+
+  // ---------------------------------------------------------------------
+  // Student assignment — Phase 1 routes, now backed by exam registrations
+  // (modules/course). Kept so the legacy admin portal keeps working.
   // ---------------------------------------------------------------------
 
   async listAssignedStudents(examId: string) {
-    await this.findOne(examId); // 404 if exam missing
-    const assignments = await this.assignmentRepo.find({ where: { examId } });
-
-    // Enrich each assignment with student info via a batch lookup
-    const enriched = await Promise.all(
-      assignments.map(async (a) => {
-        const student = await this.studentRepo.findOne({
-          where: [{ id: a.studentId }, { userId: a.studentId }],
-          relations: ['user'],
-        });
-        return {
-          id: a.id,
-          examId: a.examId,
-          studentId: a.studentId,
-          userId: student?.userId ?? student?.user?.id,
-          assignedAt: a.assignedAt,
-          studentInfo: student
-            ? {
-                userId: student.userId,
-                collegeId: student.collegeId,
-                fullName: student.user.fullName,
-                email: student.user.email,
-              }
-            : undefined,
-        };
-      }),
-    );
-    return enriched;
+    const registrations = await this.registrationService.listForExam(examId);
+    return registrations.map((r) => ({
+      id: r.id,
+      examId: r.examId,
+      studentId: r.studentId,
+      userId: r.student.userId,
+      assignedAt: r.registeredAt,
+      source: r.source,
+      studentInfo: {
+        userId: r.student.userId,
+        collegeId: r.student.collegeId,
+        fullName: r.student.fullName,
+        email: r.student.email,
+      },
+    }));
   }
 
-  async assignStudent(
-    examId: string,
-    studentId: string,
-    actorId: string,
-  ): Promise<ExamAssignmentEntity> {
-    await this.findOne(examId);
-
-    // Validate the student actually exists in our register
-    const student = await this.studentRepo.findOne({
-      where: [{ id: studentId }, { userId: studentId }],
-      relations: ['user'],
-    });
-    if (!student) {
+  async assignStudent(examId: string, studentId: string, actorId: string) {
+    const result = await this.registrationService.registerStudents(examId, [studentId], actorId);
+    if (result.notFound.length > 0) {
       throw new NotFoundException(
         `Student with ID "${studentId}" does not exist. Make sure the student is added in the Students section first.`,
       );
     }
-
-    const existing = await this.assignmentRepo.findOne({ where: { examId, studentId } });
-    if (existing) {
-      throw new ConflictException(
-        `Student "${student.user.fullName}" (${student.collegeId}) is already assigned to this exam`,
-      );
+    if (result.registeredCount === 0) {
+      throw new ConflictException('Student is already assigned to this exam');
     }
-
-    const assignment = this.assignmentRepo.create({ examId, studentId });
-    const saved = await this.assignmentRepo.save(assignment);
-
-    await this.auditService.logEvent(
-      AuditEventType.STUDENT_ASSIGNED,
-      { examId, studentId, collegeId: student.collegeId },
-      actorId,
+    const [registration] = (await this.listAssignedStudents(examId)).filter(
+      (r) => r.studentId === studentId || r.userId === studentId,
     );
-    return saved;
+    return registration;
   }
 
   async unassignStudent(examId: string, studentId: string, actorId: string): Promise<void> {
-    const existing = await this.assignmentRepo.findOne({ where: { examId, studentId } });
-    if (!existing) throw new NotFoundException('Student is not assigned to this exam');
-
-    await this.assignmentRepo.remove(existing);
-    await this.auditService.logEvent(
-      AuditEventType.STUDENT_UNASSIGNED,
-      { examId, studentId },
-      actorId,
-    );
+    await this.registrationService.unregisterStudent(examId, studentId, actorId);
   }
 }

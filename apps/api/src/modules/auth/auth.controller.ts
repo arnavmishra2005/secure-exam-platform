@@ -1,6 +1,6 @@
 // Owner: Person A (Identity/Auth/Security)
 
-import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoginDto, RefreshDto } from '@secure-exam/validation';
@@ -28,6 +28,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshDto, @Req() req: Request) {
     return this.authService.refresh(dto.refreshToken, req.ip ?? null);
+  }
+
+  /** The signed-in user's profile. Lets a client that restored its session from a refresh token show the user's name. */
+  @ApiBearerAuth()
+  @Get('me')
+  me(@CurrentUser() user: { sub: string }) {
+    return this.authService.me(user.sub);
   }
 
   @ApiBearerAuth()

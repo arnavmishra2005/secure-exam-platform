@@ -33,4 +33,18 @@ export const envValidationSchema = Joi.object({
   CODING_GRADING_MODE: Joi.string().valid('DEFERRED', 'LIVE').default('DEFERRED'),
   // Whether Run / Run samples may execute on the server. Unset = on in development, off in production.
   CODING_SERVER_RUN: Joi.boolean(),
+
+  // Person C — monitoring: seconds without a heartbeat before an attempt shows as disconnected.
+  HEARTBEAT_DISCONNECT_SECONDS: Joi.number().integer().min(10).default(45),
+
+
+  // Email notifications (SMTP_*) — deferred; in-app notifications only for now.
+  SMTP_HOST: Joi.string().optional(),
+  SMTP_PORT: Joi.number().optional(),
+  SMTP_USER: Joi.string().optional(),
+  SMTP_PASSWORD: Joi.string().optional(),
+  SMTP_FROM: Joi.string().optional(),
+
+  // Person C — desktop client (DESKTOP_*). Optional until the Electron app lands.
+  DESKTOP_MIN_CLIENT_VERSION: Joi.string().optional(),
 });
