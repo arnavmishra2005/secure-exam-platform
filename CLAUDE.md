@@ -13,6 +13,8 @@ This is Phases 1–2 of a secure exam platform, set up as an npm-workspaces mono
 
 Kiosk and Electron lockdown are planned for later phases.
 
+**Current work (Phase 4):** the next iteration is planned in `phase4_improvements_electron_kiosk_codeeditor_plan.md` (design) and `9_day_plan_windows_linux_kiosk.md` (schedule). This checkout's user is **Person B** (question bank, Python code editor + runner, question-wise results); B's own plan is `person_b_plan.md`. Stay inside B's folders and list anything needed from A or C as an ask.
+
 The design and module ownership are described in `phase1_backend_admin_security_task_breakdown.md`, `phase1_file_structure_and_ownership.md` and, for the exam client, `phase2_3_frontend_persistence_plan.md`. Some things those documents plan were never built: a root `database/` folder, a CI workflow, and a root `.env.example`. `secure_exam_system_implementation_plan.md` is empty.
 
 ## Commands
