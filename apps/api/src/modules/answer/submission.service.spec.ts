@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { SubmissionService } from './submission.service';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
@@ -48,6 +49,7 @@ describe('SubmissionService', () => {
   let timerService: { isAttemptValid: jest.Mock };
   let questionLookup: jest.Mocked<IQuestionLookupService>;
   let auditService: { logEvent: jest.Mock };
+  let events: { emitAsync: jest.Mock };
 
   const student = { sub: 'student-1', role: Role.STUDENT } as any;
   const inProgressAttempt = {
@@ -99,6 +101,7 @@ describe('SubmissionService', () => {
       getPublicQuestionsForExam: jest.fn().mockResolvedValue([]),
     };
     auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
+    events = { emitAsync: jest.fn().mockResolvedValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -110,6 +113,7 @@ describe('SubmissionService', () => {
         { provide: QUESTION_LOOKUP_SERVICE, useValue: questionLookup },
         { provide: AuditService, useValue: auditService },
         { provide: getDataSourceToken(), useValue: dataSource },
+        { provide: EventEmitter2, useValue: events },
       ],
     }).compile();
 
@@ -132,6 +136,22 @@ describe('SubmissionService', () => {
       expect(result.score).toBe(1);
       expect(result.maxScore).toBe(11);
       expect(result.needsManualReview).toBe(false);
+    });
+
+    it('emits attempt.submitted once the submission has committed', async () => {
+      await service.submit('attempt-1', student, {});
+
+      expect(events.emitAsync).toHaveBeenCalledTimes(1);
+      expect(events.emitAsync).toHaveBeenCalledWith(
+        'attempt.submitted',
+        expect.objectContaining({ attemptId: 'attempt-1', isAutoSubmitted: false }),
+      );
+    });
+
+    it('still succeeds when an attempt.submitted listener throws', async () => {
+      events.emitAsync.mockRejectedValue(new Error('listener exploded'));
+
+      await expect(service.submit('attempt-1', student, {})).resolves.toBeDefined();
     });
 
     it('finalizes a submission within the time window as a manual SUBMITTED', async () => {

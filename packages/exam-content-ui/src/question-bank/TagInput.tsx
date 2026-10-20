@@ -37,7 +37,7 @@ export function TagInput({
       {value.length > 0 && (
         <ul className="flex flex-wrap gap-1.5" aria-label="Tags">
           {value.map((t) => (
-            <li key={t} className="flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+            <li key={t} className="flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-foreground">
               {t}
               {!disabled && (
                 <button type="button" aria-label={`Remove tag ${t}`} onClick={() => onChange(value.filter((x) => x !== t))}>

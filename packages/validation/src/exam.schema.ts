@@ -6,6 +6,7 @@
 import {
   IsDateString,
   IsInt,
+  Max,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -47,6 +48,13 @@ export class CreateExamDto {
 
   @IsDateString()
   endTime!: string;
+
+  /** Person A (publish): pass mark as a percentage of the maximum score. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  passPercentage?: number;
 }
 
 export class UpdateExamDto {
@@ -71,6 +79,12 @@ export class UpdateExamDto {
   @IsOptional()
   @IsDateString()
   endTime?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  passPercentage?: number;
 }
 
 export class AssignStudentDto {

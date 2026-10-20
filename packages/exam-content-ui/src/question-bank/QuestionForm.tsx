@@ -308,7 +308,7 @@ export function QuestionForm({
       ) : (
         <>
           <div className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Options</span>
+            <span className="text-sm font-medium text-foreground">Options</span>
             <OptionEditor
               type={form.type}
               options={form.options}
@@ -330,8 +330,8 @@ export function QuestionForm({
         </>
       )}
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <h3 className="text-sm font-semibold text-slate-900">Organize</h3>
+      <section className="space-y-4 rounded-lg border border-border bg-muted p-4">
+        <h3 className="text-sm font-semibold text-foreground">Organize</h3>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {courses && (
             <Field label="Course">
@@ -409,7 +409,7 @@ export function QuestionForm({
           </Button>
         </div>
         <div className="space-y-1">
-          <span className="text-sm font-medium text-slate-700">Tags</span>
+          <span className="text-sm font-medium text-foreground">Tags</span>
           <TagInput value={form.tags} onChange={(tags) => set({ tags })} />
         </div>
       </section>
@@ -453,18 +453,18 @@ function RecalculatePrompt({ question, onDone }: { question: BankQuestionDetail;
   return (
     <div className="space-y-4">
       <Alert tone="green">Question saved.</Alert>
-      <p className="text-sm text-slate-700">
+      <p className="text-sm text-foreground">
         Students already answered this question. Recalculate each exam's results so their marks reflect your changes.
         Recalculating replaces any score you adjusted by hand for those students.
       </p>
       <ul className="space-y-2">
         {question.liveExams.map((e) => (
-          <li key={e.id} className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 p-3">
-            <span className="flex-1 text-sm font-medium text-slate-900">
-              {e.title} <span className="font-normal text-slate-500">({e.status.toLowerCase()})</span>
+          <li key={e.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3">
+            <span className="flex-1 text-sm font-medium text-foreground">
+              {e.title} <span className="font-normal text-muted-foreground">({e.status.toLowerCase()})</span>
             </span>
             {done[e.id] ? (
-              <span className="text-sm text-slate-600">{done[e.id]}</span>
+              <span className="text-sm text-muted-foreground">{done[e.id]}</span>
             ) : (
               <Button size="sm" variant="primary" busy={busy === e.id} onClick={() => recalc(e.id)}>
                 Recalculate results

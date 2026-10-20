@@ -51,11 +51,11 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
       }
     >
       <div className="space-y-4 text-sm">
-        <p className="text-slate-600">
+        <p className="text-muted-foreground">
           One question per row. Required columns: <code>text</code>, <code>type</code>, <code>marks</code>. Options go
           in <code>option1</code>…<code>option10</code>; <code>correct</code> lists option numbers (e.g. <code>2</code>{' '}
           or <code>1;3</code>). Coding questions are created in the editor, not by import.{' '}
-          <a className="text-emerald-700 underline" href={templateHref} download="question-import-template.csv">
+          <a className="text-accent-foreground underline" href={templateHref} download="question-import-template.csv">
             Download a template
           </a>
         </p>
@@ -77,7 +77,7 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
             {result.errors.length > 0 && (
               <ul className="max-h-60 space-y-1 overflow-y-auto text-xs">
                 {result.errors.map((e) => (
-                  <li key={e.row} className="rounded bg-red-50 px-2 py-1 text-red-800">
+                  <li key={e.row} className="rounded bg-brick-light px-2 py-1 text-destructive">
                     Line {e.row}: {e.message}
                   </li>
                 ))}

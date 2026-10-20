@@ -127,18 +127,18 @@ export function Pager({
 }) {
   const pages = Math.max(1, Math.ceil(total / limit));
   return (
-    <div className="flex items-center justify-between text-sm text-slate-600">
+    <div className="flex items-center justify-between text-sm text-muted-foreground">
       <span>
         {total === 0 ? 'No questions' : `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} of ${total}`}
       </span>
       <span className="flex items-center gap-2">
-        <button type="button" className="rounded px-2 py-1 hover:bg-slate-100 disabled:opacity-40" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        <button type="button" className="rounded px-2 py-1 hover:bg-muted disabled:opacity-40" disabled={page <= 1} onClick={() => onPage(page - 1)}>
           Previous
         </button>
         <span>
           Page {page} of {pages}
         </span>
-        <button type="button" className="rounded px-2 py-1 hover:bg-slate-100 disabled:opacity-40" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+        <button type="button" className="rounded px-2 py-1 hover:bg-muted disabled:opacity-40" disabled={page >= pages} onClick={() => onPage(page + 1)}>
           Next
         </button>
       </span>

@@ -16,3 +16,9 @@ export async function refresh(payload: RefreshRequest): Promise<RefreshResponse>
 export async function logout(): Promise<void> {
   await apiClient.post('/auth/logout');
 }
+
+/** The signed-in user's profile (restores the name after a refresh-token session restore). */
+export async function getMe(): Promise<LoginResponse['user']> {
+  const { data } = await apiClient.get<LoginResponse['user']>('/auth/me');
+  return data;
+}

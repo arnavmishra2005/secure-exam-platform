@@ -70,4 +70,22 @@ describe('TimerService', () => {
       expect(timer.remainingSeconds(now, expiresAt)).toBe(0);
     });
   });
+
+  describe('computeExpiresAt with extra minutes', () => {
+    it('adds per-student extra time on top of the exam-end cap', () => {
+      const startedAt = new Date('2026-01-01T10:50:00Z');
+      const examEnd = new Date('2026-01-01T11:00:00Z');
+
+      const result = timer.computeExpiresAt(startedAt, 30, examEnd, 15);
+
+      expect(result.toISOString()).toBe('2026-01-01T11:15:00.000Z');
+    });
+
+    it('ignores a negative extra', () => {
+      const startedAt = new Date('2026-01-01T10:00:00Z');
+      const examEnd = new Date('2026-01-01T12:00:00Z');
+
+      expect(timer.computeExpiresAt(startedAt, 30, examEnd, -5).toISOString()).toBe('2026-01-01T10:30:00.000Z');
+    });
+  });
 });

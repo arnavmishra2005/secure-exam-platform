@@ -21,12 +21,20 @@ export interface ExamLookupInfo {
   /** ISO 8601 */
   endTime: string;
   durationMinutes: number;
+  /** ISO 8601 once published to registered students (Phase 4), else null. */
+  publishedAt: string | null;
 }
 
 export interface IExamLookupService {
   /** Returns null if the exam does not exist. */
   getExamById(examId: string): Promise<ExamLookupInfo | null>;
 
-  /** Whether this student has been assigned to sit this exam. */
+  /**
+   * Whether this student (users.id, the JWT sub) is registered to sit this
+   * exam. Strict: an exam with no registrations admits nobody.
+   */
   isStudentAssignedToExam(examId: string, studentId: string): Promise<boolean>;
+
+  /** Exam titles by id, for display on the monitoring screen. Unknown ids are omitted. */
+  getExamTitles(examIds: string[]): Promise<Map<string, string>>;
 }

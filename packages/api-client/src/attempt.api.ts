@@ -9,6 +9,7 @@ import { apiClient } from './client';
 import type {
   Attempt,
   AttemptMonitorView,
+  HeartbeatResponse,
   AttemptStatus,
   Answer,
   PublicQuestion,
@@ -59,8 +60,9 @@ export function getAttemptQuestions(attemptId: string): Promise<PublicQuestion[]
   return apiClient.get<PublicQuestion[]>(`/attempts/${attemptId}/questions`).then((res) => res.data);
 }
 
-export function sendHeartbeat(attemptId: string): Promise<void> {
-  return apiClient.post(`/attempts/${attemptId}/heartbeat`).then(() => undefined);
+/** Liveness ping; the response is the client's clock source (server time + current expiry). */
+export function sendHeartbeat(attemptId: string): Promise<HeartbeatResponse> {
+  return apiClient.post<HeartbeatResponse>(`/attempts/${attemptId}/heartbeat`).then((res) => res.data);
 }
 
 // ---- Answers ------------------------------------------------------------

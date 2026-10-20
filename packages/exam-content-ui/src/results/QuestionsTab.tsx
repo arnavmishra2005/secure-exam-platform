@@ -16,13 +16,13 @@ import { matrixToCsv } from './csv';
 
 function StatBar({ s }: { s: QuestionStats }) {
   const parts = [
-    { n: s.correct, c: 'bg-emerald-500', l: 'correct' },
-    { n: s.partial, c: 'bg-amber-400', l: 'partly correct' },
-    { n: s.wrong, c: 'bg-red-400', l: 'wrong' },
+    { n: s.correct, c: 'bg-success', l: 'correct' },
+    { n: s.partial, c: 'bg-warning', l: 'partly correct' },
+    { n: s.wrong, c: 'bg-destructive', l: 'wrong' },
     { n: s.pending, c: 'bg-sky-400', l: 'not graded yet' },
-    { n: s.notAnswered, c: 'bg-slate-200', l: 'not answered' },
+    { n: s.notAnswered, c: 'bg-border', l: 'not answered' },
   ];
-  if (s.attempts === 0) return <div className="h-2 rounded bg-slate-100" />;
+  if (s.attempts === 0) return <div className="h-2 rounded bg-muted" />;
   return (
     <div
       className="flex h-2 overflow-hidden rounded"
@@ -38,9 +38,9 @@ function StatsTable({ m }: { m: QuestionAnalyticsMatrix }) {
   const [open, setOpen] = useState<string | null>(null);
   const statBy = new Map(m.stats.map((s) => [s.questionId, s]));
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <table className="min-w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+        <thead className="bg-muted text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-3 py-2">#</th>
             <th className="px-3 py-2">Question</th>
@@ -51,15 +51,15 @@ function StatsTable({ m }: { m: QuestionAnalyticsMatrix }) {
             <th className="px-3 py-2 text-right">Tests passed</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-border">
           {m.questions.map((q) => {
             const s = statBy.get(q.id)!;
             const hasOptions = !!s.optionCounts && !!q.options?.length;
             return (
               <Fragment key={q.id}>
                 <tr className="align-top">
-                  <td className="px-3 py-2 font-medium text-slate-700">Q{q.number}</td>
-                  <td className="max-w-md px-3 py-2 text-slate-800">
+                  <td className="px-3 py-2 font-medium text-foreground">Q{q.number}</td>
+                  <td className="max-w-md px-3 py-2 text-foreground">
                     {hasOptions ? (
                       <button type="button" className="text-left hover:underline" onClick={() => setOpen(open === q.id ? null : q.id)}>
                         {q.text}
@@ -68,25 +68,25 @@ function StatsTable({ m }: { m: QuestionAnalyticsMatrix }) {
                       q.text
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{TYPE_LABEL[q.type]}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{TYPE_LABEL[q.type]}</td>
                   <td className="px-3 py-3">
                     <StatBar s={s} />
-                    <div className="mt-1 text-xs text-slate-500">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       {s.answered}/{s.attempts} answered{s.pending > 0 && ` · ${s.pending} not graded yet`}
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-right text-slate-800">{pct(s.accuracy)}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">
+                  <td className="px-3 py-2 text-right text-foreground">{pct(s.accuracy)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right text-foreground">
                     {s.averageScore == null ? '—' : `${s.averageScore} / ${q.marks}`}
                   </td>
-                  <td className="px-3 py-2 text-right text-slate-800">
+                  <td className="px-3 py-2 text-right text-foreground">
                     {q.type === QuestionType.CODING ? pct(s.testPassRate) : ''}
                   </td>
                 </tr>
                 {open === q.id && (
                   <tr>
                     <td />
-                    <td colSpan={6} className="px-3 pb-3 text-xs text-slate-600">
+                    <td colSpan={6} className="px-3 pb-3 text-xs text-muted-foreground">
                       <OptionBreakdown options={q.options ?? []} counts={s.optionCounts!} attempts={s.attempts} />
                     </td>
                   </tr>
@@ -119,9 +119,9 @@ function OptionBreakdown({
               {o.isCorrect ? '✓ ' : ''}
               {o.text}
             </span>
-            <span className="h-2 flex-1 rounded bg-slate-100">
+            <span className="h-2 flex-1 rounded bg-muted">
               <span
-                className={cx('block h-2 rounded', o.isCorrect ? 'bg-emerald-500' : 'bg-slate-400')}
+                className={cx('block h-2 rounded', o.isCorrect ? 'bg-success' : 'bg-muted-foreground')}
                 style={{ width: attempts ? `${(n / attempts) * 100}%` : 0 }}
               />
             </span>
@@ -135,7 +135,7 @@ function OptionBreakdown({
 
 function Legend() {
   return (
-    <ul className="flex flex-wrap gap-3 text-xs text-slate-600" aria-label="Legend">
+    <ul className="flex flex-wrap gap-3 text-xs text-muted-foreground" aria-label="Legend">
       {Object.values(CELL_STYLE).map((s) => (
         <li key={s.label} className="flex items-center gap-1">
           <span className={cx('inline-flex h-5 w-5 items-center justify-center rounded', s.className)}>{s.symbol}</span>
@@ -168,11 +168,11 @@ function Matrix({ m, onOpen }: { m: QuestionAnalyticsMatrix; onOpen: (attemptId:
         />
         <Legend />
       </div>
-      <div className="overflow-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: '70vh' }}>
+      <div className="overflow-auto rounded-lg border border-border bg-card" style={{ maxHeight: '70vh' }}>
         <table className="text-sm" aria-label="Who answered what">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-medium text-slate-500">
+          <thead className="sticky top-0 z-10 bg-muted text-xs font-medium text-muted-foreground">
             <tr>
-              <th className="sticky left-0 z-20 bg-slate-50 px-3 py-2 text-left">Student</th>
+              <th className="sticky left-0 z-20 bg-muted px-3 py-2 text-left">Student</th>
               <th className="px-3 py-2 text-right">Score</th>
               {m.questions.map((q) => (
                 <th key={q.id} className="px-1 py-2 text-center" title={q.text}>
@@ -181,19 +181,19 @@ function Matrix({ m, onOpen }: { m: QuestionAnalyticsMatrix; onOpen: (attemptId:
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border">
             {students.map((s) => (
-              <tr key={s.attemptId} className="hover:bg-slate-50">
-                <th scope="row" className="sticky left-0 bg-white px-3 py-1.5 text-left font-normal">
+              <tr key={s.attemptId} className="hover:bg-muted">
+                <th scope="row" className="sticky left-0 bg-card px-3 py-1.5 text-left font-normal">
                   <button type="button" className="text-left hover:underline" onClick={() => onOpen(s.attemptId)}>
-                    <span className="block font-medium text-slate-900">{s.fullName}</span>
-                    <span className="block text-xs text-slate-500">
+                    <span className="block font-medium text-foreground">{s.fullName}</span>
+                    <span className="block text-xs text-muted-foreground">
                       {s.email}
                       {s.status === 'IN_PROGRESS' && ' · in progress'}
                     </span>
                   </button>
                 </th>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-slate-800">
+                <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-foreground">
                   {s.score} / {s.maxScore}
                 </td>
                 {m.questions.map((q) => {
@@ -222,7 +222,7 @@ function Matrix({ m, onOpen }: { m: QuestionAnalyticsMatrix; onOpen: (attemptId:
           </tbody>
         </table>
       </div>
-      {students.length === 0 && <p className="text-sm text-slate-500">No students match “{search}”.</p>}
+      {students.length === 0 && <p className="text-sm text-muted-foreground">No students match “{search}”.</p>}
     </div>
   );
 }
@@ -294,7 +294,7 @@ export function QuestionsTab({ examId }: { examId: string }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           {m.students.length} attempt{m.students.length === 1 ? '' : 's'} · {m.questions.length} questions
           {m.exam.status === 'ACTIVE' && ' · live'}
         </p>
@@ -322,12 +322,12 @@ export function QuestionsTab({ examId }: { examId: string }) {
       )}
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold text-slate-900">By question</h2>
+        <h2 className="text-base font-semibold text-foreground">By question</h2>
         <StatsTable m={m} />
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold text-slate-900">Who answered what</h2>
+        <h2 className="text-base font-semibold text-foreground">Who answered what</h2>
         {m.students.length === 0 ? (
           <EmptyState title="No attempts yet">Students appear here once they start the exam.</EmptyState>
         ) : (

@@ -13,12 +13,12 @@ export function ValidateSolution({ coding, disabled }: { coding: CodingProblemIn
   const hasSolution = !!coding.referenceSolution?.trim();
 
   return (
-    <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+    <div className="space-y-3 rounded-md border border-border bg-muted p-3">
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => check.mutate()} disabled={disabled || !hasSolution || coding.tests.length === 0} busy={check.isPending}>
           Test reference solution
         </Button>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-muted-foreground">
           {hasSolution
             ? 'Runs the reference solution against every test above (unsaved changes included).'
             : 'Add a reference solution to check your expected outputs.'}
@@ -41,12 +41,12 @@ export function ValidateSolution({ coding, disabled }: { coding: CodingProblemIn
           )}
           <ul className="space-y-2">
             {res.tests.map((t) => (
-              <li key={t.index} className="rounded border border-slate-200 bg-white p-2">
+              <li key={t.index} className="rounded border border-border bg-card p-2">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">Test {t.index}</span>
                   {t.isSample && <Badge tone="blue">Sample</Badge>}
                   <Badge tone={VERDICT_LABEL[t.verdict].tone}>{VERDICT_LABEL[t.verdict].text}</Badge>
-                  <span className="text-xs text-slate-400">{t.timeMs} ms</span>
+                  <span className="text-xs text-muted-foreground">{t.timeMs} ms</span>
                 </div>
                 {t.verdict !== TestCaseVerdict.PASSED && (
                   <div className="mt-2 flex flex-col gap-2 lg:flex-row">

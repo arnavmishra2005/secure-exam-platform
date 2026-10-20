@@ -8,3 +8,5 @@ export * from './coding.schema';
 export * from './question-bank.schema';
 export * from './attempt.schema';
 export * from './answer.schema';
+export * from './course.schema';    // A — Phase 4
+export * from './extension.schema'; // C — Phase 4

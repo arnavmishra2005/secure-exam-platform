@@ -8,14 +8,23 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateStudentDto, UpdateStudentDto } from '@secure-exam/validation';
 import { AuditEventType, Role } from '@secure-exam/types';
+import type { StudentSummary } from '@secure-exam/types';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { StudentEntity } from './entities/student.entity';
 import { UserEntity } from './entities/user.entity';
 
 const BCRYPT_ROUNDS = 12;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface ResolvedStudents {
+  /** Keyed by the identifier the caller passed in. */
+  found: Map<string, StudentEntity>;
+  notFound: string[];
+}
 
 export interface BulkImportResult {
   createdCount: number;
@@ -66,6 +75,56 @@ export class UserService {
 
   async findStudentById(id: string): Promise<StudentEntity | null> {
     return this.studentRepository.findOne({ where: { id }, relations: ['user'] });
+  }
+
+  /**
+   * Resolves a mixed list of students.id, users.id or college IDs to Student
+   * records, so admin screens can accept whichever the operator has to hand.
+   */
+  async resolveStudents(identifiers: string[]): Promise<ResolvedStudents> {
+    const unique = [...new Set(identifiers.map((i) => i.trim()).filter(Boolean))];
+    const uuids = unique.filter((i) => UUID_PATTERN.test(i));
+    const collegeIds = unique.filter((i) => !UUID_PATTERN.test(i));
+
+    const candidates: StudentEntity[] = [];
+    if (uuids.length > 0) {
+      candidates.push(
+        ...(await this.studentRepository.find({
+          where: [{ id: In(uuids) }, { userId: In(uuids) }],
+          relations: ['user'],
+        })),
+      );
+    }
+    if (collegeIds.length > 0) {
+      candidates.push(
+        ...(await this.studentRepository.find({ where: { collegeId: In(collegeIds) }, relations: ['user'] })),
+      );
+    }
+
+    const found = new Map<string, StudentEntity>();
+    for (const identifier of unique) {
+      const match = candidates.find(
+        (s) => s.id === identifier || s.userId === identifier || s.collegeId === identifier,
+      );
+      if (match) found.set(identifier, match);
+    }
+    return { found, notFound: unique.filter((i) => !found.has(i)) };
+  }
+
+  /** Students by students.id, with their user loaded. */
+  findStudentsByIds(ids: string[]): Promise<StudentEntity[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.studentRepository.find({ where: { id: In(ids) }, relations: ['user'] });
+  }
+
+  /** Students by users.id (what attempts and results reference), with their user loaded. */
+  findStudentsByUserIds(userIds: string[]): Promise<StudentEntity[]> {
+    if (userIds.length === 0) return Promise.resolve([]);
+    return this.studentRepository.find({ where: { userId: In(userIds) }, relations: ['user'] });
+  }
+
+  findStudentByUserId(userId: string): Promise<StudentEntity | null> {
+    return this.studentRepository.findOne({ where: { userId }, relations: ['user'] });
   }
 
   async findByCollegeId(collegeId: string): Promise<StudentEntity | null> {
@@ -166,4 +225,15 @@ export class UserService {
 
     return this.studentRepository.findOneOrFail({ where: { id }, relations: ['user'] });
   }
+}
+
+export function toStudentSummary(student: StudentEntity): StudentSummary {
+  return {
+    id: student.id,
+    userId: student.userId,
+    collegeId: student.collegeId,
+    fullName: student.user?.fullName ?? '',
+    email: student.user?.email ?? '',
+    isActive: student.user?.isActive ?? false,
+  };
 }

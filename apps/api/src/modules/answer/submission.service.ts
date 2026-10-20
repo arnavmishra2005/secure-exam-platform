@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
@@ -27,6 +28,7 @@ import {
 // Person A's contract (assumed to exist — task-breakdown doc, section 3).
 import { AuditService } from '../audit/audit.service';
 import { logAuditSafely } from '../attempt/audit-safe.util';
+import { ATTEMPT_SUBMITTED, AttemptSubmittedEvent } from '../../common/events/events';
 
 /** Internal shape returned by finalizeLocked() — enough for both the caller and audit logging. */
 interface FinalizeOutcome {
@@ -53,6 +55,7 @@ export class SubmissionService {
     // usual — @nestjs/typeorm's core module is @Global(), so DataSource is
     // injectable here with no extra wiring in answer.module.ts.
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly events: EventEmitter2,
   ) {}
 
   // ---- Shared locking primitive ----------------------------------------
@@ -252,8 +255,8 @@ export class SubmissionService {
   }
 
   /**
-   * Audit logging deliberately happens AFTER the transaction has
-   * committed, never inside it — see audit-safe.util.ts for why (in
+   * Audit logging (and the attempt.submitted event) deliberately happens
+   * AFTER the transaction has committed, never inside it — see audit-safe.util.ts for why (in
    * short: AuditService's assumed contract can't participate in a DB
    * transaction, and a logging hiccup after a real commit must not make a
    * successful submission look like a failed request).
@@ -275,6 +278,30 @@ export class SubmissionService {
       },
       actorId,
     );
+    await this.emitSubmitted(outcome, isAutoSubmitted);
+  }
+
+  /**
+   * Day 1 contract: attempt.submitted fires once per finalized attempt, after
+   * the transaction committed. Listeners (Person A's MCQ grading, Person B's
+   * code grading) never block or fail the submission itself.
+   */
+  private async emitSubmitted(outcome: FinalizeOutcome, isAutoSubmitted: boolean): Promise<void> {
+    const event: AttemptSubmittedEvent = {
+      attemptId: outcome.submission.attemptId,
+      examId: outcome.examId,
+      studentId: outcome.studentId,
+      isAutoSubmitted,
+      submittedAt: outcome.submission.submittedAt,
+    };
+    try {
+      await this.events.emitAsync(ATTEMPT_SUBMITTED, event);
+    } catch (err) {
+      this.logger.error(
+        `An ${ATTEMPT_SUBMITTED} listener failed for attempt ${event.attemptId}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
   }
 
   // ---- Defense in depth: periodic expiry sweep (issue: attempts that never receive traffic again) ----

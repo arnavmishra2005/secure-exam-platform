@@ -17,7 +17,7 @@ import { CodeRunService } from './code-run.service';
 import { CodeSubmitService } from './code-submit.service';
 import { CodingQuestionResolver } from './coding-question.resolver';
 import { CODE_SCORE_SINK } from './score-sink/code-score-sink.interface';
-import { ResultTableScoreSink } from './score-sink/result-table-score-sink';
+import { ScoreRecorderCodeScoreSink } from './score-sink/score-recorder-score-sink';
 import { CodeRunEntity } from './entities/code-run.entity';
 import { CodeSubmissionEntity } from './entities/code-submission.entity';
 import { CodingProblemEntity } from './entities/coding-problem.entity';
@@ -52,8 +52,8 @@ import { CodingTestCaseEntity } from './entities/coding-test-case.entity';
     ResultTotalsService,
     ResultRecalculationService,
     { provide: ATTEMPT_ACCESS, useClass: AttemptAccessAdapter },
-    // Swap for Person A's ScoreRecorder at merge (see score-sink/).
-    { provide: CODE_SCORE_SINK, useClass: ResultTableScoreSink },
+    // Code scores go through Person A's ScoreRecorder (global SCORE_RECORDER) into question_scores.
+    { provide: CODE_SCORE_SINK, useClass: ScoreRecorderCodeScoreSink },
   ],
 })
 export class CodingModule {}

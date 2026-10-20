@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AttemptService } from './attempt.service';
@@ -6,7 +7,9 @@ import { TimerService } from './timer.service';
 import { AttemptEntity } from './entities/attempt.entity';
 import { ExamSessionEntity } from './entities/exam-session.entity';
 import { EXAM_LOOKUP_SERVICE, IExamLookupService } from './exam-lookup/exam-lookup.interface';
-import { AttemptStatus, Role } from '@secure-exam/types';
+import { AttemptStatus, ExtensionScope, Role } from '@secure-exam/types';
+import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity';
+import { UserService } from '../user/user.service';
 // Person A's contract — see attempt.service.ts for the "assumed to exist" note.
 import { AuditService } from '../audit/audit.service';
 
@@ -44,6 +47,8 @@ describe('AttemptService', () => {
   let sessionRepo: ReturnType<typeof makeRepoMock>;
   let examLookup: jest.Mocked<IExamLookupService>;
   let auditService: { logEvent: jest.Mock };
+  let extensionRepo: ReturnType<typeof makeRepoMock>;
+  let userService: { findStudentsByUserIds: jest.Mock };
 
   const student = { sub: 'student-1', role: Role.STUDENT } as any;
   const otherStudent = { sub: 'student-2', role: Role.STUDENT } as any;
@@ -55,6 +60,7 @@ describe('AttemptService', () => {
     startTime: new Date(Date.now() - 5 * 60_000).toISOString(),
     endTime: new Date(Date.now() + 60 * 60_000).toISOString(),
     durationMinutes: 30,
+    publishedAt: new Date(Date.now() - 60 * 60_000).toISOString(),
   };
 
   beforeEach(async () => {
@@ -63,7 +69,11 @@ describe('AttemptService', () => {
     examLookup = {
       getExamById: jest.fn(),
       isStudentAssignedToExam: jest.fn(),
+      getExamTitles: jest.fn().mockResolvedValue(new Map([['exam-1', 'Algorithms Midterm']])),
     };
+    extensionRepo = makeRepoMock();
+    extensionRepo.find.mockResolvedValue([]);
+    userService = { findStudentsByUserIds: jest.fn().mockResolvedValue([]) };
     auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -74,6 +84,9 @@ describe('AttemptService', () => {
         { provide: getRepositoryToken(ExamSessionEntity), useValue: sessionRepo },
         { provide: EXAM_LOOKUP_SERVICE, useValue: examLookup },
         { provide: AuditService, useValue: auditService },
+        { provide: getRepositoryToken(ExamExtensionEntity), useValue: extensionRepo },
+        { provide: UserService, useValue: userService },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
       ],
     }).compile();
 
@@ -97,6 +110,38 @@ describe('AttemptService', () => {
         'EXAM_STARTED',
         expect.objectContaining({ examId: activeExam.id }),
         student.sub,
+      );
+    });
+
+    it('rejects an exam that has not been published yet', async () => {
+      examLookup.getExamById.mockResolvedValue({ ...activeExam, publishedAt: null });
+      examLookup.isStudentAssignedToExam.mockResolvedValue(true);
+
+      await expect(service.startAttempt(student, { examId: activeExam.id })).rejects.toThrow(ForbiddenException);
+      expect(attemptRepo.save).not.toHaveBeenCalled();
+      expect(auditService.logEvent).toHaveBeenCalledWith(
+        'SECURITY_CHECK_FAILED',
+        expect.objectContaining({ reason: 'EXAM_NOT_PUBLISHED' }),
+        student.sub,
+      );
+    });
+
+    it('adds extra minutes granted to this student before they started', async () => {
+      examLookup.getExamById.mockResolvedValue(activeExam);
+      examLookup.isStudentAssignedToExam.mockResolvedValue(true);
+      attemptRepo.findOne.mockResolvedValue(null);
+      extensionRepo.find.mockResolvedValue([{ minutes: 10 }, { minutes: 5 }]);
+
+      const before = Date.now();
+      const result = await service.startAttempt(student, { examId: activeExam.id });
+
+      // 30-minute duration (well inside the exam window) + 15 extra minutes.
+      const expectedMs = before + 45 * 60_000;
+      expect(Math.abs(new Date(result.expiresAt).getTime() - expectedMs)).toBeLessThan(5_000);
+      expect(extensionRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { examId: activeExam.id, studentId: student.sub, scope: ExtensionScope.STUDENT },
+        }),
       );
     });
 
@@ -377,6 +422,100 @@ describe('AttemptService', () => {
       const result = await service.listForMonitoring({ page: 1, limit: 20 });
 
       expect(result.items[0].isOverdue).toBe(false);
+    });
+  });
+
+  describe('heartbeat', () => {
+    it('returns the server clock and current expiry so the client can resync', async () => {
+      const expiresAt = new Date(Date.now() + 10 * 60_000);
+      attemptRepo.findOne.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: student.sub,
+        examId: 'exam-1',
+        status: AttemptStatus.IN_PROGRESS,
+        expiresAt,
+      });
+      sessionRepo.findOne.mockResolvedValue({ attemptId: 'attempt-1', lastSeenAt: new Date(0) });
+
+      const result = await service.heartbeat('attempt-1', student, { ipAddress: '10.0.0.1' });
+
+      expect(result.expiresAt).toBe(expiresAt.toISOString());
+      expect(result.status).toBe(AttemptStatus.IN_PROGRESS);
+      expect(result.remainingSeconds).toBeGreaterThan(590);
+      expect(Math.abs(new Date(result.serverTime).getTime() - Date.now())).toBeLessThan(5_000);
+      expect(sessionRepo.save).toHaveBeenCalled();
+    });
+
+    it('still reports the clock for a finalized attempt, without touching its session', async () => {
+      attemptRepo.findOne.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: student.sub,
+        examId: 'exam-1',
+        status: AttemptStatus.SUBMITTED,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      const result = await service.heartbeat('attempt-1', student, {});
+
+      expect(result.status).toBe(AttemptStatus.SUBMITTED);
+      expect(result.remainingSeconds).toBe(0);
+      expect(sessionRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listForMonitoring enrichment', () => {
+    const startedAt = new Date(Date.now() - 20 * 60_000);
+    const attempt = {
+      id: 'attempt-9',
+      examId: 'exam-1',
+      studentId: 'user-9',
+      status: AttemptStatus.IN_PROGRESS,
+      startedAt,
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+      submittedAt: null,
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    };
+
+    it('joins in names, marks a silent attempt disconnected, and totals the extensions that apply to it', async () => {
+      attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
+      userService.findStudentsByUserIds.mockResolvedValue([
+        { userId: 'user-9', collegeId: 'CS009', user: { fullName: 'Grace Hopper' } },
+      ]);
+      extensionRepo.find.mockResolvedValue([
+        // Before the attempt started: the exam end moved, not this attempt.
+        { examId: 'exam-1', scope: ExtensionScope.ALL, studentId: null, minutes: 15, createdAt: new Date(startedAt.getTime() - 60_000) },
+        // While it was running: applies.
+        { examId: 'exam-1', scope: ExtensionScope.ALL, studentId: null, minutes: 10, createdAt: new Date() },
+        // This student: applies.
+        { examId: 'exam-1', scope: ExtensionScope.STUDENT, studentId: 'user-9', minutes: 5, createdAt: new Date() },
+        // Someone else: doesn't.
+        { examId: 'exam-1', scope: ExtensionScope.STUDENT, studentId: 'user-1', minutes: 7, createdAt: new Date() },
+      ]);
+
+      const { items } = await service.listForMonitoring({ page: 1, limit: 20 });
+
+      expect(items[0]).toMatchObject({
+        studentName: 'Grace Hopper',
+        collegeId: 'CS009',
+        examTitle: 'Algorithms Midterm',
+        isDisconnected: true, // no heartbeat at all
+        extendedMinutes: 15,
+        violationCount: null,
+      });
+    });
+
+    it('does not mark an attempt with a recent heartbeat as disconnected', async () => {
+      attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
+      sessionRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([{ attemptId: 'attempt-9', lastSeenAt: new Date() }]),
+      });
+
+      const { items } = await service.listForMonitoring({ page: 1, limit: 20 });
+
+      expect(items[0].isDisconnected).toBe(false);
     });
   });
 });

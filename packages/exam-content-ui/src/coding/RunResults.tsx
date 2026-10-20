@@ -8,7 +8,7 @@ import { SampleBlock } from './ProblemStatement';
 export function RunResults({ last }: { last: LastAction }) {
   if (!last) {
     return (
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-muted-foreground">
         <b>Run</b> uses your custom input. <b>Run samples</b> checks the examples. <b>Submit</b> saves this code as your
         final answer; it's graded on all tests after the exam. You can submit again — the last submission counts.
       </p>
@@ -30,10 +30,10 @@ export function RunResults({ last }: { last: LastAction }) {
     return (
       <div className="space-y-3" data-testid="submit-result">
         <div className="flex flex-wrap items-baseline gap-3">
-          <span className="text-base font-semibold text-slate-900">
+          <span className="text-base font-semibold text-foreground">
             Score {result.score} / {result.maxScore}
           </span>
-          <span className="text-sm text-slate-600">
+          <span className="text-sm text-muted-foreground">
             {result.passed} of {result.total} tests passed
           </span>
         </div>
@@ -41,10 +41,10 @@ export function RunResults({ last }: { last: LastAction }) {
           {result.tests.map((t) => {
             const v = VERDICT_LABEL[t.verdict];
             return (
-              <li key={t.index} className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 text-sm">
-                <span className="text-slate-700">{t.isSample ? `Sample ${t.index}` : `Test ${t.index}`}</span>
+              <li key={t.index} className="flex items-center justify-between rounded border border-border px-2 py-1 text-sm">
+                <span className="text-foreground">{t.isSample ? `Sample ${t.index}` : `Test ${t.index}`}</span>
                 <span className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">{t.timeMs} ms</span>
+                  <span className="text-xs text-muted-foreground">{t.timeMs} ms</span>
                   <Badge tone={v.tone}>{v.text}</Badge>
                 </span>
               </li>
@@ -62,7 +62,7 @@ export function RunResults({ last }: { last: LastAction }) {
       <div className="space-y-2" data-testid="run-result">
         <div className="flex items-center gap-2">
           <Badge tone={s.tone}>{s.text}</Badge>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-muted-foreground">
             {r.outcome.timeMs} ms{last.where === 'server' ? ' · ran on the server' : ''}
           </span>
         </div>
@@ -77,11 +77,11 @@ export function RunResults({ last }: { last: LastAction }) {
       {(r.samples ?? []).map((sample) => {
         const v = VERDICT_LABEL[sample.verdict];
         return (
-          <div key={sample.index} className="space-y-2 rounded-md border border-slate-200 p-2">
+          <div key={sample.index} className="space-y-2 rounded-md border border-border p-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-slate-800">Sample {sample.index}</span>
+              <span className="text-sm font-medium text-foreground">Sample {sample.index}</span>
               <Badge tone={v.tone}>{v.text}</Badge>
-              <span className="text-xs text-slate-400">{sample.timeMs} ms</span>
+              <span className="text-xs text-muted-foreground">{sample.timeMs} ms</span>
             </div>
             <div className="flex flex-col gap-2 lg:flex-row">
               <SampleBlock label="Input" text={sample.input} />

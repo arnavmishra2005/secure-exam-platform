@@ -8,14 +8,21 @@ import { TimerService } from './timer.service';
 import { EXAM_LOOKUP_SERVICE } from './exam-lookup/exam-lookup.interface';
 import { ExamLookupAdapter } from './exam-lookup/exam-lookup.adapter';
 import { ExamModule } from '../exam/exam.module';
+import { CourseModule } from '../course/course.module';
+import { UserModule } from '../user/user.module';
+import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity';
 
 // Note: AuditModule is @Global() in Person A's AppModule, so AuditService
 // is available to AttemptService via DI without re-importing AuditModule here.
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AttemptEntity, ExamSessionEntity]),
+    // ExamExtensionEntity is Person C's own (modules/extension); read here to
+    // apply per-student extra time at start and to show it on monitoring.
+    TypeOrmModule.forFeature([AttemptEntity, ExamSessionEntity, ExamExtensionEntity]),
     ExamModule,
+    CourseModule, // RegistrationService: the start-attempt registration gate
+    UserModule, // student names on the monitoring screen
   ],
   controllers: [AttemptController],
   providers: [

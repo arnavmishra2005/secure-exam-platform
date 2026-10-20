@@ -20,9 +20,9 @@ const CODE_SOURCE = {
 function QuestionDetail({ q }: { q: DrilldownQuestion }) {
   const style = CELL_STYLE[q.state];
   return (
-    <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+    <section className="space-y-3 rounded-lg border border-border p-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
-        <h3 className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
+        <h3 className="min-w-0 flex-1 text-sm font-semibold text-foreground">
           Q{q.number}. {q.text}
         </h3>
         <span className="flex items-center gap-2 text-sm">
@@ -30,7 +30,7 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
           <span className={cx('rounded px-2 py-0.5 text-xs font-medium', style.className)}>
             {style.symbol} {style.label}
           </span>
-          <span className="font-medium text-slate-700">{q.score === null ? '—' : q.score} / {q.marks}</span>
+          <span className="font-medium text-foreground">{q.score === null ? '—' : q.score} / {q.marks}</span>
         </span>
       </header>
 
@@ -41,15 +41,15 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
               key={o.id}
               className={cx(
                 'flex items-center gap-2 rounded px-2 py-1',
-                o.selected && o.isCorrect && 'bg-emerald-50',
-                o.selected && !o.isCorrect && 'bg-red-50',
+                o.selected && o.isCorrect && 'bg-accent',
+                o.selected && !o.isCorrect && 'bg-brick-light',
               )}
             >
-              <span className="w-24 shrink-0 text-xs text-slate-500">
+              <span className="w-24 shrink-0 text-xs text-muted-foreground">
                 {o.selected ? 'Selected' : ''}
                 {o.selected && o.isCorrect ? ' ✓' : o.selected ? ' ✗' : ''}
               </span>
-              <span className="text-slate-800">{o.text}</span>
+              <span className="text-foreground">{o.text}</span>
               {o.isCorrect && <Badge tone="green">Correct answer</Badge>}
             </li>
           ))}
@@ -59,7 +59,7 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
       {q.type === QuestionType.CODING &&
         (q.code ? (
           <div className="space-y-3">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {CODE_SOURCE[q.code.source]}
               {q.code.status === 'PENDING' && q.code.source.startsWith('FINAL') && ' · being graded again'} · {q.code.submitCount} submit{q.code.submitCount === 1 ? '' : 's'},{' '}
               {q.code.runCount} run{q.code.runCount === 1 ? '' : 's'}
@@ -72,14 +72,14 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
             </div>
             {q.code.tests.length > 0 && (
               <details>
-                <summary className="cursor-pointer text-sm font-medium text-slate-700">Test results</summary>
+                <summary className="cursor-pointer text-sm font-medium text-foreground">Test results</summary>
                 <div className="mt-2 space-y-2">
                   {q.code.tests.map((t) => (
-                    <div key={t.index} className="space-y-2 rounded border border-slate-200 p-2">
+                    <div key={t.index} className="space-y-2 rounded border border-border p-2">
                       <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium">{t.isSample ? `Sample ${t.index}` : `Test ${t.index}`}</span>
                         <Badge tone={VERDICT_LABEL[t.verdict].tone}>{VERDICT_LABEL[t.verdict].text}</Badge>
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-muted-foreground">
                           weight {t.weight} · {t.timeMs} ms
                         </span>
                       </div>
@@ -96,7 +96,7 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
             )}
           </div>
         ) : (
-          <p className="text-sm text-slate-500">No code written.</p>
+          <p className="text-sm text-muted-foreground">No code written.</p>
         ))}
     </section>
   );
@@ -127,7 +127,7 @@ export function AttemptDrilldownDialog({
         <Alert>{errorMessage(q.error)}</Alert>
       ) : q.data ? (
         <div className="space-y-3">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             {q.data.student.email} · {q.data.student.status.replace('_', ' ').toLowerCase()} · answered{' '}
             {q.data.student.answeredCount} of {q.data.questions.length}
           </p>

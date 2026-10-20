@@ -2,12 +2,10 @@ import {
   Column,
   CreateDateColumn,
   Entity,
-  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { ExamStatus } from '@secure-exam/types';
-import { ExamAssignmentEntity } from './exam-assignment.entity';
 
 @Entity('exams')
 export class ExamEntity {
@@ -36,8 +34,17 @@ export class ExamEntity {
   })
   status: ExamStatus;
 
-  @OneToMany(() => ExamAssignmentEntity, (assignment) => assignment.exam)
-  assignments: ExamAssignmentEntity[];
+  /**
+   * Person A (publish): set when the exam is published to its registered
+   * students. Unpublished exams are invisible to students and can't be started.
+   * Who may sit the exam lives in exam_registrations (modules/course).
+   */
+  @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
+  publishedAt: Date | null;
+
+  /** Person A (publish): pass mark as a percentage of the maximum score. */
+  @Column({ name: 'pass_percentage', type: 'int', default: 40 })
+  passPercentage: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
