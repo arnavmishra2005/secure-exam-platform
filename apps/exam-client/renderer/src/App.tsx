@@ -19,6 +19,7 @@ import LoginPage from './routes/login/LoginPage';
 import InstructionsPage from './routes/instructions/InstructionsPage';
 import SubmittedPage from './routes/submitted/SubmittedPage';
 import AdminRedirectPage from './routes/admin-redirect/AdminRedirectPage';
+import { ViolationBanner } from './components/kiosk/ViolationBanner';
 
 // Person B owns ExamPage — lazy-loaded for code splitting.
 import { lazy, Suspense } from 'react';
@@ -27,6 +28,7 @@ const ExamPage = lazy(() => import('./routes/exam/ExamPage'));
 export default function App() {
   return (
     <BrowserRouter>
+      <ViolationBanner />
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<LoginPage />} />

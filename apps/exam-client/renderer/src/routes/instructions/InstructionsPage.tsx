@@ -16,6 +16,7 @@ import { getMyAttemptForExam, startAttempt } from '@secure-exam/api-client';
 import { AttemptStatus } from '@secure-exam/types';
 import { useAttempt, FIXTURE_ATTEMPT_ID } from '../../contexts/AttemptContext';
 import { useAuth } from '../../hooks/useAuth';
+import { ReadinessGate } from '../../components/kiosk/ReadinessGate';
 
 /** General exam instructions shown to every student. */
 const INSTRUCTIONS = [
@@ -43,6 +44,7 @@ export default function InstructionsPage() {
   const [examId, setExamId] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [error, setErrorState] = useState<StartError | null>(null);
+  const [kioskReady, setKioskReady] = useState(false);
 
   function setError(message: string | null) {
     setErrorState((prev) =>
@@ -175,6 +177,9 @@ export default function InstructionsPage() {
             Enter the <strong>Exam ID</strong> provided by your invigilator to begin.
           </p>
 
+          {/* Kiosk readiness check — no-op in browser, required in Electron */}
+          <ReadinessGate onReady={() => setKioskReady(true)} />
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4" role="alert">
               {error.message}
@@ -186,7 +191,7 @@ export default function InstructionsPage() {
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 mt-4">
             <input
               type="text"
               value={examId}
@@ -197,10 +202,19 @@ export default function InstructionsPage() {
             />
             <button
               onClick={() => handleStart()}
-              disabled={isStarting}
+              disabled={isStarting || !kioskReady}
               className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
             >
               {isStarting ? 'Starting…' : 'Start Exam'}
+            </button>
+          </div>
+          <div className="mt-1 text-right">
+            <button
+              type="button"
+              onClick={() => setExamId('11111111-1111-4111-8111-111111111111')}
+              className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              Fill Sample Exam ID (Midterm Exam)
             </button>
           </div>
 

@@ -23,6 +23,7 @@ import { NavigationControls } from '../../components/exam/NavigationControls';
 import { SubmitConfirmationModal } from '../../components/exam/SubmitConfirmationModal';
 import { isFixtureAttempt } from '../../contexts/AttemptContext';
 import { requestSubmit } from '../../persistence';
+import { ViolationBanner } from '../../components/kiosk/ViolationBanner';
 
 export default function ExamPage() {
   const navigate = useNavigate();
