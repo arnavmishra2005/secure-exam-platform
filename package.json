@@ -32,9 +32,12 @@
     "web:build": "npm run build --workspace=@secure-exam/web",
     "web:test": "npm run test --workspace=@secure-exam/web",
     "web:typecheck": "npm run typecheck --workspace=@secure-exam/web",
-    "desktop:test": "npm test --workspace=@secure-exam/exam-client-desktop"
+    "desktop:test": "npm test --workspace=@secure-exam/exam-client-desktop",
+    "dev": "concurrently -k -n api,web -c blue,green \"npm run api:start\" \"npm run web:dev\"",
+    "exam:app": "node scripts/exam-app.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "concurrently": "^8.2.2"
   }
 }

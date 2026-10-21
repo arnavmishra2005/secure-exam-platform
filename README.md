@@ -4,6 +4,31 @@ This guide assumes you have a fresh computer and have never seen this project.
 Follow it top to bottom. Every command is shown, with what it does and what you
 should see. If something fails, go to [Troubleshooting](#14-troubleshooting).
 
+## Quick start: two commands
+
+After the one-time setup (sections 3 to 8 and 10.1), running the platform and sitting an exam
+in the locked-down exam app takes two commands, in two terminals at the repo root:
+
+```bash
+npm run dev           # terminal 1: starts the API (:3000) and the web app (:3003) together
+npm run exam:app      # terminal 2: opens the exam app on the sample exam, signed in as alice
+```
+
+`npm run exam:app` does what the browser's "Start exam in exam app" button does: it signs in
+as `alice@secure-exam.dev`, asks the API for a one-time launch token and starts the Electron
+app with it. **You do not copy or paste anything.** In the app press **Login**, and the exam
+starts in the locked window. Wait for `npm run dev` to show the API and web app started
+before running the second command.
+
+Other students or exams: `npm run exam:app -- bob@secure-exam.dev Student@1234 <examId>`.
+Admins use the web app in a normal browser: http://localhost:3003, `admin@secure-exam.dev` /
+`Admin@1234` (admins are refused inside the exam app).
+
+Why a launch token exists at all, and how a real student gets into the app, is explained in
+[section 10](#10-run-the-electron-exam-app).
+
+---
+
 - [1. What you are setting up](#1-what-you-are-setting-up)
 - [2. Which operating system?](#2-which-operating-system)
 - [3. Install the prerequisites](#3-install-the-prerequisites)
@@ -229,7 +254,13 @@ What this does, and why it matters:
 npx electron --version
 ```
 
-You should see `v44.9.3`. If you see an error such as *"Electron failed to install
+You should see `v44.9.3` printed in the terminal. **Type the `--version` part.** Running
+plain `npx electron` (or double-clicking `Electron.app` in `node_modules`) opens Electron's
+own welcome window ("To run a local app, execute the following on the command line"). That
+window is *not* this project and *not* an error; it only means Electron was started without
+an app. Close it. The real exam app is started only with the command in section 10.3.
+
+If you see an error such as *"Electron failed to install
 correctly, please delete node_modules/electron and try installing again"*, run:
 
 ```bash
@@ -328,7 +359,7 @@ The most important variables:
 | `DATABASE_URL` | `postgres://exam_user:exam_pass@localhost:5432/secure_exam` | Must match `docker-compose.yml` (user `exam_user`, password `exam_pass`, db `secure_exam`). |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | `change-me-...` | Each must be **at least 16 characters** or the API refuses to start. Change them for anything not local. |
 | `CORS_ORIGIN` | see above | Comma-separated list of origins allowed to call the API. Required. |
-| `REQUIRE_DESKTOP_CLIENT` | `true` | Exams only work from the exam app. Set `false` to sit exams in a browser while developing (see 11). |
+| `REQUIRE_DESKTOP_CLIENT` | `true` | `true`: exams only work from the Electron exam app. `false`: a browser can sit exams (quick development without the app; also set the web switch to `false`). |
 | `EXAM_LAUNCH_TTL_SECONDS` | `120` | How long a launch token lives. |
 | `VIOLATION_FLAG_THRESHOLD` | `5` | Violations before an attempt is flagged. |
 | `CODING_GRADING_MODE` | `DEFERRED` | `DEFERRED` grades code after the attempt ends; `LIVE` grades on submit. |
@@ -457,7 +488,9 @@ questions cannot be run or graded on the server.
 
 ## 9. Start the API and the web app
 
-Use **one terminal per process** and leave them running.
+The shortcut is `npm run dev`, which starts both below in one terminal (output is prefixed
+`api` / `web`; Ctrl+C stops both). To run them separately, use one terminal per process and
+leave them running.
 
 **Terminal 1: API**
 ```bash
@@ -484,10 +517,24 @@ the API**.
 
 ## 10. Run the Electron exam app
 
+**Short version:** `npm run exam:app` (see the Quick start). The rest of this section explains
+what it does and how to do it by hand.
+
+**Why the token?** In production the student signs in in the browser and presses "Start exam
+in exam app". The server issues a one-time, 120-second token and the browser opens
+`secure-exam://launch/<token>`, which the operating system hands to the *installed* exam app,
+so the password never reaches the app. During development no app is installed, so the OS cannot
+open that link. `npm run exam:app` fetches the token for you and starts the app with it.
+(By hand you would copy the link the web page shows and pass it as `EXAM_LAUNCH_LINK`, 10.3.)
+
+Both lock switches must be `true` (they are in `.env.example`): `REQUIRE_DESKTOP_CLIENT` in
+`apps/api/.env` and `VITE_REQUIRE_DESKTOP_EXAM` in `apps/web/.env`. Restart `npm run dev`
+after changing them.
+
 Prerequisites: sections 4–9 done (API and web app running, database seeded), and
 `npx electron --version` printing `v44.9.3`.
 
-### 10.1 Compile the Electron main process (once, and after changing `apps/exam-client/src`)
+### 10.1 Compile the Electron main process (`exam:app` does this for you)
 
 ```bash
 npm run desktop:compile
@@ -504,7 +551,7 @@ This writes `apps/exam-client/dist/`. If it is missing, the app cannot start.
    `secure-exam://launch/<long-token>`. Copy it. **It expires after 120 seconds and works
    only once.** If it expires, press the button again to get a new one.
 
-### 10.3 Launch the app with that link
+### 10.3 Launch the app with that link (what `npm run exam:app` automates)
 
 Open a **third terminal** (the API and web terminals stay running) at the repo root.
 
@@ -587,7 +634,7 @@ Edit `apps/api/.env`, then **restart the API**:
 
 | Goal | Setting |
 |---|---|
-| Sit an exam in a normal browser (no Electron) | API: `REQUIRE_DESKTOP_CLIENT=false` **and** web: `VITE_REQUIRE_DESKTOP_EXAM=false` (restart both) |
+| Sit an exam in a normal browser (no Electron, no kiosk) | API: `REQUIRE_DESKTOP_CLIENT=false` **and** web: `VITE_REQUIRE_DESKTOP_EXAM=false` (restart both) |
 | Use an admin account inside the exam app | API: `ALLOW_ADMIN_ON_DESKTOP=true` |
 | Run student code without bubblewrap | Environment of the Electron process: `EXAM_UNSANDBOXED_RUNNER=1` |
 | Grade code on submit instead of afterwards | API: `CODING_GRADING_MODE=LIVE` |
@@ -698,6 +745,7 @@ If it still fails, the install is incomplete; run `npm install` at the root agai
 | `npx electron --version` fails or `node_modules/electron/dist` is missing | Same as above. Also make sure you did not install with `--ignore-scripts` and that `ELECTRON_SKIP_BINARY_DOWNLOAD` is not set. Antivirus can also delete the download: re-run the install script. |
 | The app starts and immediately behaves like Node, or `Electron --version` prints a Node error; `ELECTRON_RUN_AS_NODE` is set | Some terminals/IDEs set `ELECTRON_RUN_AS_NODE=1`. The npm scripts already remove it with `env -u ELECTRON_RUN_AS_NODE`. Run `unset ELECTRON_RUN_AS_NODE` (PowerShell: `Remove-Item Env:ELECTRON_RUN_AS_NODE`). |
 | Windows: `'env' is not recognized as an internal or external command` | The Electron npm scripts use `env -u` (Unix). Run `npm config set script-shell "C:\Program Files\Git\bin\bash.exe"` (section 3.4) or use WSL2. |
+| A window titled "Electron" opens showing the Electron logo, the versions and "To run a local app, execute the following on the command line: ... path-to-app" | Electron was started **with no app**, so it shows its built-in welcome page. Causes: you ran plain `npx electron` (not `--version`), ran the `Electron` binary directly, or ran `electron` from the wrong folder. Close the window (`Cmd+Q` / `pkill -f node_modules/electron/dist`) and start the exam app only with `npm run desktop:start --workspace=@secure-exam/exam-client-desktop` from the repo root (section 10.3). If the exam app itself opens this page, `apps/exam-client/dist/main/main.js` is missing: run `npm run desktop:compile`. |
 | Cannot find `dist/main/main.js` | Run `npm run desktop:compile` (section 10.1). |
 | Linux: `The SUID sandbox helper binary was found, but is not configured correctly` or `No usable sandbox!` | Common on Ubuntu 24.04, which restricts unprivileged user namespaces. Pick **one**: (a) `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox` (redo after reinstalling Electron), or (b) `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` (resets on reboot). Do **not** use `--no-sandbox` for real exams. |
 | Linux: `error while loading shared libraries: libnss3.so` (or `libgbm`, `libgtk-3`, `libasound`...) | A system library is missing. Install the packages in section 3.2 (note the `t64` names on Ubuntu 24.04). |
@@ -725,7 +773,7 @@ If it still fails, the install is incomplete; run `npm install` at the root agai
 | `EADDRINUSE :::3000` | Another API is still running. Kill it (section 13). |
 | `Too Many Requests` (HTTP 429) on login | Login is capped at 5/minute per IP. Wait one minute. |
 | CORS error in the browser console | Add the web origin to `CORS_ORIGIN` in `apps/api/.env` and restart the API. Origins have no trailing slash. |
-| Starting an exam says the exam app is required | Intended. Use the app (section 10) or the browser switches in section 11. |
+| Starting an exam says the exam app is required | Intended: exams run in the exam app (`npm run exam:app`, section 10). To sit one in a browser instead, set `REQUIRE_DESKTOP_CLIENT=false` in `apps/api/.env` and `VITE_REQUIRE_DESKTOP_EXAM=false` in `apps/web/.env`, then restart. |
 | Coding question cannot be run/graded on the server | Docker not running, or image missing: `docker pull python:3.12-slim`. |
 
 ### Web app
@@ -790,10 +838,6 @@ docker compose up -d postgres               # wait for "healthy"
 docker pull python:3.12-slim
 npm run migration:run                       # BEFORE the API has ever run
 npm run db:seed
-npm run desktop:compile
-npm run api:start                           # terminal 1
-npm run web:dev                             # terminal 2
-# browser: http://localhost:3003 -> alice@secure-exam.dev / Student@1234 -> Start exam in exam app
-EXAM_UNSANDBOXED_RUNNER=1 EXAM_LAUNCH_LINK="secure-exam://launch/<token>" \
-  npm run desktop:start --workspace=@secure-exam/exam-client-desktop   # terminal 3
+npm run dev                                 # terminal 1: API + web app
+npm run exam:app                            # terminal 2: exam app, signed in as alice, no pasting
 ```
