@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Secure Exam Kiosk (Wayland)
+Comment=Secure Exam Environment using Cage Compositor
+Exec=/usr/local/bin/secure-exam-session
+Type=Application
+DesktopNames=SecureExam
+

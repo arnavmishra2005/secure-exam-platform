@@ -4,6 +4,8 @@
 > sign-in, role-based landing). `apps/admin-web` and `apps/exam-client` still
 > run but are legacy until the Day 7 merge. What changed and the shared
 > contracts are in [docs/phase4-contracts.md](docs/phase4-contracts.md).
+> The Electron exam app, its kiosk decisions and open follow-ups are in
+> [docs/kiosk-integration.md](docs/kiosk-integration.md).
 
 ## Prerequisites
 

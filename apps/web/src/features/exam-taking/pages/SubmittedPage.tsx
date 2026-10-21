@@ -9,10 +9,12 @@
  * can be enriched once Phase 1's result publishing flow is complete.
  */
 
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/auth/AuthContext';
 import { useAttempt } from '../contexts/AttemptContext';
+import { desktop, isDesktop } from '../desktop/desktop';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 
 export default function SubmittedPage() {
@@ -22,6 +24,18 @@ export default function SubmittedPage() {
   // Person C's queued submission (e.g. the timer ran out while offline).
   const submit = useSyncStatus((s) => s.submit);
   const isPending = submit === 'pending';
+  const inExamApp = isDesktop();
+
+  // Exam app: once the submission is confirmed, release the lockdown.
+  useEffect(() => {
+    if (!isPending && submit !== 'failed') desktop.notifySubmitted();
+  }, [isPending, submit]);
+
+  async function handleExitApp() {
+    setAttemptId(null);
+    await logout();
+    await desktop.exitKiosk();
+  }
 
   async function handleLogout() {
     // Clear the attempt reference — exam is done.
@@ -82,6 +96,11 @@ export default function SubmittedPage() {
           <Button onClick={handleDashboard} disabled={isPending}>
             Back to dashboard
           </Button>
+          {inExamApp && (
+            <Button variant="outline" onClick={handleExitApp} disabled={isPending}>
+              Exit exam app
+            </Button>
+          )}
           <Button variant="outline" onClick={handleLogout} disabled={isPending}>
             Sign out
           </Button>

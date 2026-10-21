@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Secure Exam Kiosk (X11)
+Comment=Secure Exam Environment using Openbox Kiosk
+Exec=/usr/local/bin/secure-exam-session --x11
+Type=Application
+DesktopNames=SecureExam
+

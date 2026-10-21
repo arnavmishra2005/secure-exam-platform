@@ -8,7 +8,8 @@ This is Phases 1–2 of a secure exam platform, set up as an npm-workspaces mono
 
 - `apps/api`: NestJS API
 - `apps/admin-web`: Next.js admin portal
-- `apps/exam-client/renderer`: Vite + React student exam UI (Phase 2), running in a plain browser tab
+- `apps/exam-client/renderer`: legacy Vite + React student exam UI (Phase 2, port 3002). Superseded by `apps/web`.
+- `apps/exam-client` (its `src/`): Person C's Electron exam app. It loads `apps/web` (dev: `http://localhost:3003`; packaged: the built `apps/web` served from `app://exam`). The window starts as a normal window and locks down only while a student has an exam in progress (`window.desktop.setSecurityMode`). Run it with `npm run client:desktop`. Sends `X-Client-Type: DESKTOP` on API requests, and the API refuses administrator login/refresh from it (`ALLOW_ADMIN_ON_DESKTOP=true` lifts that for development). `window.desktop.runCode` runs student Python in a bubblewrap sandbox; set `EXAM_UNSANDBOXED_RUNNER=1` to run without one on a dev machine that lacks it (not a sandbox). Add `app://exam` to `CORS_ORIGIN` for packaged builds.
 - `packages/*`: shared TypeScript packages
 
 Kiosk and Electron lockdown are planned for later phases.

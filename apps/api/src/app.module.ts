@@ -10,6 +10,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ConfigModule } from './common/config/config.module';
+import { HealthController } from './common/health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.interceptor';
@@ -34,6 +35,7 @@ import { ExtensionModule } from './modules/extension/extension.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule, // validated env, isGlobal
 

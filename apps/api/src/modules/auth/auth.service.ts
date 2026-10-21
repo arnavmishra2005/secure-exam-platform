@@ -1,6 +1,6 @@
 // Owner: Person A (Identity/Auth/Security)
 
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type {
@@ -8,7 +8,7 @@ import type {
   LoginResponse,
   RefreshResponse,
 } from '@secure-exam/types';
-import { AuditEventType } from '@secure-exam/types';
+import { AuditEventType, Role } from '@secure-exam/types';
 import * as bcrypt from 'bcrypt';
 import { AuditService } from '../audit/audit.service';
 import { UserService } from '../user/user.service';
@@ -51,8 +51,38 @@ export class AuthService {
     return user;
   }
 
-  async login(email: string, password: string, ipAddress: string | null): Promise<LoginResponse> {
+  /**
+   * Administrators work in a normal browser; the exam app is a locked-down
+   * student kiosk. Rejected before any token is issued, so the kiosk can never
+   * end up holding an admin session. ALLOW_ADMIN_ON_DESKTOP lifts it for development.
+   */
+  private async rejectAdminOnDesktop(
+    role: string,
+    clientType: string | undefined,
+    userId: string,
+    ipAddress: string | null,
+  ): Promise<void> {
+    if (clientType?.toUpperCase() !== 'DESKTOP' || role !== Role.ADMIN) return;
+    if (this.configService.get<boolean | string>('ALLOW_ADMIN_ON_DESKTOP') === true) return;
+    await this.auditService.logEvent(
+      AuditEventType.LOGIN_FAILED,
+      { reason: 'admin_on_desktop' },
+      userId,
+      ipAddress,
+    );
+    throw new ForbiddenException(
+      'Administrators cannot sign in from the exam app. Open the admin portal in a web browser.',
+    );
+  }
+
+  async login(
+    email: string,
+    password: string,
+    ipAddress: string | null,
+    clientType?: string,
+  ): Promise<LoginResponse> {
     const user = await this.validateCredentials(email, password, ipAddress);
+    await this.rejectAdminOnDesktop(user.role, clientType, user.id, ipAddress);
     const tokens = await this.issueTokenPair(user.id, user.email, user.role);
 
     await this.auditService.logEvent(
@@ -73,7 +103,11 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string, ipAddress: string | null): Promise<RefreshResponse> {
+  async refresh(
+    refreshToken: string,
+    ipAddress: string | null,
+    clientType?: string,
+  ): Promise<RefreshResponse> {
     let payload: JwtPayload;
     try {
       payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
@@ -95,6 +129,7 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has been revoked');
     }
 
+    await this.rejectAdminOnDesktop(payload.role, clientType, payload.sub, ipAddress);
     const tokens = await this.issueTokenPair(payload.sub, payload.email, payload.role);
 
     await this.auditService.logEvent(
