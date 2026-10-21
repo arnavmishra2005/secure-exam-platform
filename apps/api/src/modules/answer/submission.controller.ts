@@ -12,6 +12,7 @@ import {
   PublishResultDto,
   SubmitAttemptDto,
 } from '@secure-exam/validation';
+import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { SubmissionService } from './submission.service';
 
 /** Student-facing: POST /attempts/:id/submit — matches the documented route exactly. */
@@ -24,6 +25,7 @@ export class SubmissionController {
 
   @Post(':id/submit')
   @Roles(Role.STUDENT)
+  @UseGuards(DesktopClientGuard)
   submit(
     @Param('id', ParseUUIDPipe) attemptId: string,
     @Body() dto: SubmitAttemptDto,

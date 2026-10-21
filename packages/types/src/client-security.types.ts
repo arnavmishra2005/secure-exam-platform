@@ -56,16 +56,42 @@ export interface SecurityEvent {
 // ---- Electron preload bridge (window.desktop) ----
 // Implemented by apps/exam-client/src/preload; mirrors apps/exam-client/src/shared/types.ts.
 
-export type DesktopViolationType =
-  | 'FOCUS_LOST'
-  | 'FOCUS_REGAINED'
-  | 'DISPLAY_CHANGED'
-  | 'BLOCKED_SHORTCUT'
-  | 'DEVTOOLS_ATTEMPT'
-  | 'NAV_BLOCKED'
-  | 'CLIPBOARD_BLOCKED'
-  | 'KIOSK_CHECK_FAILED'
-  | 'HEARTBEAT_LOST';
+/** What the exam app can report. The API accepts exactly these. */
+export const DESKTOP_VIOLATION_TYPES = [
+  'FOCUS_LOST',
+  'FOCUS_REGAINED',
+  'DISPLAY_CHANGED',
+  'BLOCKED_SHORTCUT',
+  'DEVTOOLS_ATTEMPT',
+  'NAV_BLOCKED',
+  'CLIPBOARD_BLOCKED',
+  'KIOSK_CHECK_FAILED',
+  'HEARTBEAT_LOST',
+] as const;
+
+export type DesktopViolationType = (typeof DESKTOP_VIOLATION_TYPES)[number];
+
+/** Informational events that do not count towards an attempt's violation total. */
+export const NON_VIOLATION_TYPES: readonly DesktopViolationType[] = ['FOCUS_REGAINED', 'HEARTBEAT_LOST'];
+
+/** One event as the exam app sends it: POST /attempts/:attemptId/events. */
+export interface SecurityEventInput {
+  type: DesktopViolationType;
+  /** For shortcuts, the combination pressed, e.g. "Cmd+R". */
+  detail?: string;
+  /** ISO time on the student's device (informational; the server records its own time too). */
+  occurredAt: string;
+}
+
+/** One recorded event, as the admin sees it: GET /attempts/:attemptId/events. */
+export interface SecurityEventView {
+  id: string;
+  attemptId: string;
+  type: DesktopViolationType;
+  detail: string | null;
+  occurredAt: string;
+  createdAt: string;
+}
 
 export interface DesktopSecurityEvent {
   type: DesktopViolationType;
@@ -92,6 +118,8 @@ export interface DesktopBridge {
   setSecurityMode?: (active: boolean) => void;
   openExternal?: (url: string) => Promise<boolean>;
   logViolation?: (type: DesktopViolationType, detail?: string) => void;
+  /** Events recorded since the last call; kept in the main process so a reload loses none. */
+  drainEvents?: () => Promise<DesktopSecurityEvent[]>;
   onSecurityEvent?: (cb: (event: DesktopSecurityEvent) => void) => () => void;
   /** Local Python runner (docs/local-code-runner.md). */
   runCode?: (job: import('./coding.types').LocalRunJob) => Promise<import('./coding.types').ExecutionOutcome[]>;

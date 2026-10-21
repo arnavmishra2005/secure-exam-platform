@@ -7,6 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { SaveAnswerDto } from '@secure-exam/validation';
+import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { AnswerService } from './answer.service';
 
 @ApiTags('answers')
@@ -18,6 +19,7 @@ export class AnswerController {
 
   @Put(':questionId')
   @Roles(Role.STUDENT)
+  @UseGuards(DesktopClientGuard)
   save(
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
     @Param('questionId', ParseUUIDPipe) questionId: string,
@@ -44,6 +46,7 @@ export class AttemptQuestionController {
   /** The student's exam questions for this attempt, without the answer key. */
   @Get()
   @Roles(Role.STUDENT)
+  @UseGuards(DesktopClientGuard) // the questions are only shown in the exam app
   list(@Param('attemptId', ParseUUIDPipe) attemptId: string, @CurrentUser() user: JwtPayload) {
     return this.answerService.listQuestionsForAttempt(attemptId, user);
   }

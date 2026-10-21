@@ -49,4 +49,8 @@ export const envValidationSchema = Joi.object({
   DESKTOP_MIN_CLIENT_VERSION: Joi.string().optional(),
   // Development only: let administrators sign in from the exam app (X-Client-Type: DESKTOP).
   ALLOW_ADMIN_ON_DESKTOP: Joi.boolean().default(false),
+  // Exams (start, questions, answers, submit) only from the exam app. Set false to use a browser in development.
+  REQUIRE_DESKTOP_CLIENT: Joi.boolean().default(true),
+  // Violations at which an attempt shows as flagged on the monitoring screen.
+  VIOLATION_FLAG_THRESHOLD: Joi.number().integer().min(1).default(5),
 });

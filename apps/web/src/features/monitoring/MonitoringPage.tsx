@@ -23,6 +23,7 @@ import { getErrorMessage } from '@/lib/errors';
 import { formatDuration, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ExtendTimeDialog, type ExtendTarget } from './ExtendTimeDialog';
+import { ViolationsButton } from './ViolationsDialog';
 
 const POLL_MS = 10_000;
 
@@ -222,7 +223,9 @@ function AttemptRow({
         {!!a.extendedMinutes && <p className="text-xs text-muted-foreground">+{a.extendedMinutes} min extended</p>}
       </TableCell>
       <TableCell className="text-muted-foreground">{a.lastSeenAt ? formatRelative(a.lastSeenAt, now) : 'Never'}</TableCell>
-      <TableCell className="text-right tabular-nums text-muted-foreground">{a.violationCount ?? '—'}</TableCell>
+      <TableCell className="text-right">
+        <ViolationsButton attemptId={a.id} count={a.violationCount ?? null} studentName={a.studentName} />
+      </TableCell>
       <TableCell className="text-right">
         {running && (
           <Button variant="outline" size="sm" onClick={onExtend}>

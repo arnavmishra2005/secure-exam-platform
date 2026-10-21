@@ -10,6 +10,7 @@ import { ExamLookupAdapter } from './exam-lookup/exam-lookup.adapter';
 import { ExamModule } from '../exam/exam.module';
 import { CourseModule } from '../course/course.module';
 import { UserModule } from '../user/user.module';
+import { ClientSecurityModule } from '../client-security/client-security.module';
 import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity';
 
 // Note: AuditModule is @Global() in Person A's AppModule, so AuditService
@@ -23,6 +24,7 @@ import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity
     ExamModule,
     CourseModule, // RegistrationService: the start-attempt registration gate
     UserModule, // student names on the monitoring screen
+    ClientSecurityModule, // violation counts on the monitoring screen
   ],
   controllers: [AttemptController],
   providers: [

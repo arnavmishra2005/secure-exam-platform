@@ -19,7 +19,10 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 import { formatDateTime, formatRelative } from '@/lib/format';
+import { OpenInExamApp } from '../components/OpenInExamApp';
 import { useAttempt } from '../contexts/AttemptContext';
+import { isDesktop } from '../desktop/desktop';
+import { REQUIRE_DESKTOP_EXAM } from '../desktop/requireDesktop';
 import { ReadinessGate } from '../desktop/ReadinessGate';
 
 const INSTRUCTIONS = [
@@ -99,6 +102,8 @@ export default function InstructionsPage() {
   }
 
   const resumable = exam.attemptStatus === AttemptStatus.IN_PROGRESS && exam.attemptId;
+  // In a browser the exam is opened in the exam app; the real start happens there.
+  const openInApp = REQUIRE_DESKTOP_EXAM && !isDesktop() && (resumable || exam.state === StudentExamState.LIVE);
 
   return (
     <Shell>
@@ -134,7 +139,9 @@ export default function InstructionsPage() {
 
           {error && <Alert variant="destructive">{error}</Alert>}
 
-          {resumable ? (
+          {openInApp ? (
+            <OpenInExamApp examId={examId} resuming={!!resumable} />
+          ) : resumable ? (
             <Button size="lg" onClick={() => enter(exam.attemptId!)} disabled={!kioskReady}>
               <PlayCircle /> Resume exam
             </Button>

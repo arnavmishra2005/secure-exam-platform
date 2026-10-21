@@ -14,6 +14,7 @@ import { TableSkeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getErrorMessage } from '@/lib/errors';
 import { formatDateTime, formatDuration, formatPercent, formatScore } from '@/lib/format';
+import { ViolationsButton } from '@/features/monitoring/ViolationsDialog';
 import type { ResultsTabProps } from '../tabs.registry';
 
 const STATUS: Record<StudentAttemptStatus, { label: string; variant: BadgeProps['variant'] }> = {
@@ -109,7 +110,9 @@ export function StudentsTab({ examId }: ResultsTabProps) {
               </TableCell>
               <TableCell className="text-right tabular-nums">{formatDuration(r.timeTakenSeconds)}</TableCell>
               <TableCell className="text-muted-foreground">{formatDateTime(r.submittedAt)}</TableCell>
-              <TableCell className="text-right tabular-nums text-muted-foreground">{r.violationCount ?? '—'}</TableCell>
+              <TableCell className="text-right">
+                <ViolationsButton attemptId={r.attemptId} count={r.violationCount ?? null} studentName={r.fullName} />
+              </TableCell>
             </TableRow>
           ))}
           {rows.length === 0 && (

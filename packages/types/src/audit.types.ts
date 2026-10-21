@@ -43,6 +43,8 @@ export enum AuditEventType {
   SUBMITTED = 'SUBMITTED',
   AUTO_SUBMITTED = 'AUTO_SUBMITTED',
   SECURITY_CHECK_FAILED = 'SECURITY_CHECK_FAILED',
+  /** Exam-app violations (blocked shortcuts, focus loss...) reported during an attempt. */
+  SECURITY_VIOLATION = 'SECURITY_VIOLATION',
 
   // Result events (Person C)
   RESULT_SCORE_OVERRIDDEN = 'RESULT_SCORE_OVERRIDDEN',

@@ -24,11 +24,15 @@ import { SubmitConfirmationModal } from '../components/SubmitConfirmationModal';
 import { isFixtureAttempt } from '../contexts/AttemptContext';
 import { requestSubmit } from '../persistence';
 import { desktop } from '../desktop/desktop';
+import { useSecurityReporter } from '../security/useSecurityReporter';
 
 export default function ExamPage() {
   const navigate = useNavigate();
   const { attempt, isLoading: isAttemptLoading } = useAttempt();
   const attemptId = attempt?.id || '';
+
+  // Exam app only: send violations (blocked shortcuts, focus loss...) to the API for the admin.
+  useSecurityReporter(attemptId || null);
 
   const {
     questions,

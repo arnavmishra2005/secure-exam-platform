@@ -12,6 +12,7 @@ import { ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
 // Person A's contract (assumed to exist per Day-0 foundation — see
 // task-breakdown doc, section 2 & 3): AuditService.logEvent(type, metadata, actorId).
 import { AuditService } from '../audit/audit.service';
+import { ClientSecurityService } from '../client-security/client-security.service';
 import { logAuditSafely } from './audit-safe.util';
 import { isUniqueViolation } from './postgres-error.util';
 import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity';
@@ -35,6 +36,7 @@ export class AttemptService {
     private readonly extensionRepository: Repository<ExamExtensionEntity>,
     private readonly userService: UserService,
     private readonly config: ConfigService,
+    private readonly clientSecurity: ClientSecurityService,
   ) {}
 
   /**
@@ -242,6 +244,9 @@ export class AttemptService {
       }
     }
 
+    const violationCounts = await this.clientSecurity.countByAttempt(attemptIds);
+    const flagThreshold = this.clientSecurity.flagThreshold();
+
     const [students, examTitles, extensions] = await Promise.all([
       this.userService.findStudentsByUserIds([...new Set(attempts.map((a) => a.studentId))]),
       this.examLookup.getExamTitles([...new Set(attempts.map((a) => a.examId))]),
@@ -269,9 +274,8 @@ export class AttemptService {
           a.status === AttemptStatus.IN_PROGRESS &&
           (!lastSeen || now.getTime() - lastSeen.getTime() > disconnectMs),
         extendedMinutes: extendedMinutesFor(a, extensions),
-        // Person C's client-security module fills these in.
-        violationCount: null,
-        isFlagged: false,
+        violationCount: violationCounts.get(a.id) ?? 0,
+        isFlagged: (violationCounts.get(a.id) ?? 0) >= flagThreshold,
         // True when the server-authoritative timer has already reached
         // zero but the row hasn't been finalized yet (either the periodic
         // expiry sweep hasn't reached it, or nobody has touched the

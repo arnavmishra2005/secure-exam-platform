@@ -31,7 +31,8 @@
     "web:dev": "npm run dev --workspace=@secure-exam/web",
     "web:build": "npm run build --workspace=@secure-exam/web",
     "web:test": "npm run test --workspace=@secure-exam/web",
-    "web:typecheck": "npm run typecheck --workspace=@secure-exam/web"
+    "web:typecheck": "npm run typecheck --workspace=@secure-exam/web",
+    "desktop:test": "npm test --workspace=@secure-exam/exam-client-desktop"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

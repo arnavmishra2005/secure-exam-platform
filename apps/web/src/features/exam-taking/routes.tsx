@@ -5,6 +5,7 @@
 import { lazy, Suspense } from 'react';
 import type { RouteObject } from 'react-router-dom';
 import { FullPageSpinner } from '@/components/ui/spinner';
+import { DesktopOnly } from './components/DesktopOnly';
 import InstructionsPage from './pages/InstructionsPage';
 import SubmittedPage from './pages/SubmittedPage';
 
@@ -16,7 +17,9 @@ export const examTakingRoutes: RouteObject[] = [
     path: 'exam',
     element: (
       <Suspense fallback={<FullPageSpinner label="Loading the exam" />}>
-        <ExamPage />
+        <DesktopOnly>
+          <ExamPage />
+        </DesktopOnly>
       </Suspense>
     ),
   },

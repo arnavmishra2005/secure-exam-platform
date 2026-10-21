@@ -10,3 +10,4 @@ export * from './attempt.schema';
 export * from './answer.schema';
 export * from './course.schema';    // A — Phase 4
 export * from './extension.schema'; // C — Phase 4
+export * from './client-security.schema'; // C — Phase 4

@@ -12,6 +12,7 @@ import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity
 import { UserService } from '../user/user.service';
 // Person A's contract — see attempt.service.ts for the "assumed to exist" note.
 import { AuditService } from '../audit/audit.service';
+import { ClientSecurityService } from '../client-security/client-security.service';
 
 function makeRepoMock() {
   return {
@@ -49,6 +50,7 @@ describe('AttemptService', () => {
   let auditService: { logEvent: jest.Mock };
   let extensionRepo: ReturnType<typeof makeRepoMock>;
   let userService: { findStudentsByUserIds: jest.Mock };
+  let clientSecurity: { countByAttempt: jest.Mock; flagThreshold: jest.Mock };
 
   const student = { sub: 'student-1', role: Role.STUDENT } as any;
   const otherStudent = { sub: 'student-2', role: Role.STUDENT } as any;
@@ -74,6 +76,7 @@ describe('AttemptService', () => {
     extensionRepo = makeRepoMock();
     extensionRepo.find.mockResolvedValue([]);
     userService = { findStudentsByUserIds: jest.fn().mockResolvedValue([]) };
+    clientSecurity = { countByAttempt: jest.fn().mockResolvedValue(new Map()), flagThreshold: jest.fn().mockReturnValue(5) };
     auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -86,6 +89,7 @@ describe('AttemptService', () => {
         { provide: AuditService, useValue: auditService },
         { provide: getRepositoryToken(ExamExtensionEntity), useValue: extensionRepo },
         { provide: UserService, useValue: userService },
+        { provide: ClientSecurityService, useValue: clientSecurity },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
       ],
     }).compile();
@@ -501,8 +505,19 @@ describe('AttemptService', () => {
         examTitle: 'Algorithms Midterm',
         isDisconnected: true, // no heartbeat at all
         extendedMinutes: 15,
-        violationCount: null,
+        violationCount: 0,
+        isFlagged: false,
       });
+    });
+
+    it('shows the real violation count and flags an attempt that reaches the threshold', async () => {
+      attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
+      clientSecurity.countByAttempt.mockResolvedValue(new Map([['attempt-9', 5]]));
+
+      const { items } = await service.listForMonitoring({ page: 1, limit: 20 });
+
+      expect(items[0]).toMatchObject({ violationCount: 5, isFlagged: true });
+      expect(clientSecurity.countByAttempt).toHaveBeenCalledWith(['attempt-9']);
     });
 
     it('does not mark an attempt with a recent heartbeat as disconnected', async () => {

@@ -4,10 +4,11 @@
   "private": true,
   "main": "dist/main/main.js",
   "scripts": {
-    "desktop:dev": "npm run compile && concurrently -k \"npm run dev --workspace=@secure-exam/web\" \"wait-on http://localhost:3003 && electron .\"",
+    "desktop:dev": "npm run compile && concurrently -k \"npm run dev --workspace=@secure-exam/web\" \"wait-on http://localhost:3003 && env -u ELECTRON_RUN_AS_NODE electron .\"",
     "desktop:build": "tsc -p tsconfig.json && npm run build --workspace=@secure-exam/web && electron-builder --linux",
-    "desktop:start": "electron .",
-    "compile": "tsc -p tsconfig.json"
+    "desktop:start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "compile": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test test/*.test.mjs"
   },
   "build": {
     "appId": "dev.secure-exam.client",
@@ -25,7 +26,10 @@
         "deb"
       ],
       "category": "Education",
-      "maintainer": "secure-exam"
+      "maintainer": "secure-exam",
+      "mimeTypes": [
+        "x-scheme-handler/secure-exam"
+      ]
     },
     "extraMetadata": {
       "main": "dist/main/main.js"
@@ -35,6 +39,14 @@
         "from": "../web/dist",
         "to": "web"
       }
+    ],
+    "protocols": [
+      {
+        "name": "Secure Exam",
+        "schemes": [
+          "secure-exam"
+        ]
+      }
     ]
   },
   "dependencies": {
@@ -42,7 +54,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "electron": "^31.0.0",
+    "electron": "44.9.3",
     "electron-builder": "^24.13.3",
     "typescript": "^5.4.5",
     "wait-on": "^7.2.0"

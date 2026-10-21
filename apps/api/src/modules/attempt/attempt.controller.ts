@@ -8,6 +8,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
+import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { AttemptService } from './attempt.service';
 
 @ApiTags('attempts')
@@ -39,6 +40,7 @@ export class AttemptController {
 
   @Post()
   @Roles(Role.STUDENT)
+  @UseGuards(DesktopClientGuard) // exams are started from the exam app only
   start(@Body() dto: StartAttemptDto, @CurrentUser() user: JwtPayload) {
     return this.attemptService.startAttempt(user, dto);
   }

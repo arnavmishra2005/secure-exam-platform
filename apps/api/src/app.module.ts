@@ -33,6 +33,7 @@ import { PublishModule } from './modules/publish/publish.module';
 import { ResultsModule } from './modules/results/results.module';
 import { ExtensionModule } from './modules/extension/extension.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ClientSecurityModule } from './modules/client-security/client-security.module';
 
 @Module({
   controllers: [HealthController],
@@ -93,6 +94,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     // Phase 4 — Person C
     ExtensionModule,
     DashboardModule,
+    ClientSecurityModule,
   ],
   providers: [
     // Rate limiting on every route by default.

@@ -9,6 +9,7 @@ export const IPC = {
   SET_SECURITY_MODE: 'desktop:set-security-mode',
   OPEN_EXTERNAL: 'desktop:open-external',
   RUN_CODE: 'desktop:run-code',
+  DRAIN_EVENTS: 'desktop:drain-events',
   // Main → Renderer
   SECURITY_EVENT: 'desktop:security-event',
 } as const;

@@ -10,6 +10,7 @@ const IPC = {
   SET_SECURITY_MODE: 'desktop:set-security-mode',
   OPEN_EXTERNAL: 'desktop:open-external',
   RUN_CODE: 'desktop:run-code',
+  DRAIN_EVENTS: 'desktop:drain-events',
   SECURITY_EVENT: 'desktop:security-event',
 } as const;
 
@@ -45,6 +46,9 @@ contextBridge.exposeInMainWorld('desktop', {
 
   /** Run the student's Python locally in a sandbox (docs/local-code-runner.md). */
   runCode: (job: unknown): Promise<unknown[]> => ipcRenderer.invoke(IPC.RUN_CODE, job),
+
+  /** Security events recorded since the last call (kept in the main process, so a reload loses none). */
+  drainEvents: (): Promise<SecurityEvent[]> => ipcRenderer.invoke(IPC.DRAIN_EVENTS),
 
   /** Subscribe to security events pushed from the main process. Returns unsubscribe fn. */
   onSecurityEvent: (cb: (event: SecurityEvent) => void): (() => void) => {

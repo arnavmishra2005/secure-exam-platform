@@ -13,6 +13,7 @@ import type {
 } from '@secure-exam/types';
 import { In, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
+import { ClientSecurityService } from '../client-security/client-security.service';
 import { ResultEntity } from '../answer/entities/result.entity';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
 import { RegistrationService } from '../course/registration.service';
@@ -53,6 +54,7 @@ export class ResultsService {
     private readonly notificationService: NotificationService,
     private readonly mcqGrading: McqGradingService,
     private readonly auditService: AuditService,
+    private readonly clientSecurity: ClientSecurityService,
   ) {}
 
   /** Exam picker on the results page: every exam, newest first, with headline numbers. */
@@ -142,6 +144,7 @@ export class ResultsService {
       studentByUser.set(student.userId, student);
     }
     const attemptByUser = new Map(attempts.map((a) => [a.studentId, a]));
+    const violationCounts = await this.clientSecurity.countByAttempt(attempts.map((a) => a.id));
     const userIds = new Set([...studentByUser.keys(), ...attemptByUser.keys()]);
 
     const rows: StudentResultRow[] = [...userIds].map((userId) => {
@@ -173,7 +176,7 @@ export class ResultsService {
         submittedAt: attempt?.submittedAt ? attempt.submittedAt.toISOString() : null,
         resultPublished: result?.published ?? false,
         needsManualReview: result?.needsManualReview ?? false,
-        violationCount: null, // Person C's client-security module fills this in.
+        violationCount: violationCounts.get(attempt?.id ?? '') ?? (attempt ? 0 : null),
       };
     });
 

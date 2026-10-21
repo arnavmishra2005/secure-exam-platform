@@ -8,6 +8,7 @@ import { SCORE_RECORDER } from '../../common/scoring/score-recorder.interface';
 import { AnswerEntity } from '../answer/entities/answer.entity';
 import { ResultEntity } from '../answer/entities/result.entity';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
+import { ClientSecurityModule } from '../client-security/client-security.module';
 import { CourseModule } from '../course/course.module';
 import { ExamModule } from '../exam/exam.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -29,6 +30,7 @@ import { ScoreRecorderService } from './score-recorder.service';
     CourseModule,
     UserModule,
     NotificationModule,
+    ClientSecurityModule, // violation counts in the student-wise table
   ],
   controllers: [ResultsController],
   providers: [

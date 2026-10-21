@@ -18,3 +18,4 @@ export * from './notification.api'; // A
 export * from './results.api';      // A
 export * from './extension.api';    // C
 export * from './dashboard.api';    // C
+export * from './client-security.api'; // C
