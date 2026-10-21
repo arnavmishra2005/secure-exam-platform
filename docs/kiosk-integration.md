@@ -104,7 +104,7 @@ screens (`/launch`, `/student/exam`, `/student/exam/submitted`); everything else
 | 43 | The app wipes its own storage on every way out (`will-quit` -> `clearStorageData`) and when started without a link | No login or answers are left on the lab PC. The page does not clear them itself while the "submitted" screen is up: a request failing with 401 would send the app away from the message. |
 | 44 | A stray route during an exam returns to the exam, not to the launch screen; the launch screen only clears the stored login when no exam is running | Otherwise any redirect to `/launch` mid-exam would sign the student out. Found while testing. |
 | 45 | `ViolationBanner` and its exit button are hidden on the submitted screen | There is nothing to warn about, and the page has its own Close button. |
-| 46 | Development on macOS supplies the link in `EXAM_LAUNCH_LINK` | macOS only hands links to a packaged app. The browser page shows the exact command in development. |
+| 46 | Development registers its own `secure-exam://` handler: `npm run exam:register` | macOS only registers the scheme for a packaged app, and Electron's own dev registration points at the bare binary (welcome page), so `main.ts` registers only when packaged. The script installs a launcher (macOS applet / Linux `.desktop` + `xdg-mime`) that starts this checkout with the link. `EXAM_LAUNCH_LINK` and `npm run exam:app` are fallbacks. |
 
 ## 3. Bugs found and fixed during the merge
 

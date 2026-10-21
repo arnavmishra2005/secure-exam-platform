@@ -1,302 +1,142 @@
-# Secure Exam Platform: complete local setup guide
+# Secure Exam Platform: local setup guide (macOS and Ubuntu)
 
-This guide assumes you have a fresh computer and have never seen this project.
-Follow it top to bottom. Every command is shown, with what it does and what you
-should see. If something fails, go to [Troubleshooting](#14-troubleshooting).
+This guide assumes a fresh computer and no knowledge of the project. It has a complete,
+separate walkthrough for **macOS** (Part A) and **Ubuntu** (Part B), then shared reference
+material (Part C). Follow only your own part, top to bottom.
 
-## Quick start: two commands
+- [How it works](#how-it-works)
+- [Part A: macOS](#part-a-macos)
+- [Part B: Ubuntu](#part-b-ubuntu)
+- [Part C: reference (both systems)](#part-c-reference-both-systems)
+  - [C1. Accounts and ports](#c1-accounts-and-ports)
+  - [C2. Environment variables](#c2-environment-variables)
+  - [C3. Tests, lint, builds](#c3-tests-lint-builds)
+  - [C4. Stop, reset, start over](#c4-stop-reset-start-over)
+  - [C5. Troubleshooting](#c5-troubleshooting)
+  - [C6. Windows](#c6-windows)
+  - [C7. Project layout and further reading](#c7-project-layout-and-further-reading)
 
-After the one-time setup (sections 3 to 8 and 10.1), running the platform and sitting an exam
-in the locked-down exam app takes two commands, in two terminals at the repo root:
+---
 
-```bash
-npm run dev           # terminal 1: starts the API (:3000) and the web app (:3003) together
-npm run exam:app      # terminal 2: opens the exam app on the sample exam, signed in as alice
+## How it works
+
+Day to day you run **two things** (the API and the website), and the exam app opens by itself:
+
+```
+terminal 1:  npm run api:start      the backend            http://localhost:3000
+terminal 2:  npm run web:dev        the website            http://localhost:3003
+                                    (or both in one terminal: npm run dev)
 ```
 
-`npm run exam:app` does what the browser's "Start exam in exam app" button does: it signs in
-as `alice@secure-exam.dev`, asks the API for a one-time launch token and starts the Electron
-app with it. **You do not copy or paste anything.** In the app press **Login**, and the exam
-starts in the locked window. Wait for `npm run dev` to show the API and web app started
-before running the second command.
+1. A student opens http://localhost:3003 in a normal browser and signs in.
+2. They open their exam and press **Start exam in exam app**.
+3. The browser opens the exam app **automatically**. The server first gives the browser a
+   one-time launch token (valid 120 seconds, single use), and the browser opens
+   `secure-exam://launch/<token>`. The operating system hands that link to the exam app.
+   (The student's password never reaches the app.)
+4. The exam app opens on a launch screen showing the student's email and a masked password.
+   The student presses **Login**, and the exam starts in a locked-down full-screen window.
+5. After **Submit**, only an "Exam submitted" screen with a **Close** button remains
+   (it closes itself after 30 seconds).
 
-Other students or exams: `npm run exam:app -- bob@secure-exam.dev Student@1234 <examId>`.
-Admins use the web app in a normal browser: http://localhost:3003, `admin@secure-exam.dev` /
-`Admin@1234` (admins are refused inside the exam app).
+Nobody pastes a token anywhere. The one thing that needs a one-time setup on a development
+machine is telling the operating system *which program opens `secure-exam://` links*. A normal
+installed app does this itself; when you run from source, the command **`npm run exam:register`**
+does it (Part A step 8, Part B step 8). Do it once per computer.
 
-Why a launch token exists at all, and how a real student gets into the app, is explained in
-[section 10](#10-run-the-electron-exam-app).
+Admins use the website in a normal browser. Admins are refused inside the exam app, by design.
 
----
-
-- [1. What you are setting up](#1-what-you-are-setting-up)
-- [2. Which operating system?](#2-which-operating-system)
-- [3. Install the prerequisites](#3-install-the-prerequisites)
-- [4. Get the code and install packages](#4-get-the-code-and-install-packages)
-- [5. Build the shared packages](#5-build-the-shared-packages)
-- [6. Create the `.env` files](#6-create-the-env-files)
-- [7. Start PostgreSQL](#7-start-postgresql)
-- [8. Migrate and seed the database](#8-migrate-and-seed-the-database)
-- [9. Start the API and the web app](#9-start-the-api-and-the-web-app)
-- [10. Run the Electron exam app](#10-run-the-electron-exam-app)
-- [11. Development shortcuts](#11-development-shortcuts)
-- [12. Tests, lint and builds](#12-tests-lint-and-builds)
-- [13. Reset everything / stop everything](#13-reset-everything--stop-everything)
-- [14. Troubleshooting](#14-troubleshooting)
-- [15. Docker Compose for the full stack](#15-docker-compose-for-the-full-stack-not-recommended-yet)
-- [16. Project layout and further reading](#16-project-layout-and-further-reading)
+The API refuses to start, serve, save or submit an exam unless the request comes from the exam
+app, so an exam can only be taken in it.
 
 ---
 
-## 1. What you are setting up
+# Part A: macOS
 
-The repo is an **npm-workspaces monorepo** (one `package.json` at the root, many
-packages inside). Everything is installed and run **from the repo root** unless a
-step says otherwise.
+Tested on macOS (Apple Silicon). Steps 1 to 8 are one-time setup; step 9 is what you do every day.
 
-| Piece | Folder | Port | What it is |
-|---|---|---|---|
-| PostgreSQL 16 | `docker-compose.yml` | 5432 | The database (runs in Docker). |
-| API | `apps/api` | 3000 | NestJS backend. Swagger UI at http://localhost:3000/api/docs |
-| Web app | `apps/web` | 3003 | The main UI for admins **and** students (Vite + React). |
-| Exam app | `apps/exam-client` (`src/`) | none | Electron desktop app. Students must sit exams in it. It loads `apps/web`. |
-| Shared packages | `packages/types`, `validation`, `api-client`, `exam-content-ui` | none | Code shared by the apps. Three of them must be **built** before anything else works (section 5). |
-| Legacy admin portal | `apps/admin-web` | 3001 | Old Next.js admin UI. Optional, not needed. |
-| Legacy student UI | `apps/exam-client/renderer` | 3002 | Old Vite student UI. Optional, cannot start exams any more. |
+## A1. Install the tools
 
-**How an exam is taken (so the steps below make sense):**
-
-1. The student signs in to the web app **in a normal browser** (http://localhost:3003).
-2. They press **Start exam in exam app**. The server creates a one-time token
-   (valid 120 seconds, single use).
-3. The browser tries to open `secure-exam://launch/<token>`, which opens the Electron app.
-   In development the page also prints that link so you can paste it yourself.
-4. The Electron app shows the student's email and a masked password, the student
-   presses **Login**, and the exam starts in a locked-down window.
-5. The API refuses to start/serve/save/submit an exam unless the request comes from
-   the exam app (header `X-Client-Type: DESKTOP`).
-
-Admins use the web app in a normal browser. Admins are *refused* inside the exam app.
-
-You do **not** need the Electron app to run the API, the web app, the admin
-features or the tests. You only need it to actually sit an exam.
-
----
-
-## 2. Which operating system?
-
-| OS | API, web app, tests, admin | Electron exam app | Notes |
-|---|---|---|---|
-| **Ubuntu / Debian Linux** | Yes | Yes | Best supported. The code sandbox (`bubblewrap`) and the kiosk scripts in `infra/linux-kiosk` are Linux-only. |
-| **macOS** | Yes | Yes (development) | Developed and tested here. |
-| **Windows 10/11 with WSL2 (Ubuntu)** | Yes | Yes, through WSLg (Windows' built-in Linux GUI) | **Recommended way to use Windows.** Follow the Linux instructions inside the Ubuntu terminal. |
-| **Windows, native (PowerShell)** | Yes, with the workaround in 3.4 | Starts, **but "Run code" inside the exam app does not work** | Some npm scripts use Unix-only commands (`env -u`). See 3.4. The local code runner needs `which`, `bwrap` and POSIX paths, so it only works on Linux and macOS. |
-
-Be aware:
-
-- **Nothing in the Electron lockdown has been verified on Ubuntu or Windows by the
-  authors.** It was exercised on macOS. If something looks wrong on Linux, say so.
-- The **Linux** key-blocking and kiosk code exists; **Windows** has no platform
-  security module yet (`apps/exam-client/src/main/platform/` only has `linux.ts`).
-- Even on Windows, *coding questions can still be graded by the server* (it runs
-  Python in Docker), so admins and the API side are fine.
-
----
-
-## 3. Install the prerequisites
-
-You need: **Git, Node.js (22.12 or newer), npm, Docker (with Compose v2)**. For the
-Electron app on Linux you also need a few system libraries, and for running student
-code in the exam app you need **Python 3** and **bubblewrap**.
-
-### 3.1 Versions that matter
-
-| Tool | Version | Why |
-|---|---|---|
-| Node.js | **22.12 or newer** (22 LTS or 24 are fine; developed on 24.10) | Vite 8 needs `^20.19 || >=22.12`, and the `electron` package declares `>=22.12`. **Node 18 and Node 20 will break the build.** The old "v18 or v20" advice was wrong. |
-| npm | 10 or newer (ships with Node 22+) | Workspaces support. |
-| Docker | Any recent Docker Engine or Docker Desktop with the `docker compose` command (Compose v2) | PostgreSQL, and the server-side code runner. |
-| Git | Any recent | Cloning. |
-| Python | 3.8+ (3.12 preferred) | Only for running student code *inside the exam app*. |
-
-### 3.2 Ubuntu / Debian
+Open **Terminal** (Cmd+Space, type "Terminal").
 
 ```bash
-# --- Git and build basics ---
-sudo apt update
-sudo apt install -y git curl ca-certificates build-essential
+# Homebrew (skip if `brew --version` already works): https://brew.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# --- Node.js 22 (NodeSource). Do not use the plain `apt install nodejs`: it is too old. ---
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-node -v    # must print v22.12.0 or higher
-npm -v     # must print 10.x or higher
-
-# --- Docker Engine + Compose plugin ---
-# Official instructions: https://docs.docker.com/engine/install/ubuntu/
-# Quick way (convenience script):
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker "$USER"     # lets you run docker without sudo
-# LOG OUT AND LOG BACK IN (or run: newgrp docker), then check:
-docker version
-docker compose version               # note: "docker compose", with a space
-
-# --- Python + bubblewrap (for "Run code" inside the exam app) ---
-sudo apt install -y python3 bubblewrap
-python3 --version
-bwrap --version
-
-# --- System libraries Electron needs (Ubuntu 22.04) ---
-sudo apt install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-  libgtk-3-0 libgbm1 libasound2 libxss1 libxtst6 libx11-xcb1 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2
-# On Ubuntu 24.04 the packages with a 64-bit time_t were renamed:
-#   libatk1.0-0 -> libatk1.0-0t64, libatk-bridge2.0-0 -> libatk-bridge2.0-0t64,
-#   libcups2 -> libcups2t64, libasound2 -> libasound2t64
-# A normal Ubuntu desktop already has most of these. If Electron later complains about
-# "libXXX.so: cannot open shared object file", install the package that provides it.
-```
-
-Ubuntu 24.04 also blocks Electron's sandbox by default. See
-[Troubleshooting](#14-troubleshooting) ("The SUID sandbox helper binary was found,
-but is not configured correctly"). You will probably need that fix.
-
-### 3.3 macOS
-
-```bash
-# Homebrew (skip if you have it): https://brew.sh
+# Git, Node.js 22, Python 3
 brew install git node@22 python@3.12
-# node@22 is "keg-only": follow the "echo 'export PATH=...'" line brew prints, or:
 brew link --overwrite --force node@22
-node -v        # v22.12.0 or higher
 
-# Docker: install Docker Desktop from https://www.docker.com/products/docker-desktop/
-# Start it (whale icon in the menu bar must say "running"), then:
+# Check. node must be v22.12.0 or higher (v24 also works)
+node -v
+npm -v
+git --version
+python3 --version
+```
+
+Why Node 22.12+: Vite 8 needs `^20.19 || >=22.12` and the `electron` package needs `>=22.12`.
+Node 18 or 20 will break the install or the build.
+
+**Docker Desktop:** download from https://www.docker.com/products/docker-desktop/, install it and
+**open it**. Wait until the whale icon in the menu bar says it is running. Then:
+
+```bash
 docker version
 docker compose version
 ```
 
-macOS has no `bubblewrap`. Student-code "Run" inside the exam app therefore needs the
-development switch `EXAM_UNSANDBOXED_RUNNER=1` (section 10.4). This is for
-development only and is **not a sandbox**.
+(Docker runs the database, and runs student code on the server for coding questions.)
 
-### 3.4 Windows
+macOS has no `bubblewrap`, so student code that is run *inside the exam app* ("Run" in the code
+editor) runs **without a sandbox** on macOS. That is acceptable for development only. The launcher
+installed in step 8 sets this up for you.
 
-**Option A (recommended): WSL2 with Ubuntu.** Everything then works like Linux.
-
-1. Open PowerShell **as Administrator** and run: `wsl --install -d Ubuntu`, then reboot.
-2. Open the **Ubuntu** app, create your Linux username and password.
-3. Install **Docker Desktop for Windows** (https://www.docker.com/products/docker-desktop/),
-   then in Docker Desktop: *Settings → Resources → WSL integration → enable Ubuntu*.
-4. Inside the Ubuntu terminal follow [section 3.2](#32-ubuntu--debian) (skip the Docker
-   install lines; Docker Desktop provides it). Check `docker version` works there.
-5. **Clone the repo inside the Linux filesystem** (`cd ~`), *not* under `/mnt/c/...`.
-   Under `/mnt/c` installs are very slow and file watching breaks.
-6. Windows 11 (and Windows 10 with recent updates) shows Linux GUI apps via WSLg, so the
-   Electron window opens on your desktop. Check with `wsl --version` (WSLg should be listed).
-   If you have an old WSL, run `wsl --update`.
-7. Open the folder in VS Code with the "WSL" extension (`code .` from the Ubuntu terminal).
-
-Then use only the Linux commands in the rest of this guide, inside the Ubuntu terminal.
-
-**Option B: native Windows (PowerShell).** Works for everything except running student
-code inside the exam app.
-
-1. Install with winget (PowerShell):
-   ```powershell
-   winget install --id Git.Git -e
-   winget install --id OpenJS.NodeJS.LTS -e     # confirm: node -v must be >= v22.12.0
-   winget install --id Docker.DockerDesktop -e
-   winget install --id Python.Python.3.12 -e
-   ```
-   Close and reopen PowerShell afterwards so `PATH` refreshes. Start Docker Desktop.
-   Check: `node -v`, `npm -v`, `git --version`, `docker version`, `docker compose version`.
-2. If PowerShell refuses to run npm scripts ("running scripts is disabled on this
-   system"), run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-3. **Fix the Unix-only npm scripts.** The Electron scripts contain `env -u ELECTRON_RUN_AS_NODE`,
-   which does not exist in Windows' default shell (cmd.exe), so
-   `npm run desktop:start`/`client:desktop` fail with "'env' is not recognized". Tell npm to use
-   Git's Bash for scripts. Run this once:
-   ```powershell
-   npm config set script-shell "C:\Program Files\Git\bin\bash.exe"
-   ```
-   (Undo later with `npm config delete script-shell`.) Make sure `ELECTRON_RUN_AS_NODE` is
-   not set in your Windows environment variables.
-4. Windows does not use `VAR=value command` syntax; see the PowerShell form in section 10.
-5. Git may convert line endings and break `.sh` files. Before cloning, run
-   `git config --global core.autocrlf input`.
-6. Free up the ports: 3000, 3003 and 5432 must be free (see Troubleshooting).
-
----
-
-## 4. Get the code and install packages
+## A2. Get the code
 
 ```bash
+cd ~/Developer          # or any folder you like (create it with mkdir -p ~/Developer)
 git clone git@github.com:arnavmishra2005/secure-exam-platform.git
-# or over HTTPS:  git clone https://github.com/arnavmishra2005/secure-exam-platform.git
+# no SSH key set up? use HTTPS:
+#   git clone https://github.com/arnavmishra2005/secure-exam-platform.git
 cd secure-exam-platform
-git checkout integrate/final      # the branch this guide describes
+git checkout integrate/final
 ```
 
-Install every package of every workspace in one go, **from the repo root**:
+Everything below is run **from this folder (the repo root)**.
+
+## A3. Install dependencies
 
 ```bash
 npm install
 ```
 
-What this does, and why it matters:
-
-- It installs dependencies for `apps/*` and `packages/*` into one root `node_modules/`.
-- As a post-install step, the `electron` package **downloads the Electron binary**
-  (about 100 MB, from GitHub). If that download is blocked, the install can look
-  successful but Electron will be missing. Verify it right now:
+This installs every package of every workspace into one root `node_modules`. As part of it, the
+`electron` package **downloads the Electron binary** (about 100 MB from GitHub). Check it worked:
 
 ```bash
-npx electron --version
+npx electron --version      # must print v44.9.3
 ```
 
-You should see `v44.9.3` printed in the terminal. **Type the `--version` part.** Running
-plain `npx electron` (or double-clicking `Electron.app` in `node_modules`) opens Electron's
-own welcome window ("To run a local app, execute the following on the command line"). That
-window is *not* this project and *not* an error; it only means Electron was started without
-an app. Close it. The real exam app is started only with the command in section 10.3.
+Type the `--version` part. Plain `npx electron` (without it) opens Electron's own welcome window
+("To run a local app, execute the following on the command line"). That is not an error and not
+this project; close it.
 
-If you see an error such as *"Electron failed to install
-correctly, please delete node_modules/electron and try installing again"*, run:
+If it printed an error ("Electron failed to install correctly"), fetch the binary and check again:
 
 ```bash
 node node_modules/electron/install.js
 npx electron --version
 ```
 
-(Do **not** use `npm install --ignore-scripts` or set `ELECTRON_SKIP_BINARY_DOWNLOAD`,
-or the binary is never fetched. More in Troubleshooting.)
-
-If `npm install` prints `EBADENGINE` warnings for Vite or Electron, your Node is too old.
-Fix Node first (section 3.1), then delete `node_modules` and run `npm install` again.
-
----
-
-## 5. Build the shared packages
-
-This is the step people miss. `packages/types`, `packages/validation` and
-`packages/api-client` are TypeScript libraries whose `package.json` points at
-`dist/index.js`. **`dist/` does not exist after cloning** (it is git-ignored). Until you
-build, the API, its tests, the migration commands and the seed all fail with errors like:
-
-```
-Cannot find module '@secure-exam/types'
-Cannot find module '@secure-exam/validation'
-Module not found: Can't resolve '@secure-exam/api-client'
-```
-
-Build all three with one command:
+## A4. Build the shared packages
 
 ```bash
 npm run typecheck
 ```
 
-Despite its name this **builds** them (it writes `dist/`). It is the same as running
-these three, **in this order** (`validation` and `api-client` depend on `types`):
+Despite the name, this **builds** `packages/types`, `packages/validation` and `packages/api-client`
+into `dist/` folders (they are git-ignored, so a fresh clone has none). The API and the migrations
+cannot run without them. It is the same as these three commands, in this order:
 
 ```bash
 npm run build --workspace=packages/types
@@ -304,73 +144,412 @@ npm run build --workspace=packages/validation
 npm run build --workspace=packages/api-client
 ```
 
-(`--workspace=@secure-exam/types` and `--workspace=packages/types` are the same thing.)
+Run `npm run typecheck` again whenever you change anything under `packages/types`,
+`packages/validation` or `packages/api-client`, or pull changes that touch them.
 
-Check it worked; all three folders should exist:
+## A5. Create the `.env` files
 
-```bash
-ls packages/types/dist packages/validation/dist packages/api-client/dist
-# Windows PowerShell:  dir packages\types\dist, packages\validation\dist, packages\api-client\dist
-```
-
-**Run `npm run typecheck` again whenever** you change anything under `packages/types`,
-`packages/validation` or `packages/api-client`, and after pulling changes that touch
-them. `packages/exam-content-ui` does **not** need a build: it is used from source.
-The web app also reads `types`, `api-client` and `exam-content-ui` from source, but the
-**API needs the built `dist/`**.
-
----
-
-## 6. Create the `.env` files
-
-`.env` files hold local configuration and are git-ignored, so each person creates their
-own. Create the three below by copying the examples. Run from the repo root.
-
-**Linux / macOS / WSL / Git Bash:**
 ```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
-cp apps/admin-web/.env.example apps/admin-web/.env    # only for the legacy admin portal
 ```
 
-**Windows PowerShell:**
-```powershell
-Copy-Item apps\api\.env.example apps\api\.env
-Copy-Item apps\web\.env.example apps\web\.env
-Copy-Item apps\admin-web\.env.example apps\admin-web\.env
+The defaults work as they are. Check that the API file allows the exam app's origin:
+
+```bash
+grep CORS_ORIGIN apps/api/.env
+# must include app://exam, e.g.
+# CORS_ORIGIN=http://localhost:3001,http://localhost:3002,http://localhost:3003,app://exam
 ```
 
-(The legacy student UI also has `apps/exam-client/renderer/.env.example`; copy it to `.env`
-only if you plan to run `npm run client:dev`.)
+And that both lock switches are `true` (they are in the example files):
 
-### 6.1 `apps/api/.env` (required)
-
-The defaults work for local development **as they are**. Make sure this line contains
-`app://exam` (the example file already does; older copies of the file may not):
-
-```env
-CORS_ORIGIN=http://localhost:3001,http://localhost:3002,http://localhost:3003,app://exam
+```bash
+grep REQUIRE_DESKTOP apps/api/.env apps/web/.env
+# apps/api/.env:REQUIRE_DESKTOP_CLIENT=true
+# apps/web/.env:VITE_REQUIRE_DESKTOP_EXAM=true
 ```
 
-The most important variables:
+What every variable means: [C2](#c2-environment-variables). The website reads its `.env` only when it
+starts, so restart `npm run web:dev` after editing `apps/web/.env`.
+
+## A6. Start the database
+
+Docker Desktop must be running.
+
+```bash
+docker compose up -d postgres
+docker compose ps
+```
+
+`postgres` must show `running (healthy)`. If it says `starting`, wait ten seconds and repeat.
+(A warning that the `version` attribute is obsolete is harmless.)
+
+## A7. Create the tables, add sample data, pull the Python image
+
+```bash
+npm run migration:run       # must be done BEFORE the API has ever started
+npm run db:seed             # sample accounts, a course and a sample exam
+docker pull python:3.12-slim
+```
+
+- **Migrations before the API:** in development the API creates tables itself. If it starts on an
+  empty database first, the migrations then fail with `relation "..." already exists`. If that
+  happens, reset ([C4](#c4-stop-reset-start-over)).
+- The seed is safe to repeat. It creates the accounts in [C1](#c1-accounts-and-ports) and an
+  **active** sample exam (`11111111-1111-4111-8111-111111111111`) with five multiple-choice
+  questions and one coding question ("Merge Intervals"). Never run it against shared data.
+- `python:3.12-slim` is used by the **server** to run and grade coding questions. Without it,
+  everything else works but coding questions cannot be graded.
+
+## A8. Register the exam app as the opener of `secure-exam://` links (one time)
+
+```bash
+npm run exam:register
+```
+
+This compiles the Electron app and installs a tiny launcher, `~/Applications/SecureExamDev.app`,
+which macOS then uses for every `secure-exam://` link. The launcher starts **this checkout's**
+exam app with the link. It has no Dock icon and nothing to open by hand.
+
+Test it (this needs the API running, so do it after step 9, or skip):
+
+```bash
+open "secure-exam://launch/test"
+```
+
+The exam app should open (it will report that the launch link is not valid; that is expected for a
+fake token). Close it with Cmd+Q.
+
+Notes:
+- Run `npm run exam:register` again if you **move or rename the repo folder** (the launcher stores
+  the absolute path), or after reinstalling `node_modules`.
+- To undo it: `npm run exam:register -- --remove`.
+- The first time a browser opens the link it asks "Open SecureExamDev?" (Safari: "Allow this page
+  to open SecureExamDev?"). Allow it, and tick "Always allow" if offered.
+
+## A9. Run it (every day)
+
+Open two terminals at the repo root.
+
+```bash
+# Terminal 1
+npm run api:start          # wait for: Nest application successfully started
+```
+```bash
+# Terminal 2
+npm run web:dev            # wait for: Local: http://localhost:3003/
+```
+
+(Or, in a single terminal: `npm run dev`. It compiles the exam app, then starts both.)
+
+Now take an exam:
+
+1. Open http://localhost:3003 in Safari or Chrome.
+2. Sign in as `alice@secure-exam.dev` / `Student@1234`.
+3. Open the exam, tick the confirmation, and press **Start exam in exam app**.
+4. Allow the browser's "Open SecureExamDev?" prompt (first time only).
+5. The exam app opens. Press **Login**. The exam starts in the locked window.
+
+Inside the app in development, the invigilator PIN to leave an exam early is `1234`.
+
+Admin: http://localhost:3003 in the browser, `admin@secure-exam.dev` / `Admin@1234`.
+
+If the exam app does not open when you press the button, see
+[C5 "The exam app does not open"](#the-exam-app-does-not-open-when-i-press-start-exam-in-exam-app).
+
+If you change anything in `apps/exam-client/src` (the Electron code), run `npm run desktop:compile`
+(or `npm run exam:register` again). `npm run dev` does this automatically.
+
+---
+
+# Part B: Ubuntu
+
+Written for Ubuntu 22.04 and 24.04 on a normal desktop session (GNOME). **This path has not been
+run on a Linux machine by the authors**; the commands follow the code and standard Ubuntu
+practice. If a step fails, see [C5](#c5-troubleshooting) and report it. Steps 1 to 8 are one-time
+setup; step 9 is what you do every day.
+
+## B1. Install the tools
+
+Open a terminal (Ctrl+Alt+T).
+
+```bash
+sudo apt update
+sudo apt install -y git curl ca-certificates build-essential python3 bubblewrap xdg-utils
+
+# Node.js 22 (NodeSource). Do NOT use plain `apt install nodejs`: that version is too old.
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+node -v      # must be v22.12.0 or higher
+npm -v       # 10 or higher
+```
+
+Why Node 22.12+: Vite 8 needs `^20.19 || >=22.12` and the `electron` package needs `>=22.12`.
+
+**Docker Engine and Compose:**
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
+```
+
+**Log out and log back in** (or reboot) so the `docker` group applies. Then:
+
+```bash
+docker version
+docker compose version        # "docker compose" with a space (Compose v2)
+```
+
+**Libraries Electron needs.** A normal Ubuntu desktop has most of them already; install them to be sure.
+
+Ubuntu 22.04:
+```bash
+sudo apt install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 \
+  libasound2 libxss1 libxtst6 libx11-xcb1 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2
+```
+Ubuntu 24.04 (four packages were renamed with a `t64` suffix):
+```bash
+sudo apt install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 libgtk-3-0t64 libgbm1 \
+  libasound2t64 libxss1 libxtst6 libx11-xcb1 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2
+```
+If a later run says `error while loading shared libraries: libXXX.so`, install the package that
+provides that file.
+
+`bubblewrap` (installed above) is the sandbox in which student code runs inside the exam app.
+`python3` runs it. `xdg-utils` provides `xdg-mime`, used in step 8.
+
+Check:
+```bash
+bwrap --version && python3 --version && xdg-mime --version
+```
+
+You need a normal **graphical** session. Over plain SSH or on a server install there is no window
+to show.
+
+## B2. Get the code
+
+```bash
+cd ~
+mkdir -p Developer && cd Developer
+git clone git@github.com:arnavmishra2005/secure-exam-platform.git
+# no SSH key set up? use HTTPS:
+#   git clone https://github.com/arnavmishra2005/secure-exam-platform.git
+cd secure-exam-platform
+git checkout integrate/final
+```
+
+Everything below is run **from this folder (the repo root)**.
+
+## B3. Install dependencies
+
+```bash
+npm install
+```
+
+Never use `sudo npm install`. As part of the install the `electron` package **downloads the Electron
+binary** (about 100 MB from GitHub). Check it worked:
+
+```bash
+npx electron --version      # must print v44.9.3
+```
+
+Type the `--version` part. Plain `npx electron` opens Electron's own welcome window; that is not an
+error, close it.
+
+If it printed an error ("Electron failed to install correctly"):
+
+```bash
+node node_modules/electron/install.js
+npx electron --version
+```
+
+## B4. Allow Electron's sandbox (Ubuntu 24.04 only; skip on 22.04)
+
+Ubuntu 24.04 restricts the kind of sandbox Electron uses, and Electron then refuses to start with
+`The SUID sandbox helper binary was found, but is not configured correctly` or `No usable sandbox!`.
+Fix it once (**repeat it whenever you reinstall `node_modules/electron`**):
+
+```bash
+sudo chown root:root node_modules/electron/dist/chrome-sandbox
+sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+```
+
+(Alternative that lasts until reboot: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.)
+Do not use `--no-sandbox`.
+
+## B5. Build the shared packages
+
+```bash
+npm run typecheck
+```
+
+Despite the name, this **builds** `packages/types`, `packages/validation` and `packages/api-client`
+into `dist/` folders (they are git-ignored, so a fresh clone has none). The API and the migrations
+cannot run without them. It is the same as these three commands, in this order:
+
+```bash
+npm run build --workspace=packages/types
+npm run build --workspace=packages/validation
+npm run build --workspace=packages/api-client
+```
+
+Run `npm run typecheck` again whenever you change anything under those three packages or pull
+changes that touch them.
+
+## B6. Create the `.env` files
+
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+The defaults work as they are. Check:
+
+```bash
+grep CORS_ORIGIN apps/api/.env          # must include app://exam
+grep REQUIRE_DESKTOP apps/api/.env apps/web/.env
+# apps/api/.env:REQUIRE_DESKTOP_CLIENT=true
+# apps/web/.env:VITE_REQUIRE_DESKTOP_EXAM=true
+```
+
+What every variable means: [C2](#c2-environment-variables). The website reads its `.env` only when it
+starts, so restart `npm run web:dev` after editing `apps/web/.env`.
+
+## B7. Start the database, create the tables, add sample data
+
+```bash
+docker compose up -d postgres
+docker compose ps                  # postgres must show running (healthy); wait and repeat if "starting"
+
+npm run migration:run              # must be done BEFORE the API has ever started
+npm run db:seed                    # sample accounts, a course and a sample exam
+docker pull python:3.12-slim       # the server runs and grades coding questions in this image
+```
+
+- **Migrations before the API:** in development the API creates tables itself. If it starts on an
+  empty database first, the migrations fail with `relation "..." already exists`. If that happens,
+  reset ([C4](#c4-stop-reset-start-over)).
+- If port 5432 is taken by a local PostgreSQL: `sudo systemctl stop postgresql`.
+- The seed is safe to repeat and creates the accounts in [C1](#c1-accounts-and-ports) and an
+  **active** sample exam (`11111111-1111-4111-8111-111111111111`) with five multiple-choice questions
+  and one coding question ("Merge Intervals"). Never run it against shared data.
+
+## B8. Register the exam app as the opener of `secure-exam://` links (one time)
+
+```bash
+npm run exam:register
+```
+
+This compiles the Electron app, writes `~/.local/share/applications/secure-exam-dev.desktop`, and
+makes it the default handler of `secure-exam://` links (`xdg-mime`). The last line it prints should
+say the default handler is `secure-exam-dev.desktop`. Check it yourself:
+
+```bash
+xdg-mime query default x-scheme-handler/secure-exam      # secure-exam-dev.desktop
+```
+
+Test it (needs the API and website running, so do it after step 9, or skip):
+
+```bash
+xdg-open "secure-exam://launch/test"
+```
+
+The exam app should open (it reports that the launch link is not valid; that is expected for a fake
+token). Close it with `pkill -f exam-client`.
+
+Notes:
+- Run `npm run exam:register` again if you **move or rename the repo folder** (the file stores the
+  absolute path), or after reinstalling `node_modules`.
+- To undo it: `npm run exam:register -- --remove`.
+- The first time a browser opens the link it asks whether to open "Secure Exam (development)". Allow
+  it. Firefox and Chrome both ask; tick "Always allow" if offered.
+- Browsers installed as **snaps** (the default Firefox on Ubuntu, and Chromium) run in a confined
+  sandbox and may not be able to hand links to apps outside it. If the button does nothing, use a
+  `.deb` Chrome/Firefox, or the fallback in [C5](#the-exam-app-does-not-open-when-i-press-start-exam-in-exam-app).
+
+## B9. Run it (every day)
+
+Open two terminals at the repo root.
+
+```bash
+# Terminal 1
+npm run api:start          # wait for: Nest application successfully started
+```
+```bash
+# Terminal 2
+npm run web:dev            # wait for: Local: http://localhost:3003/
+```
+
+(Or, in a single terminal: `npm run dev`. It compiles the exam app, then starts both.)
+
+Now take an exam:
+
+1. Open http://localhost:3003 in your browser.
+2. Sign in as `alice@secure-exam.dev` / `Student@1234`.
+3. Open the exam, tick the confirmation, and press **Start exam in exam app**.
+4. Allow the browser's "open Secure Exam (development)" prompt (first time only).
+5. The exam app opens. Press **Login**. The exam starts in the locked window.
+
+Inside the app in development, the invigilator PIN to leave an exam early is `1234`.
+
+Admin: http://localhost:3003 in the browser, `admin@secure-exam.dev` / `Admin@1234`.
+
+If the exam app does not open when you press the button, see
+[C5 "The exam app does not open"](#the-exam-app-does-not-open-when-i-press-start-exam-in-exam-app).
+
+If you change anything in `apps/exam-client/src` (the Electron code), run `npm run desktop:compile`
+(or `npm run exam:register` again). `npm run dev` does this automatically.
+
+**Kiosk session (optional, separate):** the full-screen "Secure Exam Kiosk" login session, firewall
+and USB blocking for lab machines are described in [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md).
+You do not need them for development.
+
+---
+
+# Part C: reference (both systems)
+
+## C1. Accounts and ports
+
+| Account | Email | Password |
+|---|---|---|
+| Admin (browser only) | `admin@secure-exam.dev` | `Admin@1234` |
+| Student | `alice@secure-exam.dev` | `Student@1234` |
+| Student | `bob@secure-exam.dev` | `Student@1234` |
+| Student | `carol@secure-exam.dev` | `Student@1234` |
+
+Login is limited to 5 attempts per minute per IP. If you see "Too many requests", wait a minute.
+
+| What | Where | Port |
+|---|---|---|
+| PostgreSQL 16 (Docker) | `docker-compose.yml` | 5432 |
+| API (NestJS) | `apps/api`; Swagger UI at http://localhost:3000/api/docs | 3000 |
+| Website for admins and students (Vite) | `apps/web` | 3003 |
+| Exam app (Electron) | `apps/exam-client/src` | none |
+| Legacy admin portal / legacy student UI | `apps/admin-web` / `apps/exam-client/renderer` | 3001 / 3002 (not needed) |
+
+## C2. Environment variables
+
+### `apps/api/.env`
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DATABASE_URL` | `postgres://exam_user:exam_pass@localhost:5432/secure_exam` | Must match `docker-compose.yml` (user `exam_user`, password `exam_pass`, db `secure_exam`). |
-| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | `change-me-...` | Each must be **at least 16 characters** or the API refuses to start. Change them for anything not local. |
-| `CORS_ORIGIN` | see above | Comma-separated list of origins allowed to call the API. Required. |
-| `REQUIRE_DESKTOP_CLIENT` | `true` | `true`: exams only work from the Electron exam app. `false`: a browser can sit exams (quick development without the app; also set the web switch to `false`). |
+| `DATABASE_URL` | `postgres://exam_user:exam_pass@localhost:5432/secure_exam` | Must match `docker-compose.yml`. |
+| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | `change-me-...` | At least 16 characters each, or the API refuses to start. Change them for anything but local use. |
+| `CORS_ORIGIN` | `http://localhost:3001,http://localhost:3002,http://localhost:3003,app://exam` | Origins allowed to call the API. Required. Must include `app://exam` for the exam app. |
+| `REQUIRE_DESKTOP_CLIENT` | `true` | Exams only work from the exam app. `false` lets a browser sit exams (quick development without the kiosk; also set the website switch to `false`). |
 | `EXAM_LAUNCH_TTL_SECONDS` | `120` | How long a launch token lives. |
-| `VIOLATION_FLAG_THRESHOLD` | `5` | Violations before an attempt is flagged. |
+| `VIOLATION_FLAG_THRESHOLD` | `5` | Violations before an attempt is flagged for the invigilator. |
 | `CODING_GRADING_MODE` | `DEFERRED` | `DEFERRED` grades code after the attempt ends; `LIVE` grades on submit. |
 | `RUNNER_DOCKER_BIN`, `RUNNER_PYTHON_IMAGE` | `docker`, `python:3.12-slim` | The server runs student code in this Docker image. |
-| `THROTTLE_LIMIT` | `1000` | Global rate limit. Login is separately limited to **5 per minute per IP**. |
-| `ALLOW_ADMIN_ON_DESKTOP` | unset (false) | Set `true` only to test an admin account inside the exam app. |
+| `THROTTLE_LIMIT` | `1000` | Global rate limit (login has its own 5 per minute). |
+| `ALLOW_ADMIN_ON_DESKTOP` | unset | `true` lets an administrator sign in inside the exam app (testing only). |
 
-If an `.env` value is invalid, the API stops at start-up and prints which one
-(`Config validation error: ...`).
+If a value is invalid the API stops at start-up and names it (`Config validation error: ...`).
+Restart the API after editing.
 
-### 6.2 `apps/web/.env`
+### `apps/web/.env`
 
 ```env
 VITE_API_BASE_URL=http://localhost:3000
@@ -378,314 +557,51 @@ VITE_HEARTBEAT_INTERVAL_MS=15000
 VITE_REQUIRE_DESKTOP_EXAM=true
 ```
 
-These are baked in when Vite starts. **After editing, stop and restart `npm run web:dev`.**
+Keep `VITE_REQUIRE_DESKTOP_EXAM` equal to the API's `REQUIRE_DESKTOP_CLIENT`. Restart `npm run web:dev`
+after editing (Vite reads this file only at start-up).
 
-### 6.3 `apps/admin-web/.env` (legacy portal only)
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3000
-```
-
-This is baked in at build time; rebuild after changing it.
-
-### 6.4 Environment variables for the Electron app
-
-The exam app takes its settings from environment variables of the shell you launch it
-from (not from a `.env` file):
+### Environment of the exam app (set in the shell that starts it, not in a `.env` file)
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `EXAM_API_URL` | `http://localhost:3000` | Where the API is. |
-| `EXAM_WEB_URL` | `http://localhost:3003` | Where the web dev server is. |
-| `EXAM_LAUNCH_LINK` | none | `secure-exam://launch/<token>`. Development shortcut; see 10. |
+| `EXAM_WEB_URL` | `http://localhost:3003` | Where the website's dev server is. |
+| `EXAM_LAUNCH_LINK` | none | A `secure-exam://launch/<token>` link to start with (fallback, see C5). |
 | `INVIGILATOR_PIN` | `1234` in development | PIN needed to leave an exam in progress. |
-| `EXAM_UNSANDBOXED_RUNNER` | unset | Set to `1` to run student code without bubblewrap (development only). |
+| `EXAM_UNSANDBOXED_RUNNER` | unset | `1` runs student code without bubblewrap. Development only. The macOS launcher sets it; on Ubuntu install `bubblewrap` instead. |
 
----
+## C3. Tests, lint, builds
 
-## 7. Start PostgreSQL
-
-Docker must be running (Linux: `sudo systemctl status docker`; macOS/Windows: Docker
-Desktop open and "running").
-
-```bash
-docker compose up -d postgres
-docker compose ps
-```
-
-`docker compose ps` must show `postgres` as `running (healthy)`. If it says
-`starting`, wait ten seconds and run it again. (A warning that the `version` attribute
-is obsolete is harmless.)
-
-If your system only has the old `docker-compose` command, use `docker-compose` instead.
-If you do not want Docker for the database, see 7.1.
-
-### 7.1 Alternative: PostgreSQL installed without Docker
-
-Install PostgreSQL 16 (`sudo apt install postgresql` / `brew install postgresql@16` /
-the Windows installer), then create the same user and database as the compose file:
-
-```bash
-sudo -u postgres psql -c "CREATE USER exam_user WITH PASSWORD 'exam_pass';"
-sudo -u postgres psql -c "CREATE DATABASE secure_exam OWNER exam_user;"
-```
-
-Keep `DATABASE_URL` as it is, or change it to match your own credentials. You still need
-Docker for the server-side code runner (section 8.3), but not for anything else.
-
----
-
-## 8. Migrate and seed the database
-
-### 8.1 Run the migrations **before** the API has ever started
-
-```bash
-npm run migration:run
-```
-
-This applies all 25 migrations. It prints each one and ends without error.
-
-> **Order matters.** In development the API auto-creates tables (`synchronize: true`). If
-> the API starts on an empty database *before* you migrate, the tables already exist and
-> the migrations fail with `relation "..." already exists`. If you hit that, jump to
-> [13](#13-reset-everything--stop-everything) to reset the database and start from this step.
-
-### 8.2 Seed development data (optional but recommended)
-
-```bash
-npm run db:seed
-```
-
-It is safe to repeat. It creates:
-
-| Account | Email | Password |
-|---|---|---|
-| Admin | `admin@secure-exam.dev` | `Admin@1234` |
-| Student | `alice@secure-exam.dev` | `Student@1234` |
-| Student | `bob@secure-exam.dev` | `Student@1234` |
-| Student | `carol@secure-exam.dev` | `Student@1234` |
-
-It also creates a course `CS201` (students enrolled) and an **ACTIVE** exam with ID
-`11111111-1111-4111-8111-111111111111`: five multiple-choice questions plus one coding
-question ("Merge Intervals", 10 marks, 2 sample and 8 hidden tests). Re-running the seed
-moves the exam's time window forward, resets those users' passwords, and re-adds the coding
-question if missing. **Never run the seed against shared or production data.**
-
-> There is no API endpoint to create an admin. Without the seed you must insert one by
-> hand; see "The API can't create an admin" in [CLAUDE.md](CLAUDE.md).
-
-### 8.3 Pull the Python image used for server-side code grading
-
-```bash
-docker pull python:3.12-slim
-```
-
-The API runs student code for coding questions inside this Docker image. If you skip this
-(or Docker is not running when the API needs it), everything else works, but coding
-questions cannot be run or graded on the server.
-
----
-
-## 9. Start the API and the web app
-
-The shortcut is `npm run dev`, which starts both below in one terminal (output is prefixed
-`api` / `web`; Ctrl+C stops both). To run them separately, use one terminal per process and
-leave them running.
-
-**Terminal 1: API**
-```bash
-npm run api:start
-```
-Wait for `Nest application successfully started`. Then check:
-
-- http://localhost:3000/health → shows an OK status
-- http://localhost:3000/api/docs → Swagger UI
-
-**Terminal 2: web app**
-```bash
-npm run web:dev
-```
-Open http://localhost:3003. Sign in as `admin@secure-exam.dev` / `Admin@1234` for the
-admin view, or `alice@secure-exam.dev` / `Student@1234` for the student view.
-
-If you changed anything in `packages/`, run `npm run typecheck` (section 5) **and restart
-the API**.
-
-> Login is limited to 5 attempts per minute per IP. If you get "Too many requests", wait a minute.
-
----
-
-## 10. Run the Electron exam app
-
-**Short version:** `npm run exam:app` (see the Quick start). The rest of this section explains
-what it does and how to do it by hand.
-
-**Why the token?** In production the student signs in in the browser and presses "Start exam
-in exam app". The server issues a one-time, 120-second token and the browser opens
-`secure-exam://launch/<token>`, which the operating system hands to the *installed* exam app,
-so the password never reaches the app. During development no app is installed, so the OS cannot
-open that link. `npm run exam:app` fetches the token for you and starts the app with it.
-(By hand you would copy the link the web page shows and pass it as `EXAM_LAUNCH_LINK`, 10.3.)
-
-Both lock switches must be `true` (they are in `.env.example`): `REQUIRE_DESKTOP_CLIENT` in
-`apps/api/.env` and `VITE_REQUIRE_DESKTOP_EXAM` in `apps/web/.env`. Restart `npm run dev`
-after changing them.
-
-Prerequisites: sections 4–9 done (API and web app running, database seeded), and
-`npx electron --version` printing `v44.9.3`.
-
-### 10.1 Compile the Electron main process (`exam:app` does this for you)
-
-```bash
-npm run desktop:compile
-```
-
-This writes `apps/exam-client/dist/`. If it is missing, the app cannot start.
-
-### 10.2 Get a launch link
-
-1. In the browser, open http://localhost:3003 and sign in as **a student**
-   (`alice@secure-exam.dev` / `Student@1234`).
-2. Open the exam and press **Start exam in exam app**.
-3. In development the page shows the link, which looks like
-   `secure-exam://launch/<long-token>`. Copy it. **It expires after 120 seconds and works
-   only once.** If it expires, press the button again to get a new one.
-
-### 10.3 Launch the app with that link (what `npm run exam:app` automates)
-
-Open a **third terminal** (the API and web terminals stay running) at the repo root.
-
-**Linux / macOS / WSL / Git Bash:**
-```bash
-EXAM_UNSANDBOXED_RUNNER=1 \
-EXAM_LAUNCH_LINK="secure-exam://launch/PASTE_TOKEN_HERE" \
-npm run desktop:start --workspace=@secure-exam/exam-client-desktop
-```
-
-On Linux with `bwrap` installed you can leave out `EXAM_UNSANDBOXED_RUNNER=1`.
-
-**Windows PowerShell (after the one-time `script-shell` step in 3.4):**
-```powershell
-$env:EXAM_UNSANDBOXED_RUNNER = "1"
-$env:EXAM_LAUNCH_LINK = "secure-exam://launch/PASTE_TOKEN_HERE"
-npm run desktop:start --workspace=@secure-exam/exam-client-desktop
-```
-
-**Windows cmd.exe:**
-```bat
-set EXAM_UNSANDBOXED_RUNNER=1
-set EXAM_LAUNCH_LINK=secure-exam://launch/PASTE_TOKEN_HERE
-npm run desktop:start --workspace=@secure-exam/exam-client-desktop
-```
-
-What should happen:
-
-1. A window opens on the **launch screen** showing the student's email and a masked
-   password, with readiness checks.
-2. Press **Login**. The exam starts in a full-screen locked window.
-3. Reload, quit, DevTools and similar keys are blocked, and each attempt is recorded
-   as a violation that admins can see.
-4. After **Submit**, only an "Exam submitted" screen with **Close** remains
-   (it closes itself after 30 seconds).
-5. To leave an exam in progress during development, use the invigilator PIN `1234`.
-
-`npm run desktop:start` does not start the web app or API; they must already be running.
-
-### 10.4 About running student code in the exam app
-
-The exam app runs "Run" / "Run samples" on the student's own computer:
-
-- **Linux:** needs `python3` and `bubblewrap` (`bwrap`); the code then runs in a real
-  sandbox. If `bwrap` is missing you get *"Cannot run code on this computer: the sandbox
-  (bubblewrap) is not installed."*
-- **macOS:** no bubblewrap exists. Use `EXAM_UNSANDBOXED_RUNNER=1` and have `python3` on
-  your PATH. This is a development convenience, **not a sandbox**.
-- **Windows (native):** not supported (needs `which`, `bwrap` and POSIX paths). Use WSL2.
-- Not using the app's runner? In development the API can run code itself in Docker
-  (`CODING_SERVER_RUN` defaults to on outside production).
-
-### 10.5 The all-in-one development command (not for exam testing)
-
-```bash
-npm run client:desktop
-```
-
-This compiles, starts the Vite dev server on port 3003, waits for it, and opens
-Electron. Do **not** also run `npm run web:dev`, or two Vite servers fight for port 3003.
-It does not do the browser launch flow, so use sections 10.2 and 10.3 to test the real
-exam flow.
-
-### 10.6 Packaging (optional, untested on Ubuntu)
-
-```bash
-npm run desktop:build
-```
-
-Builds the app and web bundle with `electron-builder` for Linux (AppImage and `.deb`) into
-`apps/exam-client/dist-electron/`. A packaged build serves the UI from `app://exam`, so
-`CORS_ORIGIN` must include `app://exam`. Linux-only target; the kiosk install scripts are
-described in [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md).
-
----
-
-## 11. Development shortcuts
-
-Edit `apps/api/.env`, then **restart the API**:
-
-| Goal | Setting |
-|---|---|
-| Sit an exam in a normal browser (no Electron, no kiosk) | API: `REQUIRE_DESKTOP_CLIENT=false` **and** web: `VITE_REQUIRE_DESKTOP_EXAM=false` (restart both) |
-| Use an admin account inside the exam app | API: `ALLOW_ADMIN_ON_DESKTOP=true` |
-| Run student code without bubblewrap | Environment of the Electron process: `EXAM_UNSANDBOXED_RUNNER=1` |
-| Grade code on submit instead of afterwards | API: `CODING_GRADING_MODE=LIVE` |
-
----
-
-## 12. Tests, lint and builds
-
-All run from the repo root, and none of them need a database.
+All from the repo root, none needs the database. Build the shared packages first
+(`npm run typecheck`) or the API tests fail with `Cannot find module '@secure-exam/...'`.
 
 | What | Command |
 |---|---|
-| API unit tests (Jest) | `npm run api:test` |
+| API unit tests | `npm run api:test` |
 | One API test file | `npm test --workspace=apps/api -- timer.service` |
-| Web app tests (Vitest) | `npm run web:test` |
+| Website tests | `npm run web:test` |
 | Exam content UI tests | `npm run content-ui:test` |
-| Electron main-process tests | `npm run desktop:test` |
+| Electron tests | `npm run desktop:test` |
 | Legacy exam client tests | `npm run client:test` |
 | API lint | `npm run api:lint` |
-| Type-check web / content-ui | `npm run web:typecheck`, `npm run content-ui:typecheck` |
-| Type-check API (no output files) | `npx tsc --noEmit -p apps/api` |
-| Build the API | `npm run api:build` |
-| Build the web app | `npm run web:build` |
+| Type-check website / content UI | `npm run web:typecheck`, `npm run content-ui:typecheck` |
+| Build API / website | `npm run api:build`, `npm run web:build` |
+| Apply / undo a migration | `npm run migration:run` / `npm run migration:revert` |
 
-**Build the shared packages first (`npm run typecheck`)** or the API tests fail with
-`Cannot find module '@secure-exam/...'`.
+## C4. Stop, reset, start over
 
-Migrations: `npm run migration:run` applies, `npm run migration:revert` undoes the last one.
-Never edit a migration that others have run; add a new one.
-
----
-
-## 13. Reset everything / stop everything
-
-**Stop the services.** Press `Ctrl+C` in the API and web terminals. If a process is stuck:
+**Stop:** press Ctrl+C in each terminal. If something is stuck:
 
 ```bash
-# Linux / macOS
-pkill -f "nest start"; pkill -f "node dist/main"; pkill -f vite; pkill -f electron
-lsof -i :3000 -i :3003 -i :5432      # who is holding the ports
+pkill -f "nest start"; pkill -f "node dist/main"; pkill -f vite; pkill -f exam-client
+lsof -i :3000 -i :3003 -i :5432        # who is holding the ports
 ```
-```powershell
-# Windows PowerShell
-netstat -ano | findstr ":3000 :3003 :5432"
-taskkill /PID <pid> /F
-```
-(`nest start` leaves a child `node dist/main` running, so kill both.)
+(`nest start` leaves a child `node dist/main`, so kill both.)
 
-**Stop the database but keep its data:** `docker compose stop postgres`
+**Stop the database, keep the data:** `docker compose stop postgres`
 
-**Wipe the database completely** (deletes **all** local data):
+**Wipe the database** (deletes all local data):
+
 ```bash
 docker compose down -v
 docker compose up -d postgres
@@ -693,151 +609,135 @@ npm run migration:run
 npm run db:seed
 ```
 
-**Reinstall from scratch** (fixes most "weird" dependency problems):
+**Reinstall everything:**
+
 ```bash
 rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/exam-client/renderer/node_modules
 npm install
 node node_modules/electron/install.js
 npm run typecheck
-npm run desktop:compile
+npm run exam:register          # the launcher stores absolute paths
 ```
-(Windows PowerShell: `Remove-Item -Recurse -Force node_modules` and the same for the others.)
-Do not delete `package-lock.json`.
+(On Ubuntu 24.04 repeat step B4 afterwards.)
 
----
+## C5. Troubleshooting
 
-## 14. Troubleshooting
+### The exam app does not open when I press "Start exam in exam app"
 
-### Node, npm and installing
+1. Did you run `npm run exam:register` on this computer, and from this folder? (A8 / B8.) Run it again.
+2. Did the browser ask "Open SecureExamDev?" (macOS) or "open Secure Exam (development)" (Ubuntu)?
+   Allow it. If you clicked "Cancel" with "always" ticked, reset the browser's protocol-handler
+   permission for http://localhost:3003.
+3. Test the operating system without a browser:
+   - macOS: `open "secure-exam://launch/test"`
+   - Ubuntu: `xdg-open "secure-exam://launch/test"`
+   The app should open. If not: macOS `ls ~/Applications/SecureExamDev.app`; Ubuntu
+   `xdg-mime query default x-scheme-handler/secure-exam` (must print `secure-exam-dev.desktop`).
+4. Ubuntu: run the exact command the launcher runs, in a terminal, to see its error message.
+   It is the `Exec=` line of `~/.local/share/applications/secure-exam-dev.desktop`. Typical causes:
+   missing libraries or the 24.04 sandbox fix (B4).
+5. Ubuntu with a snap browser: see the note in B8. Try a `.deb` browser.
+6. **Fallback that always works** (also useful for debugging): `npm run exam:app` signs in as alice,
+   fetches a token and starts the app directly. Options: `npm run exam:app -- bob@secure-exam.dev Student@1234 <examId>`.
+   By hand: copy the `secure-exam://launch/...` link the website prints in development under the
+   button and run `EXAM_LAUNCH_LINK="<link>" npm run desktop:start --workspace=@secure-exam/exam-client-desktop`.
 
-| Symptom | Cause and fix |
+### The exam app opens Electron's welcome page ("To run a local app, execute the following on the command line")
+
+Electron was started with no app. Close it. Causes: plain `npx electron`, running the `Electron`
+binary directly, or (macOS) an old registration pointing at the bare binary. Run
+`npm run exam:register` again, which makes the launcher the handler. If the exam app itself shows it,
+`apps/exam-client/dist/main/main.js` is missing: `npm run desktop:compile`.
+
+### The launch screen says the link is invalid, expired or already used
+
+Tokens last 120 seconds and work once. Press **Start exam in exam app** again.
+
+### Node, npm, install
+
+| Symptom | Fix |
 |---|---|
-| `EBADENGINE` warnings, or `SyntaxError`/`Unexpected token` while building | Node is too old. Install Node 22.12+ (section 3.1), delete `node_modules`, run `npm install`. |
-| `node: command not found` / `npm: command not found` | Node not installed or not on `PATH`. Reopen the terminal; on macOS check `brew link node@22`. |
-| `EACCES: permission denied` during `npm install` on Linux | Never use `sudo npm install`. Fix ownership: `sudo chown -R "$USER" ~/.npm .` then retry. |
-| `npm ERR! network` / timeouts / `ECONNRESET` | Network or proxy. Retry; behind a proxy set `npm config set proxy http://host:port` and `https-proxy`. |
-| `gyp ERR!` while installing (bcrypt etc.) | Missing build tools. Ubuntu: `sudo apt install build-essential python3`. macOS: `xcode-select --install`. Windows: install "Desktop development with C++" from the Visual Studio Build Tools. |
+| `EBADENGINE` warnings or syntax errors while building | Node too old. Install Node 22.12+ (A1 / B1), delete `node_modules`, `npm install`. |
+| `command not found: node` | Reopen the terminal. macOS: `brew link --overwrite --force node@22`. |
+| `EACCES` during `npm install` (Ubuntu) | Never `sudo npm install`. `sudo chown -R "$USER" ~/.npm .` then retry. |
+| `ECONNRESET` / timeouts | Network or proxy. Retry; behind a proxy `npm config set proxy` / `https-proxy`. |
+| `gyp ERR!` | Build tools missing. Ubuntu: `sudo apt install build-essential python3`. macOS: `xcode-select --install`. |
 
 ### "Cannot find module '@secure-exam/...'"
 
-You have not built the shared packages (or changed them since). Run:
-
-```bash
-npm run typecheck
-```
-
-or, one at a time and in this order:
-
-```bash
-npm run build --workspace=packages/types
-npm run build --workspace=packages/validation
-npm run build --workspace=packages/api-client
-```
-
-If a build itself fails with `Cannot find module '@secure-exam/types'`, build `types` first.
-If it still fails, the install is incomplete; run `npm install` at the root again.
+The shared packages are not built: `npm run typecheck` (or the three `npm run build --workspace=packages/...`
+commands from A4 / B5, in that order). If a build itself says it cannot find `@secure-exam/types`, build
+`types` first. If it still fails, run `npm install` again.
 
 ### Electron
 
 | Symptom | Fix |
 |---|---|
-| `Electron failed to install correctly, please delete node_modules/electron and try installing again` | The binary was never downloaded. Run `node node_modules/electron/install.js`. If that fails, you are probably offline or blocked from github.com; set `ELECTRON_MIRROR` to a reachable mirror (for example `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` on Linux/macOS, `$env:ELECTRON_MIRROR="..."` in PowerShell), delete `node_modules/electron`, and run `npm install` again. |
-| `npx electron --version` fails or `node_modules/electron/dist` is missing | Same as above. Also make sure you did not install with `--ignore-scripts` and that `ELECTRON_SKIP_BINARY_DOWNLOAD` is not set. Antivirus can also delete the download: re-run the install script. |
-| The app starts and immediately behaves like Node, or `Electron --version` prints a Node error; `ELECTRON_RUN_AS_NODE` is set | Some terminals/IDEs set `ELECTRON_RUN_AS_NODE=1`. The npm scripts already remove it with `env -u ELECTRON_RUN_AS_NODE`. Run `unset ELECTRON_RUN_AS_NODE` (PowerShell: `Remove-Item Env:ELECTRON_RUN_AS_NODE`). |
-| Windows: `'env' is not recognized as an internal or external command` | The Electron npm scripts use `env -u` (Unix). Run `npm config set script-shell "C:\Program Files\Git\bin\bash.exe"` (section 3.4) or use WSL2. |
-| A window titled "Electron" opens showing the Electron logo, the versions and "To run a local app, execute the following on the command line: ... path-to-app" | Electron was started **with no app**, so it shows its built-in welcome page. Causes: you ran plain `npx electron` (not `--version`), ran the `Electron` binary directly, or ran `electron` from the wrong folder. Close the window (`Cmd+Q` / `pkill -f node_modules/electron/dist`) and start the exam app only with `npm run desktop:start --workspace=@secure-exam/exam-client-desktop` from the repo root (section 10.3). If the exam app itself opens this page, `apps/exam-client/dist/main/main.js` is missing: run `npm run desktop:compile`. |
-| Cannot find `dist/main/main.js` | Run `npm run desktop:compile` (section 10.1). |
-| Linux: `The SUID sandbox helper binary was found, but is not configured correctly` or `No usable sandbox!` | Common on Ubuntu 24.04, which restricts unprivileged user namespaces. Pick **one**: (a) `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox` (redo after reinstalling Electron), or (b) `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` (resets on reboot). Do **not** use `--no-sandbox` for real exams. |
-| Linux: `error while loading shared libraries: libnss3.so` (or `libgbm`, `libgtk-3`, `libasound`...) | A system library is missing. Install the packages in section 3.2 (note the `t64` names on Ubuntu 24.04). |
-| Linux/WSL: `Missing X server or $DISPLAY` / window never appears | You have no graphical session (SSH, a server install). Run from the desktop, or on WSL use Windows 11/WSLg and `wsl --update`. |
-| Nothing happens when the browser opens `secure-exam://...` | In development the OS has no registered handler. Copy the link the page shows and start the app yourself with `EXAM_LAUNCH_LINK` (10.3). |
-| The launch screen says the link is invalid, expired or already used | Tokens last 120 seconds and work once. Press **Start exam in exam app** again for a new link. |
-| "Cannot run code on this computer: the sandbox (bubblewrap) is not installed." | Linux: `sudo apt install bubblewrap`. macOS/dev: set `EXAM_UNSANDBOXED_RUNNER=1`. Windows: use WSL2. |
-| Readiness check fails about the API | The API is not running at `EXAM_API_URL` (default `http://localhost:3000`) or `CORS_ORIGIN` lacks `app://exam`. |
-| macOS says the app is damaged/unverified | Electron 44.9.3 is unsigned by design. Expected for development. |
-| Admin login fails inside the exam app | By design. Set `ALLOW_ADMIN_ON_DESKTOP=true` in `apps/api/.env` for development. |
+| `Electron failed to install correctly` / `node_modules/electron/dist` missing | `node node_modules/electron/install.js`. If github.com is blocked, set `ELECTRON_MIRROR` to a reachable mirror, delete `node_modules/electron`, `npm install`. Never install with `--ignore-scripts` or set `ELECTRON_SKIP_BINARY_DOWNLOAD`. |
+| Electron behaves like plain Node | `ELECTRON_RUN_AS_NODE` is set in your shell: `unset ELECTRON_RUN_AS_NODE`. The project's scripts and the launchers already clear it. |
+| Cannot find `dist/main/main.js` | `npm run desktop:compile`. |
+| Ubuntu: `SUID sandbox helper binary ... not configured correctly` / `No usable sandbox` | Step B4. |
+| Ubuntu: `error while loading shared libraries: libXXX.so` | Install the library (B1; `t64` names on 24.04). |
+| Ubuntu: `Missing X server or $DISPLAY` | There is no graphical session (SSH or server install). Run it on the desktop. |
+| "Cannot run code on this computer: the sandbox (bubblewrap) is not installed." | Ubuntu: `sudo apt install bubblewrap`. macOS: the launcher sets `EXAM_UNSANDBOXED_RUNNER=1`; if you start the app by hand add it yourself. |
+| Readiness check fails about the API | The API is not running at `EXAM_API_URL`, or `CORS_ORIGIN` lacks `app://exam`. |
+| Admin login fails inside the exam app | By design. `ALLOW_ADMIN_ON_DESKTOP=true` in `apps/api/.env` for testing. |
+| macOS says the app is unverified | Electron 44.9.3 is unsigned by design; expected in development. |
 
 ### Database and API
 
 | Symptom | Fix |
 |---|---|
-| `Cannot connect to the Docker daemon` | Docker is not running. Start Docker Desktop, or `sudo systemctl start docker`. |
-| `permission denied while trying to connect to the Docker daemon socket` (Linux) | `sudo usermod -aG docker "$USER"`, then log out and back in. |
-| `docker: 'compose' is not a docker command` | Install the Compose v2 plugin (`sudo apt install docker-compose-plugin`) or use `docker-compose`. |
-| `port is already allocated` / `address already in use` on 5432 | A local PostgreSQL is using the port. Stop it (`sudo systemctl stop postgresql`) or change the mapping in `docker-compose.yml` (`"5433:5432"`) and use port 5433 in `DATABASE_URL`. |
-| `ECONNREFUSED 127.0.0.1:5432` | PostgreSQL is not up yet or not running: `docker compose ps`, wait for `healthy`. |
-| API exits with `Config validation error: "JWT_ACCESS_SECRET" length must be at least 16` | Your `.env` is missing or has short secrets; recopy from `.env.example`. |
-| `relation "..." already exists` during `migration:run` | The API ran before the migrations. Reset the database (section 13). |
+| `Cannot connect to the Docker daemon` | Start Docker Desktop (macOS) / `sudo systemctl start docker` (Ubuntu). |
+| `permission denied ... docker.sock` (Ubuntu) | `sudo usermod -aG docker "$USER"`, then log out and in. |
+| `docker: 'compose' is not a docker command` | `sudo apt install docker-compose-plugin`, or use `docker-compose`. |
+| `port is already allocated` on 5432 | A local PostgreSQL holds it. Stop it, or change the mapping in `docker-compose.yml` and `DATABASE_URL`. |
+| `ECONNREFUSED 127.0.0.1:5432` | The database is not up: `docker compose ps`, wait for `healthy`. |
+| `Config validation error: "JWT_ACCESS_SECRET" length must be at least 16` | Recopy `apps/api/.env.example`. |
+| `relation "..." already exists` during `migration:run` | The API ran before the migrations. Reset (C4). |
 | `relation "..." does not exist` when the API starts | You have not run `npm run migration:run`. |
-| `password authentication failed for user "exam_user"` | The Postgres volume was created with other credentials. Reset with `docker compose down -v` (deletes local data). |
-| `EADDRINUSE :::3000` | Another API is still running. Kill it (section 13). |
-| `Too Many Requests` (HTTP 429) on login | Login is capped at 5/minute per IP. Wait one minute. |
-| CORS error in the browser console | Add the web origin to `CORS_ORIGIN` in `apps/api/.env` and restart the API. Origins have no trailing slash. |
-| Starting an exam says the exam app is required | Intended: exams run in the exam app (`npm run exam:app`, section 10). To sit one in a browser instead, set `REQUIRE_DESKTOP_CLIENT=false` in `apps/api/.env` and `VITE_REQUIRE_DESKTOP_EXAM=false` in `apps/web/.env`, then restart. |
-| Coding question cannot be run/graded on the server | Docker not running, or image missing: `docker pull python:3.12-slim`. |
+| `password authentication failed for user "exam_user"` | The Postgres volume has other credentials: `docker compose down -v` (deletes local data). |
+| `EADDRINUSE :::3000` | Another API is running. Kill it (C4). |
+| HTTP 429 on login | 5 per minute per IP. Wait a minute. |
+| CORS error in the browser console | Add the origin (no trailing slash) to `CORS_ORIGIN` and restart the API. |
+| "This exam must be taken in the exam app" | Intended. Press **Start exam in exam app**. To sit one in a browser anyway: `REQUIRE_DESKTOP_CLIENT=false` in `apps/api/.env` **and** `VITE_REQUIRE_DESKTOP_EXAM=false` in `apps/web/.env`, restart both. |
+| Coding question cannot be run/graded on the server | Docker not running, or `docker pull python:3.12-slim` not done. |
 
-### Web app
+### Website
 
 | Symptom | Fix |
 |---|---|
-| Blank page / "Network Error" | The API is not running, or `VITE_API_BASE_URL` is wrong. Restart `npm run web:dev` after editing `.env`. |
-| Vite says `Port 3003 is in use` and picks another port | An old Vite is still running; stop it. The Electron app expects 3003. |
-| Changed `.env` but nothing changed | Vite reads `.env` at start-up only. Restart it. |
-| Windows: file changes are not noticed | Repo is on `/mnt/c` in WSL. Move it into `~` in Linux. |
+| Blank page / "Network Error" | API not running, or wrong `VITE_API_BASE_URL`. Restart `npm run web:dev` after editing `.env`. |
+| Vite says `Port 3003 is in use` and picks another | An old Vite is running; stop it. The exam app expects 3003. |
 
----
+## C6. Windows
 
-## 15. Docker Compose for the full stack (not recommended yet)
+Use **WSL2 with Ubuntu** and follow Part B inside the Ubuntu terminal: `wsl --install -d Ubuntu`, install Docker
+Desktop with WSL integration enabled, and clone the repo inside the Linux filesystem (`~`, not `/mnt/c`).
+Windows 11 shows the Electron window through WSLg. Note that `secure-exam://` links clicked in a *Windows*
+browser are not handed to a WSL app; use the fallback in C5 (`npm run exam:app`) there.
+Native Windows is not supported for the exam app: the npm scripts use Unix-only commands (`env -u`) and the
+local code runner needs `bwrap` and POSIX paths.
 
-```bash
-docker compose up --build
-```
-
-This is **known not to work out of the box**: `apps/api/.env` points `DATABASE_URL` at
-`localhost` (the compose file overrides it, but see the next point), the API Dockerfile does
-not build the shared packages before building the API, and the final image copies
-`node_modules` without `packages/`, which breaks the `@secure-exam/*` links. It also does
-not include the web app or the Electron app. Use the local workflow in this guide.
-For just the database, use `docker compose up -d postgres`.
-
----
-
-## 16. Project layout and further reading
+## C7. Project layout and further reading
 
 ```
-apps/api                       NestJS API
-apps/web                       Admin + student UI (Vite, port 3003)
-apps/exam-client/src           Electron main + preload code (the exam app)
-apps/exam-client/renderer      legacy student UI (port 3002)
-apps/admin-web                 legacy Next.js admin portal (port 3001)
-packages/types                 shared types              (needs build)
-packages/validation            shared DTOs               (needs build)
-packages/api-client            axios API wrappers        (needs build)
-packages/exam-content-ui       shared exam UI + Monaco editor (used from source)
-docs/                          design notes and contracts
-infra/linux-kiosk              Linux kiosk session, firewall and USB-block scripts
+apps/api                    NestJS API
+apps/web                    website for admins and students (Vite, port 3003)
+apps/exam-client/src        Electron main + preload code (the exam app)
+apps/exam-client/renderer   legacy student UI (port 3002)
+apps/admin-web              legacy Next.js admin portal (port 3001)
+packages/types              shared types          (needs build: npm run typecheck)
+packages/validation         shared DTOs           (needs build)
+packages/api-client         axios API wrappers    (needs build)
+packages/exam-content-ui    shared exam UI + code editor (used from source)
+scripts/                    exam:register and exam:app helpers
+docs/                       design notes and contracts
+infra/linux-kiosk           Linux kiosk session, firewall and USB-block scripts
 ```
 
-- [CLAUDE.md](CLAUDE.md): architecture, invariants and gotchas (the most detailed reference).
+- [CLAUDE.md](CLAUDE.md): architecture, invariants and gotchas.
 - [docs/kiosk-integration.md](docs/kiosk-integration.md): the exam app design, what has been verified and what has not.
 - [docs/local-code-runner.md](docs/local-code-runner.md): the student-code sandbox contract.
 - [docs/phase4-contracts.md](docs/phase4-contracts.md): shared API contracts.
-- [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md): installing the Linux kiosk session.
-
-### One-page cheat sheet (Linux / macOS)
-
-```bash
-git clone git@github.com:arnavmishra2005/secure-exam-platform.git && cd secure-exam-platform
-git checkout integrate/final
-npm install
-npx electron --version                      # expect v44.9.3; else: node node_modules/electron/install.js
-npm run typecheck                           # builds types, validation, api-client
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-docker compose up -d postgres               # wait for "healthy"
-docker pull python:3.12-slim
-npm run migration:run                       # BEFORE the API has ever run
-npm run db:seed
-npm run dev                                 # terminal 1: API + web app
-npm run exam:app                            # terminal 2: exam app, signed in as alice, no pasting
-```
+- [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md): the Linux kiosk session.

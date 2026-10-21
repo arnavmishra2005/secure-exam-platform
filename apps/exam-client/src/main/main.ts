@@ -25,16 +25,15 @@ if (!app.requestSingleInstanceLock()) {
 registerAppScheme(); // must run before the app is ready
 
 let mainWindow: BrowserWindow | null = null;
-// The launch link this app was started with. On macOS an unpackaged app is not offered
-// secure-exam:// links by the OS, so development can supply it in EXAM_LAUNCH_LINK.
+// The launch link this app was started with: on the command line (the OS passes it), or, in
+// development, EXAM_LAUNCH_LINK.
 const startupLink: string | null = deepLinkFromArgv(process.argv) ?? process.env.EXAM_LAUNCH_LINK ?? null;
 setLaunchToken(startupLink ? tokenFromDeepLink(startupLink) : null);
 
-// Register as the handler of secure-exam:// links. When running from source on
-// Windows/Linux the launcher needs the script path; macOS only honours this in a packaged app.
-if (process.defaultApp && process.argv[1]) {
-  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-} else {
+// A packaged/installed app registers itself as the handler of secure-exam:// links. From source
+// it must not: Electron would register its bare binary (which opens its welcome page instead of
+// this app) and displace the launcher that `npm run exam:register` installs for development.
+if (!process.defaultApp) {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
 

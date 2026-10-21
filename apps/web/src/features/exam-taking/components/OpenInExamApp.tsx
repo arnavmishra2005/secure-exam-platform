@@ -67,9 +67,10 @@ export function OpenInExamApp({ examId, resuming }: { examId: string; resuming: 
       )}
       {link && import.meta.env.DEV && (
         <p className="break-all rounded border bg-muted/40 p-2 font-mono text-[11px]">
-          Development: macOS does not hand links to an unpackaged app. Start it with
+          Development: if the exam app did not open, run <code>npm run exam:register</code> once (see the README), or start it
+          with
           <br />
-          EXAM_LAUNCH_LINK=&quot;{link}&quot; npm run client:desktop
+          EXAM_LAUNCH_LINK=&quot;{link}&quot; npm run desktop:start --workspace=@secure-exam/exam-client-desktop
         </p>
       )}
     </div>
