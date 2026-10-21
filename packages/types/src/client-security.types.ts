@@ -113,6 +113,10 @@ export interface DesktopReadiness {
 export interface DesktopBridge {
   isDesktop: () => boolean;
   getReadiness?: () => Promise<DesktopReadiness>;
+  /** The one-time launch token this app was opened with, if any. */
+  getLaunchToken?: () => Promise<string | null>;
+  /** Forget the launch token once it has been redeemed. */
+  clearLaunchToken?: () => void;
   exitKiosk?: (pin?: string) => Promise<{ ok: boolean; reason?: string }>;
   notifySubmitted?: () => void;
   setSecurityMode?: (active: boolean) => void;
@@ -123,4 +127,22 @@ export interface DesktopBridge {
   onSecurityEvent?: (cb: (event: DesktopSecurityEvent) => void) => () => void;
   /** Local Python runner (docs/local-code-runner.md). */
   runCode?: (job: import('./coding.types').LocalRunJob) => Promise<import('./coding.types').ExecutionOutcome[]>;
+}
+
+// ---- Opening an exam in the exam app ----
+// The browser asks for a one-time launch token and opens secure-exam://launch/<token>.
+// The password never leaves the browser: the app redeems the token for a normal session.
+
+/** POST /auth/exam-launch (student, browser) */
+export interface ExamLaunchCreated {
+  /** Single use. Put it in the secure-exam://launch/<token> link. */
+  token: string;
+  expiresInSeconds: number;
+}
+
+/** POST /auth/exam-launch/preview (exam app): who the token belongs to, without using it up. */
+export interface ExamLaunchPreview {
+  email: string;
+  fullName: string;
+  examId: string;
 }

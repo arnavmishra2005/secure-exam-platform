@@ -10,6 +10,8 @@ export const IPC = {
   OPEN_EXTERNAL: 'desktop:open-external',
   RUN_CODE: 'desktop:run-code',
   DRAIN_EVENTS: 'desktop:drain-events',
+  GET_LAUNCH_TOKEN: 'desktop:get-launch-token',
+  CLEAR_LAUNCH_TOKEN: 'desktop:clear-launch-token',
   // Main → Renderer
   SECURITY_EVENT: 'desktop:security-event',
 } as const;

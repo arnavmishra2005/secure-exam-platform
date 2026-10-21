@@ -1,24 +1,63 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const createExamLaunch = vi.fn();
+vi.mock('@secure-exam/api-client', () => ({ createExamLaunch: (...a: unknown[]) => createExamLaunch(...a) }));
+
 import { DesktopOnly } from './DesktopOnly';
 import { OpenInExamApp } from './OpenInExamApp';
 
 const ID = '11111111-1111-4111-8111-111111111111';
+const TOKEN = 'A'.repeat(43);
+const realLocation = window.location;
 
+beforeEach(() => {
+  createExamLaunch.mockReset();
+  Object.defineProperty(window, 'location', { configurable: true, value: { href: 'http://localhost/' } });
+});
 afterEach(() => {
+  Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
   delete (window as { desktop?: unknown }).desktop;
 });
 
 describe('OpenInExamApp', () => {
-  it('links to the exam app with the exam id', () => {
+  it('cannot start until the student accepts the instructions', () => {
     render(<OpenInExamApp examId={ID} resuming={false} />);
-    expect(screen.getByRole('link', { name: /open in exam app/i }).getAttribute('href')).toBe(`secure-exam://exam/${ID}`);
+    const start = screen.getByRole('button', { name: /start exam in exam app/i });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect((start as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('says resume when an attempt is already running', () => {
+  it('asks for a one-time launch token and opens the app with it, never a password', async () => {
+    createExamLaunch.mockResolvedValue({ token: TOKEN, expiresInSeconds: 120 });
+    render(<OpenInExamApp examId={ID} resuming={false} />);
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /start exam in exam app/i }));
+
+    await waitFor(() => expect(window.location.href).toBe(`secure-exam://launch/${TOKEN}`));
+    expect(createExamLaunch).toHaveBeenCalledWith(ID);
+  });
+
+  it('resuming needs no checkbox', async () => {
+    createExamLaunch.mockResolvedValue({ token: TOKEN, expiresInSeconds: 120 });
     render(<OpenInExamApp examId={ID} resuming />);
-    expect(screen.getByRole('link', { name: /resume in exam app/i })).toBeTruthy();
+
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /resume in exam app/i }));
+    await waitFor(() => expect(window.location.href).toContain('secure-exam://launch/'));
+  });
+
+  it('shows the problem and stays on the page when the token cannot be created', async () => {
+    createExamLaunch.mockRejectedValue({ response: { status: 500, data: { message: 'Server error' } } });
+    render(<OpenInExamApp examId={ID} resuming />);
+
+    fireEvent.click(screen.getByRole('button', { name: /resume in exam app/i }));
+    await waitFor(() => expect(screen.getByText('Server error')).toBeTruthy());
+    expect(window.location.href).toBe('http://localhost/');
   });
 });
 

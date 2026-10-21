@@ -11,6 +11,8 @@ const IPC = {
   OPEN_EXTERNAL: 'desktop:open-external',
   RUN_CODE: 'desktop:run-code',
   DRAIN_EVENTS: 'desktop:drain-events',
+  GET_LAUNCH_TOKEN: 'desktop:get-launch-token',
+  CLEAR_LAUNCH_TOKEN: 'desktop:clear-launch-token',
   SECURITY_EVENT: 'desktop:security-event',
 } as const;
 
@@ -46,6 +48,12 @@ contextBridge.exposeInMainWorld('desktop', {
 
   /** Run the student's Python locally in a sandbox (docs/local-code-runner.md). */
   runCode: (job: unknown): Promise<unknown[]> => ipcRenderer.invoke(IPC.RUN_CODE, job),
+
+  /** The one-time launch token this app was opened with (null when opened directly). */
+  getLaunchToken: (): Promise<string | null> => ipcRenderer.invoke(IPC.GET_LAUNCH_TOKEN),
+
+  /** Forget the launch token once it has been redeemed. */
+  clearLaunchToken: (): void => ipcRenderer.send(IPC.CLEAR_LAUNCH_TOKEN),
 
   /** Security events recorded since the last call (kept in the main process, so a reload loses none). */
   drainEvents: (): Promise<SecurityEvent[]> => ipcRenderer.invoke(IPC.DRAIN_EVENTS),

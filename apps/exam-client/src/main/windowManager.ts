@@ -13,7 +13,7 @@ export function appBaseUrl(): string {
  * always-on-top, shortcut blocking) is switched on only while an exam is
  * running: see SET_SECURITY_MODE in ipc/channels.ts.
  */
-export function createKioskWindow(initialPath = '/'): BrowserWindow {
+export function createKioskWindow(initialPath: string): BrowserWindow {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -51,7 +51,7 @@ export function createKioskWindow(initialPath = '/'): BrowserWindow {
     win.show();
   });
 
-  void win.loadURL(IS_DEV ? `${WEB_DEV_URL}${initialPath}` : `${APP_ORIGIN}${initialPath === '/' ? '/index.html' : initialPath}`);
+  void win.loadURL(`${IS_DEV ? WEB_DEV_URL : APP_ORIGIN}${initialPath}`);
 
   return win;
 }

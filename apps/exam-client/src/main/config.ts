@@ -21,6 +21,9 @@ export const WEB_DIST_DIR = app.isPackaged
   ? path.join(process.resourcesPath, 'web')
   : path.resolve(__dirname, '../../../web/dist');
 
+/** Where the web app is served from (the page itself, not the API). */
+export const WEB_ORIGIN = IS_DEV ? new URL(WEB_DEV_URL).origin : APP_ORIGIN;
+
 /** Origins the page may talk to or navigate within. */
 export const ALLOWED_ORIGINS = [new URL(API_URL).origin, IS_DEV ? new URL(WEB_DEV_URL).origin : APP_ORIGIN];
 

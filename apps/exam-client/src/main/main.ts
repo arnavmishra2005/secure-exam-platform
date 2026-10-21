@@ -1,13 +1,16 @@
 import { app, session, type BrowserWindow } from 'electron';
 import * as path from 'path';
+import { wipeAppData } from './appData';
 import { installAppProtocol, registerAppScheme } from './appProtocol';
 import { API_URL, CLIENT_TYPE_HEADER } from './config';
-import { deepLinkFromArgv, pathForDeepLink, PROTOCOL } from './deepLink';
+import { LAUNCH_PATH } from './allowedPaths';
+import { deepLinkFromArgv, PROTOCOL, tokenFromDeepLink } from './deepLink';
 import { installDisplayMonitor } from './displayMonitor';
 import { isSecurityActive, setQuitting } from './examState';
 import { installFocusMonitor } from './focusMonitor';
 import { installInputGuard } from './inputGuard';
 import { registerIpcHandlers } from './ipc/channels';
+import { setLaunchToken } from './launchState';
 import { installNavigationGuard } from './navigationGuard';
 import { emitSecurityEvent } from './securityEvents';
 import { appBaseUrl, createKioskWindow } from './windowManager';
@@ -22,7 +25,10 @@ if (!app.requestSingleInstanceLock()) {
 registerAppScheme(); // must run before the app is ready
 
 let mainWindow: BrowserWindow | null = null;
-let pendingLink: string | null = deepLinkFromArgv(process.argv);
+// The launch link this app was started with. On macOS an unpackaged app is not offered
+// secure-exam:// links by the OS, so development can supply it in EXAM_LAUNCH_LINK.
+const startupLink: string | null = deepLinkFromArgv(process.argv) ?? process.env.EXAM_LAUNCH_LINK ?? null;
+setLaunchToken(startupLink ? tokenFromDeepLink(startupLink) : null);
 
 // Register as the handler of secure-exam:// links. When running from source on
 // Windows/Linux the launcher needs the script path; macOS only honours this in a packaged app.
@@ -32,18 +38,15 @@ if (process.defaultApp && process.argv[1]) {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
 
-/** Open the exam named by a link. Ignored while an exam is already running. */
+/** A launch link arrived while the app is running. Ignored while an exam is in progress. */
 function openLink(raw: string): void {
-  const target = pathForDeepLink(raw);
-  if (!target) return;
-  if (!mainWindow) {
-    pendingLink = raw;
-    return;
-  }
+  const token = tokenFromDeepLink(raw);
+  if (!token || !mainWindow) return;
   if (isSecurityActive()) return; // never pull the student out of an exam in progress
+  setLaunchToken(token);
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.focus();
-  void mainWindow.loadURL(`${appBaseUrl()}${target}`);
+  void mainWindow.loadURL(`${appBaseUrl()}${LAUNCH_PATH}`);
 }
 
 // macOS delivers links through this event, Linux/Windows through the second instance's argv.
@@ -69,6 +72,16 @@ app.on('before-quit', (event) => {
   setQuitting(true);
 });
 
+// Whichever way the app ends (Close button, the 30-second timer, the fallback timer), remove
+// the stored login and answers first. will-quit can wait for an async step; before-quit cannot.
+let wiped = false;
+app.on('will-quit', (event) => {
+  if (wiped) return;
+  event.preventDefault();
+  wiped = true;
+  void wipeAppData().finally(() => app.quit());
+});
+
 app.whenReady().then(() => {
   installAppProtocol();
 
@@ -78,9 +91,8 @@ app.whenReady().then(() => {
     done({ requestHeaders: { ...details.requestHeaders, [CLIENT_TYPE_HEADER]: 'DESKTOP' } });
   });
 
-  const initialPath = (pendingLink && pathForDeepLink(pendingLink)) || '/';
-  pendingLink = null;
-  const win = createKioskWindow(initialPath);
+  // The app always opens on the launch screen; it has no other front door.
+  const win = createKioskWindow(LAUNCH_PATH);
   mainWindow = win;
 
   // Alt+F4 / the window's close button during an exam is refused and recorded.

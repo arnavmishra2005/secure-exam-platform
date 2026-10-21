@@ -5,6 +5,7 @@
 import type { DesktopSecurityEvent } from '@secure-exam/types';
 import { AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { desktop, isDesktop, useDesktopSecurityEvents } from './desktop';
 
@@ -37,7 +38,9 @@ export function ViolationBanner() {
     return () => clearTimeout(timer);
   }, [last]);
 
-  if (!isDesktop()) return null;
+  const { pathname } = useLocation();
+  // Once the exam is over there is nothing to warn about and the page has its own Close button.
+  if (!isDesktop() || pathname.endsWith('/submitted')) return null;
 
   async function handleExit() {
     const result = await desktop.exitKiosk(pin);

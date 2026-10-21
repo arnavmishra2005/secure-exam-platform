@@ -1,4 +1,8 @@
-import { vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, vi } from 'vitest';
+
+// Vitest runs without globals here, so testing-library cannot clean up after each test by itself.
+afterEach(() => cleanup());
 
 // Person B's code editor (Monaco) needs workers and real layout, which jsdom
 // lacks. Importing the exam-content-ui barrel would otherwise crash any test

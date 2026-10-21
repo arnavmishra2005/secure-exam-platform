@@ -14,6 +14,14 @@ import { DataSource } from 'typeorm';
 import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 import * as bcrypt from 'bcrypt';
 import cliDataSource from './data-source';
+import {
+  MERGE_INTERVALS_MARKS,
+  MERGE_INTERVALS_REFERENCE,
+  MERGE_INTERVALS_STARTER,
+  MERGE_INTERVALS_STATEMENT,
+  MERGE_INTERVALS_TEST_CASES,
+  MERGE_INTERVALS_TITLE,
+} from './seed-data/merge-intervals';
 
 // ── Seed data ──────────────────────────────────────────────────────────────
 
@@ -294,6 +302,54 @@ async function seedActiveExam(ds: DataSource) {
   }
 }
 
+/**
+ * A medium coding question (Merge Intervals) in the sample exam, so the code editor, the
+ * runner and the grading can be tried. Separate from the MCQs above so that it is also
+ * added to a database that already has them. Idempotent: skipped when the exam has a coding question.
+ */
+async function seedCodingQuestion(ds: DataSource) {
+  const existing = await ds.query<{ id: string }[]>(
+    `SELECT q.id FROM questions q JOIN exam_questions eq ON eq."question_id" = q.id
+      WHERE eq."exam_id" = $1 AND q."type" = 'CODING' LIMIT 1`,
+    [SAMPLE_EXAM_ID],
+  );
+  if (existing.length > 0) {
+    console.log('   ⏭  Coding question already in the sample exam');
+    return;
+  }
+
+  console.log('   💻 Adding the coding question…');
+  const [question] = await ds.query<{ id: string }[]>(
+    `INSERT INTO questions ("text", "type", "marks", "negative_marks", "difficulty", "status")
+     VALUES ($1, 'CODING', $2, 0, 'MEDIUM', 'READY') RETURNING id`,
+    [MERGE_INTERVALS_TITLE, MERGE_INTERVALS_MARKS],
+  );
+  await ds.query(
+    `INSERT INTO coding_problems
+       ("question_id", "statement_md", "starter_code", "allowed_languages", "time_limit_ms", "memory_limit_mb", "comparison_mode", "reference_solution")
+     VALUES ($1, $2, $3::jsonb, '{python}', 2000, 256, 'TRIM', $4)`,
+    [question.id, MERGE_INTERVALS_STATEMENT, JSON.stringify({ python: MERGE_INTERVALS_STARTER }), MERGE_INTERVALS_REFERENCE],
+  );
+  let order = 0;
+  for (const t of MERGE_INTERVALS_TEST_CASES) {
+    await ds.query(
+      `INSERT INTO coding_test_cases ("question_id", "input", "expected_output", "is_sample", "weight", "order")
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [question.id, t.input, t.expectedOutput, t.isSample, t.weight, order++],
+    );
+  }
+  const [{ next }] = await ds.query<{ next: number }[]>(
+    `SELECT COALESCE(MAX("order"), 0) + 1 AS next FROM exam_questions WHERE "exam_id" = $1`,
+    [SAMPLE_EXAM_ID],
+  );
+  await ds.query(`INSERT INTO exam_questions ("exam_id", "question_id", "order") VALUES ($1, $2, $3)`, [
+    SAMPLE_EXAM_ID,
+    question.id,
+    next,
+  ]);
+  console.log(`   ✅ "${MERGE_INTERVALS_TITLE}" (${MERGE_INTERVALS_MARKS} marks, ${MERGE_INTERVALS_TEST_CASES.length} test cases) added as question ${next}`);
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function seed() {
@@ -328,6 +384,7 @@ async function seed() {
 
   // ── Active Exam ────────────────────────────────────────────────────────
   await seedActiveExam(ds);
+  await seedCodingQuestion(ds);
   await seedCourse(ds, studentIds);
 
   console.log('\n──────────────────────────────────────────────────────');
@@ -343,6 +400,7 @@ async function seed() {
     console.log(`    ${s.fullName.padEnd(18)} → ${s.email} / ${s.password}`);
   }
   console.log('');
+  console.log('  The sample exam has 5 multiple-choice questions and 1 coding question (Merge Intervals, 10 marks).');
   console.log('  Active Exam ID for Testing:');
   console.log(`    ${SAMPLE_EXAM_ID}`);
   console.log('──────────────────────────────────────────────────────\n');

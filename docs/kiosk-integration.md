@@ -22,10 +22,31 @@ Student PC                                        Server
 └───────────────────────────────────────┘
 ```
 
-**What runs where.** The admin portal and the student dashboard, results and notifications all work in a
-normal browser (`apps/web`). Only sitting an exam needs the exam app: the browser shows **Open in exam app**
-(a `secure-exam://exam/<examId>` link), the app opens on that exam, and the server refuses to start, serve,
-save or submit an exam to anything that is not the exam app.
+**What runs where.** The admin portal and the student dashboard, results and notifications all work in a normal
+browser (`apps/web`). The exam app is a single-purpose exam launcher, like Safe Exam Browser:
+
+```
+browser                          exam app (Electron)                          after the exam
+───────                          ───────────────────                          ──────────────
+student signs in
+opens the exam, ticks the
+instructions, "Start exam in
+exam app"
+   │ POST /auth/exam-launch  → one-time token (hashed in the DB, ~2 min, single use)
+   └─ secure-exam://launch/<token> ─►  opens on /launch:
+                                       email (read-only) + password (dots, read-only)
+                                       readiness checks, "Login"
+                                          │ POST /auth/exam-launch/redeem → normal session
+                                          ▼
+                                       starts / resumes the attempt, locks the window → exam
+                                          │ submit
+                                          ▼
+                                       "Exam submitted" + Close app + 30 s auto-close ─► app wipes its data and quits
+```
+
+The password never leaves the browser: the app only ever sees the one-time token. The app can show exactly three
+screens (`/launch`, `/student/exam`, `/student/exam/submitted`); everything else is blocked in the web app
+(`DesktopLockRoot`) and in the main process (`allowedPaths.ts`, `navigationGuard.ts`).
 
 - `apps/exam-client/src` is C's Electron shell. It loads `apps/web`.
 - `apps/exam-client/renderer` and `apps/admin-web` are legacy and untouched by the kiosk work.
@@ -58,7 +79,7 @@ save or submit an exam to anything that is not the exam app.
 | 18 | Dev/start scripts clear `ELECTRON_RUN_AS_NODE` (`env -u`) | Some terminals (the VS Code integrated terminal, for one) export it. With it set, `electron .` runs as plain Node, `require('electron')` is a string, and the app cannot start. |
 | 19 | Merge via a new branch `integrate/final`, not into `main` directly | `integrate/a-b` stays intact as the reference. |
 | 20 | Exams are exam-app-only, enforced on the server (`DesktopClientGuard`, `REQUIRE_DESKTOP_CLIENT`, default on) | Applied to start attempt, fetch questions, save answer and submit. The browser keeps everything else. Without this, a student could sit the exam in a normal tab and skip the kiosk. The header is advisory against a determined cheater (anyone can send it); the OS kiosk session is the real barrier. |
-| 21 | The browser opens the app through a `secure-exam://` link | The app registers the scheme (electron-builder `protocols`; `setAsDefaultProtocolClient`). `deepLink.ts` accepts only `secure-exam://exam/<uuid>` and maps it to a fixed in-app path. It is ignored while an exam is running. No token travels in the link: the student signs in inside the app (the session is kept between launches). |
+| 21 | The browser opens the app through `secure-exam://launch/<token>`, a one-time launch token, never a password | The scheme is registered by the app (electron-builder `protocols` + `mimeTypes`; `setAsDefaultProtocolClient`). `deepLink.ts` accepts only a 43-character base64url token. The token is created by `POST /auth/exam-launch` (students only), stored as a SHA-256 hash, valid `EXAM_LAUNCH_TTL_SECONDS` (default 120), and used up by one atomic `UPDATE ... WHERE usedAt IS NULL AND expiresAt > now()`, so two simultaneous redeems cannot both win. A password or refresh token in a link would end up in browser history, OS handlers and logs. |
 | 22 | Key blocking matches the physical key (`code`) and treats Ctrl and Cmd alike (`main/keyPolicy.ts`) | C's list only matched `Ctrl`, so Cmd+R reloaded on macOS. On macOS Option changes the produced character (Option+I types `ˆ`), so a rule on the character misses DevTools. Ctrl-or-Cmd on both systems is a safe superset. A pure function with tests for macOS and Linux. |
 | 23 | AltGr is never blocked | Many layouts report AltGr as Ctrl+Alt; students need it for `[ ] { }` in Python. Only explicit Ctrl+Alt combinations (Ctrl+Alt+T, L, Del, F1-F7) are blocked. |
 | 24 | Editing shortcuts are never blocked | Copy, paste, undo, select all, Cmd+Left/Right and word/line navigation stay. External paste into the editor is already refused by the editor itself. |
@@ -73,6 +94,17 @@ save or submit an exam to anything that is not the exam app.
 | 33 | The API caps events at 50 per request and 2000 per attempt | A broken or hostile client cannot fill the table. |
 | 34 | Another student's attempt answers 404, not 403, when reporting events | It does not reveal that the attempt exists. |
 | 35 | `OPEN_EXTERNAL` only opens `http(s)` URLs | It used to hand any scheme to the operating system. |
+| 36 | The sign-in screen shows the email and a masked password, both read-only, and a Login button | This is what the student sees, as asked, but it is a display: Login redeems the token. Nothing typed there can change who signs in. |
+| 37 | The app opens on `/launch` and nothing else; no login, no dashboard | A student who opens the app directly gets "Open your exam from the browser" and a Close button. |
+| 38 | Login goes straight into the exam (no instructions page in the app) | The student already read the rules and ticked the timer notice in the browser before the app opened. Readiness checks run on the sign-in screen and disable Login until they pass. |
+| 39 | Preview and redeem are public but require `X-Client-Type: DESKTOP`, are throttled (10 per minute), and return **410 Gone** for a bad, used or expired token | 410 and not 401: the web client treats a 401 as "refresh the session and retry". Redeem also refuses admins and deactivated users. |
+| 40 | The app's token is held in the main process and read over IPC (`getLaunchToken`), then forgotten (`clearLaunchToken`) | It never sits in a page URL or in the page's storage. |
+| 41 | After submit the window **stays** locked on the "submitted" screen; it is not released | The student sees the message and can only close the app. Key blocking ends (nothing left to protect) and closing is allowed. |
+| 42 | The submitted screen has one button, Close app, plus a 30-second auto-close; the main process quits the app 45 s after submit if the page cannot | No dashboard, no sign-out, no links. If the submission is still pending (offline) or not confirmed, nothing closes automatically and the student is told why. |
+| 43 | The app wipes its own storage on every way out (`will-quit` -> `clearStorageData`) and when started without a link | No login or answers are left on the lab PC. The page does not clear them itself while the "submitted" screen is up: a request failing with 401 would send the app away from the message. |
+| 44 | A stray route during an exam returns to the exam, not to the launch screen; the launch screen only clears the stored login when no exam is running | Otherwise any redirect to `/launch` mid-exam would sign the student out. Found while testing. |
+| 45 | `ViolationBanner` and its exit button are hidden on the submitted screen | There is nothing to warn about, and the page has its own Close button. |
+| 46 | Development on macOS supplies the link in `EXAM_LAUNCH_LINK` | macOS only hands links to a packaged app. The browser page shows the exact command in development. |
 
 ## 3. Bugs found and fixed during the merge
 
@@ -87,7 +119,8 @@ save or submit an exam to anything that is not the exam app.
 9. **Cmd+Q quit the app mid-exam:** see decision 27.
 10. **Cmd+Option+I (DevTools) would have slipped through on macOS** because Option changes the produced character. See decision 22.
 11. **A bare Cmd press was a violation on macOS** in C's list (`meta` key rule), so every Cmd+C would have been logged.
-12. **Nothing was reported to the server:** violations only lived in the banner and the console (`violationCount` was always null). See section 5.
+12. **A stray route mid-exam signed the student out** (found by the end-to-end test of the launch flow): see decision 44.
+13. **Nothing was reported to the server:** violations only lived in the banner and the console (`violationCount` was always null). See section 5.
 
 ## 4. Electron versions and macOS signing (what we learned)
 
@@ -142,7 +175,13 @@ menu bar. Focus loss from any of them is recorded.
 Electron 12 (key policy for macOS and Linux, deep-link parsing); API lint 0 errors; `web:build`; a fresh database built from
 migrations only (no drift for the new table, revert and re-apply work).
 
-**Verified by running it (macOS, Electron 44.9.3, real window):**
+**Verified by running it, launch flow (macOS, Electron 44.9.3, real window, isolated database/API/web, 2 full runs):**
+- Browser side over HTTP: admins and anonymous callers cannot create a token; a token is stored hashed; the exam app can preview it; a browser cannot preview or redeem it; a made-up token gives 410; redeem works once, the second try gives 410; the new session works; the login is audited; 4 simultaneous redeems give exactly one success.
+- The app opens on `/launch` with the email read-only, the password read-only and shown as dots, typing does nothing, and the token is not present in the page. Login goes straight to `/student/exam` (fullscreen, frameless). An attempt already running is resumed.
+- `location.assign`, a router push to `/student/dashboard` and to `/admin/exams` all leave the student on the exam; each is recorded as a `NAV_BLOCKED` violation.
+- Finish exam -> Confirm & Submit -> "Exam submitted ... instructor will publish the results ... check them in your browser ... close this app", one button (Close app), no links, cannot navigate away, countdown from 30, the app closed itself, and its log shows the stored login, cache and answers were cleared. The server shows the attempt `SUBMITTED`, one submission, the token used, the app login in the audit log.
+
+**Verified by running it, earlier (macOS, Electron 44.9.3, real window):**
 - The API refuses start / questions / save answer / submit from a browser (403) and accepts the exam app; admins cannot start an exam.
 - Events are recorded, shown to the admin, counted on the monitoring and results screens, and written to the audit trail.
 - Alice signs in inside Electron, resumes the exam, and the window goes frameless fullscreen with the Dock hidden.
@@ -153,7 +192,7 @@ migrations only (no drift for the new table, revert and re-apply work).
 **Not verified:**
 - The keys were injected through Electron's debugging protocol, which goes through the same keyboard path (`before-input-event`) as a physical keyboard. A final check by hand on a real keyboard is still worth doing, especially on Ubuntu.
 - Everything on Ubuntu: the key policy is unit-tested for Linux, but the lockdown, Super-key blocking, forced refocus, `setAlwaysOnTop('screen-saver')` behaviour under Wayland vs X11, the `infra/linux-kiosk` scripts, nftables, the bubblewrap command line, and Monaco inside Electron.
-- `secure-exam://` links: parsing is tested; actually launching the app from a browser link is untested (macOS only registers the scheme for a packaged app; Linux needs the `.deb`/AppImage installed, which writes the `MimeType` entry).
+- `secure-exam://` links: parsing is tested and the app was started with a link through `EXAM_LAUNCH_LINK`, but the browser actually handing the link to the installed app is untested (macOS only registers the scheme for a packaged app; Linux needs the `.deb`/AppImage installed, which writes the `MimeType` entry).
 - `npm run desktop:build` and the packaged `app://exam` path. Only the dev path (`localhost:3003`) has been run.
 - Cmd+C/V in text fields via the macOS Edit menu (the injected keys cannot exercise menu roles).
 - Quit guard: Cmd+Q is blocked at the key level and tested; the `before-quit` path itself (for example the Dock menu's Quit) was not triggered.
@@ -169,6 +208,14 @@ migrations only (no drift for the new table, revert and re-apply work).
 - **Resuming from a browser:** reading the question list and saving answers are blocked from a browser, but the attempt's heartbeat and `GET /attempts/:id` are not. That reveals nothing sensitive; revisit if it matters.
 - **Device sessions:** one active session per student (`DeviceSession` in the contract types).
 - **Server-controlled exit PIN:** fetch it from an exam policy instead of an environment variable.
+
+### Exam launch (A / C)
+- **One refresh token per user.** `users.refreshTokenHash` holds a single hash, so signing in inside the exam app replaces the browser's refresh token. The browser session keeps working until its 15-minute access token expires, then the student has to sign in again in the browser (which is when they would look at results anyway). Fix: a table of refresh tokens per device/session instead of one hash. It touches Person A's auth module.
+- Old rows in `exam_launch_tokens` are never deleted. Add a small cleanup (a cron or on `create`) for rows past `expiresAt + 1 day`.
+- `POST /auth/exam-launch` does not check that the student is registered for the exam or that it is active; the attempt start does, and the app shows that message. Checking at creation would stop a pointless app launch.
+- A student who closes the app early can start again from the browser only while the exam window and their own timer allow. A new launch token resumes the running attempt. Consider telling the admin when an app is closed mid-exam (a `HEARTBEAT_LOST` is the only signal today).
+- Auto-close is 30 s (`AUTO_CLOSE_SECONDS`) and the main-process fallback 45 s; make them settings if the invigilators want something else.
+- The sign-in screen's password field is a display; if you ever want a real second factor (an exam PIN typed at the lab), this is where it would go.
 
 ### Electron app (C)
 - The old `exitPolicy.test.mjs` tested a copy of the logic, so it was removed. The exit rule (PIN needed during an exam, free after submit) now lives in `ipc/channels.ts` with no test: extract it into a pure function next to `keyPolicy.ts` and test it.
@@ -207,7 +254,9 @@ migrations only (no drift for the new table, revert and re-apply work).
 npm install && npm run typecheck
 docker compose up -d postgres && npm run migration:run && npm run db:seed
 npm run api:start                 # apps/api/.env: CORS_ORIGIN must include app://exam for packaged builds
-npm run client:desktop            # compiles Electron, starts apps/web on :3003 and opens the app
+npm run web:dev                   # browser: sign in, open the exam, press "Start exam in exam app"
+                                  # the page shows the launch link (development only)
+EXAM_LAUNCH_LINK="secure-exam://launch/<token>" npm run client:desktop   # opens the app on that exam
 # no bubblewrap on your machine? for development only:
 EXAM_UNSANDBOXED_RUNNER=1 npm run client:desktop
 # test an admin in the exam app (dev only): ALLOW_ADMIN_ON_DESKTOP=true in apps/api/.env
@@ -217,8 +266,8 @@ npm run desktop:test              # key policy (macOS + Linux) and deep-link tes
 ```
 
 Environment variables added: `ALLOW_ADMIN_ON_DESKTOP` (default false), `REQUIRE_DESKTOP_CLIENT` (default **true**),
-`VIOLATION_FLAG_THRESHOLD` (default 5) on the API; `VITE_REQUIRE_DESKTOP_EXAM` (default true) in `apps/web`;
-`EXAM_API_URL`, `EXAM_WEB_URL`, `INVIGILATOR_PIN`, `EXAM_UNSANDBOXED_RUNNER` for Electron.
+`VIOLATION_FLAG_THRESHOLD` (default 5), `EXAM_LAUNCH_TTL_SECONDS` (default 120) on the API; `VITE_REQUIRE_DESKTOP_EXAM` (default true) in `apps/web`;
+`EXAM_API_URL`, `EXAM_WEB_URL`, `EXAM_LAUNCH_LINK` (development), `INVIGILATOR_PIN`, `EXAM_UNSANDBOXED_RUNNER` for Electron.
 
 **Existing `.env` files:** `REQUIRE_DESKTOP_CLIENT` defaults to true, so after pulling this branch the browser can no longer
 start an exam. To test in a browser, set both flags above to false.

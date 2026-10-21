@@ -53,4 +53,6 @@ export const envValidationSchema = Joi.object({
   REQUIRE_DESKTOP_CLIENT: Joi.boolean().default(true),
   // Violations at which an attempt shows as flagged on the monitoring screen.
   VIOLATION_FLAG_THRESHOLD: Joi.number().integer().min(1).default(5),
+  // How long a one-time exam launch token (browser -> exam app) stays valid.
+  EXAM_LAUNCH_TTL_SECONDS: Joi.number().integer().min(30).max(600).default(120),
 });

@@ -33,6 +33,7 @@ import { QuestionScoreEntity } from '../modules/results/entities/question-score.
 // Phase 4 — Person C
 import { ExamExtensionEntity } from '../modules/extension/entities/exam-extension.entity';
 import { SecurityEventEntity } from '../modules/client-security/entities/security-event.entity';
+import { ExamLaunchTokenEntity } from '../modules/client-security/entities/exam-launch-token.entity';
 
 export default new DataSource({
   type: 'postgres',
@@ -69,6 +70,7 @@ export default new DataSource({
     // Phase 4 — Person C
     ExamExtensionEntity,
     SecurityEventEntity,
+    ExamLaunchTokenEntity,
   ],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,

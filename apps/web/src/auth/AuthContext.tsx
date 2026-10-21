@@ -5,6 +5,7 @@
 
 import { getMe, login as loginRequest, logout as logoutRequest } from '@secure-exam/api-client';
 import { Role } from '@secure-exam/types';
+import type { LoginResponse } from '@secure-exam/types';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { clearTokens, onSessionEvent, refreshSession, storeTokens } from './session';
 
@@ -20,6 +21,8 @@ interface AuthContextValue {
   /** True until the stored session has been restored or ruled out. */
   isLoading: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
+  /** Adopt a session issued another way (the exam app's one-time launch token). */
+  signInWithSession: (session: LoginResponse) => AuthUser;
   logout: () => Promise<void>;
 }
 
@@ -70,6 +73,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return signedIn;
   }, []);
 
+  const signInWithSession = useCallback((session: LoginResponse) => {
+    storeTokens(session.accessToken, session.refreshToken);
+    const signedIn = session.user as AuthUser;
+    setUser(signedIn);
+    return signedIn;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await logoutRequest();
@@ -82,7 +92,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo(() => ({ user, isLoading, login, logout }), [user, isLoading, login, logout]);
+  const value = useMemo(
+    () => ({ user, isLoading, login, signInWithSession, logout }),
+    [user, isLoading, login, signInWithSession, logout],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

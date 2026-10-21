@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, app, shell } from 'electron';
 import { IPC, type ViolationType } from '../../shared/types';
 import { IS_DEV } from '../config';
 import { isExamActive, isExamSubmitted, isSecurityActive, setExamActive, setExamSubmitted, setQuitting } from '../examState';
+import { getLaunchToken, setLaunchToken } from '../launchState';
 import { runReadinessChecks } from '../readiness/checks';
 import { runCode, type LocalRunJob } from '../runner/localRunner';
 import { drainSecurityEvents, emitSecurityEvent } from '../securityEvents';
@@ -28,6 +29,10 @@ function unlock(win: BrowserWindow): void {
   win.setClosable(true);
   win.maximize();
 }
+
+/** If the page cannot close the app (a crash, a stuck screen), this does, shortly after the exam. */
+const FALLBACK_QUIT_AFTER_SUBMIT_MS = 45_000;
+let fallbackQuit: NodeJS.Timeout | null = null;
 
 export function registerIpcHandlers(win: BrowserWindow): void {
   // Pre-exam readiness (single display, server reachable, no forbidden apps).
@@ -56,11 +61,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
-  // The page confirms the submission: release the lockdown.
+  // The page confirms the submission. The exam is over, but the app is not a general
+  // window: it stays full screen on the "submitted" message and can only be closed.
+  // The shortcut blocking ends (nothing left to protect); closing is now allowed.
   ipcMain.on(IPC.NOTIFY_SUBMITTED, () => {
     setExamSubmitted();
-    unlock(win);
+    win.setClosable(true);
+    fallbackQuit ??= setTimeout(() => {
+      setQuitting(true);
+      app.quit();
+    }, FALLBACK_QUIT_AFTER_SUBMIT_MS);
   });
+
+  ipcMain.handle(IPC.GET_LAUNCH_TOKEN, () => getLaunchToken());
+  ipcMain.on(IPC.CLEAR_LAUNCH_TOKEN, () => setLaunchToken(null));
 
   // Leaving the exam app. Free after submission; needs the invigilator PIN during an exam.
   ipcMain.handle(IPC.EXIT_KIOSK, (_event, pin?: string) => {

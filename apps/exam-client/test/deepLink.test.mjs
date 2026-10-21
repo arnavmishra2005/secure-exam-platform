@@ -1,33 +1,53 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deepLinkFromArgv, pathForDeepLink } from '../dist/main/deepLink.js';
+import { isAllowedAppPath } from '../dist/main/allowedPaths.js';
+import { deepLinkFromArgv, isLaunchToken, tokenFromDeepLink } from '../dist/main/deepLink.js';
 
-const ID = '11111111-1111-4111-8111-111111111111';
+const TOKEN = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde'; // 43 base64url characters
 
-test('a valid exam link maps to the in-app instructions page', () => {
-  assert.equal(pathForDeepLink(`secure-exam://exam/${ID}`), `/student/exams/${ID}`);
-  assert.equal(pathForDeepLink(`secure-exam://exam/${ID}/`), `/student/exams/${ID}`);
-  assert.equal(pathForDeepLink(`secure-exam://exam/${ID.toUpperCase()}`), `/student/exams/${ID}`);
+test('the token fixture is 43 characters', () => assert.equal(TOKEN.length, 43));
+
+test('a valid launch link yields its token', () => {
+  assert.equal(tokenFromDeepLink(`secure-exam://launch/${TOKEN}`), TOKEN);
+  assert.equal(tokenFromDeepLink(`secure-exam://launch/${TOKEN}/`), TOKEN);
 });
 
 test('anything else is rejected', () => {
   for (const bad of [
-    'secure-exam://exam/not-a-uuid',
-    'secure-exam://exam/',
-    'secure-exam://admin/' + ID,
-    'secure-exam://exam/../../admin/exams',
-    `secure-exam://exam/${ID}/../x`,
-    `https://exam/${ID}`,
-    `secure-exam://evil.com/${ID}`,
+    'secure-exam://launch/short',
+    `secure-exam://launch/${TOKEN}x`,
+    `secure-exam://launch/${TOKEN.slice(0, 42)}`,
+    'secure-exam://launch/',
+    `secure-exam://exam/${TOKEN}`,
+    `secure-exam://admin/${TOKEN}`,
+    `secure-exam://launch/${TOKEN}/../x`,
+    `secure-exam://launch/${'A'.repeat(42)}!`,
+    `https://launch/${TOKEN}`,
     'javascript:alert(1)',
     'not a url',
     '',
   ]) {
-    assert.equal(pathForDeepLink(bad), null, bad);
+    assert.equal(tokenFromDeepLink(bad), null, bad);
   }
 });
 
+test('isLaunchToken only accepts 43 base64url characters', () => {
+  assert.equal(isLaunchToken(TOKEN), true);
+  assert.equal(isLaunchToken('a'.repeat(44)), false);
+  assert.equal(isLaunchToken(undefined), false);
+  assert.equal(isLaunchToken(42), false);
+});
+
 test('finds the link among command-line arguments', () => {
-  assert.equal(deepLinkFromArgv(['electron', '.', `secure-exam://exam/${ID}`]), `secure-exam://exam/${ID}`);
+  assert.equal(deepLinkFromArgv(['electron', '.', `secure-exam://launch/${TOKEN}`]), `secure-exam://launch/${TOKEN}`);
   assert.equal(deepLinkFromArgv(['electron', '.']), null);
+});
+
+test('the app can only show the launch, exam and submitted screens', () => {
+  for (const ok of ['/launch', '/launch/', '/student/exam', '/student/exam/', '/student/exam/submitted']) {
+    assert.equal(isAllowedAppPath(ok), true, ok);
+  }
+  for (const bad of ['/', '/login', '/student/dashboard', '/student/exams/abc', '/admin/exams', '/student', '/launcher', '/student/exam/other']) {
+    assert.equal(isAllowedAppPath(bad), false, bad);
+  }
 });

@@ -75,6 +75,25 @@ export class AuthService {
     );
   }
 
+  /**
+   * A session for someone who has already proved who they are by other means
+   * (a one-time exam launch token redeemed in the exam app). Same tokens and
+   * audit line as a password login. Note that, as with any login, the newest
+   * refresh token replaces the previous one.
+   */
+  async startSessionForUser(
+    user: { id: string; email: string; fullName: string; role: Role },
+    ipAddress: string | null,
+    metadata: Record<string, unknown> = {},
+  ): Promise<LoginResponse> {
+    const tokens = await this.issueTokenPair(user.id, user.email, user.role);
+    await this.auditService.logEvent(AuditEventType.LOGIN, { email: user.email, ...metadata }, user.id, ipAddress);
+    return {
+      ...tokens,
+      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
+    };
+  }
+
   async login(
     email: string,
     password: string,
