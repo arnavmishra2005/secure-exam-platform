@@ -1,0 +1,13 @@
+# usb-block.rules — udev rules to block USB mass storage during exam sessions
+# Install to: /etc/udev/rules.d/99-exam-usb-block.rules
+# Reload: udevadm control --reload-rules && udevadm trigger
+#
+# Strategy:
+#   - Block auto-authorization of USB mass storage interfaces (class 08)
+#   - Input devices (keyboards, mice, webcams) remain allowed
+#   - Does NOT forcibly unload kernel modules (preserves host driver stability)
+
+# Deny authorization for USB mass storage class 0x08
+ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="08", \
+    ATTR{authorized}="0", \
+    RUN+="/bin/logger -t exam-kiosk USB mass storage interface blocked: %k"

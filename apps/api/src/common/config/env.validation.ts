@@ -47,4 +47,6 @@ export const envValidationSchema = Joi.object({
 
   // Person C — desktop client (DESKTOP_*). Optional until the Electron app lands.
   DESKTOP_MIN_CLIENT_VERSION: Joi.string().optional(),
+  // Development only: let administrators sign in from the exam app (X-Client-Type: DESKTOP).
+  ALLOW_ADMIN_ON_DESKTOP: Joi.boolean().default(false),
 });

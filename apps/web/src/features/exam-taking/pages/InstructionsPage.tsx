@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { useAttempt } from '../contexts/AttemptContext';
+import { ReadinessGate } from '../desktop/ReadinessGate';
 
 const INSTRUCTIONS = [
   'Read each question carefully before answering.',
@@ -37,6 +38,8 @@ export default function InstructionsPage() {
   const [agreed, setAgreed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Always true in a browser; in the exam app, true once the readiness checks pass.
+  const [kioskReady, setKioskReady] = useState(false);
 
   const { data: exam, isPending, error: loadError, refetch } = useQuery({
     queryKey: ['me', 'exams', examId],
@@ -127,10 +130,12 @@ export default function InstructionsPage() {
             ))}
           </ul>
 
+          <ReadinessGate onReady={setKioskReady} />
+
           {error && <Alert variant="destructive">{error}</Alert>}
 
           {resumable ? (
-            <Button size="lg" onClick={() => enter(exam.attemptId!)}>
+            <Button size="lg" onClick={() => enter(exam.attemptId!)} disabled={!kioskReady}>
               <PlayCircle /> Resume exam
             </Button>
           ) : exam.state === StudentExamState.LIVE ? (
@@ -144,7 +149,7 @@ export default function InstructionsPage() {
                 />
                 I have read the instructions. I understand the timer starts as soon as I begin and cannot be paused.
               </label>
-              <Button size="lg" onClick={handleStart} disabled={!agreed} loading={starting}>
+              <Button size="lg" onClick={handleStart} disabled={!agreed || !kioskReady} loading={starting}>
                 <PlayCircle /> Start exam
               </Button>
             </>

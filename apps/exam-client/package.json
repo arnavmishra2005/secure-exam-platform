@@ -1,0 +1,50 @@
+{
+  "name": "@secure-exam/exam-client-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "desktop:dev": "npm run compile && concurrently -k \"npm run dev --workspace=@secure-exam/web\" \"wait-on http://localhost:3003 && electron .\"",
+    "desktop:build": "tsc -p tsconfig.json && npm run build --workspace=@secure-exam/web && electron-builder --linux",
+    "desktop:start": "electron .",
+    "compile": "tsc -p tsconfig.json"
+  },
+  "build": {
+    "appId": "dev.secure-exam.client",
+    "productName": "SecureExam",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/main/**/*",
+      "dist/preload/**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education",
+      "maintainer": "secure-exam"
+    },
+    "extraMetadata": {
+      "main": "dist/main/main.js"
+    },
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.4.5",
+    "wait-on": "^7.2.0"
+  }
+}

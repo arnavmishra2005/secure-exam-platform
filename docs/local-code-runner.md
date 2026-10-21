@@ -66,7 +66,7 @@ This uses [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`, avail
 
 ```bash
 # Per input: write the code once to a fresh temp dir, then for each input:
-prlimit --as=$((MEM_MB*1024*1024)) --nproc=64 --nofile=64 --fsize=$((16*1024*1024)) -- \
+prlimit --as=$((MEM_MB*1024*1024)) --nofile=64 --fsize=$((16*1024*1024)) -- \
 bwrap --unshare-all --die-with-parent --new-session \
       --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind-try /lib64 /lib64 --ro-bind /bin /bin \
       --proc /proc --dev /dev --tmpfs /tmp \
@@ -82,6 +82,8 @@ bwrap --unshare-all --die-with-parent --new-session \
 - Delete the temp dir afterwards.
 
 The flags are a starting point. Verify them on the lab image, especially which `/lib*` paths exist and whether unprivileged user namespaces are enabled for `bwrap`.
+
+> **Do not use `prlimit --nproc`.** `RLIMIT_NPROC` counts every thread the user owns, and Electron alone has hundreds, so the sandbox could not even start. Fork bombs are contained by `bwrap --unshare-all` (own PID namespace, killed with the process group at the deadline). The implementation is `apps/exam-client/src/main/runner/localRunner.ts`.
 
 ### Lab image
 

@@ -52,3 +52,47 @@ export interface SecurityEvent {
   metadata: Record<string, unknown>;
   createdAt: string;
 }
+
+// ---- Electron preload bridge (window.desktop) ----
+// Implemented by apps/exam-client/src/preload; mirrors apps/exam-client/src/shared/types.ts.
+
+export type DesktopViolationType =
+  | 'FOCUS_LOST'
+  | 'FOCUS_REGAINED'
+  | 'DISPLAY_CHANGED'
+  | 'BLOCKED_SHORTCUT'
+  | 'DEVTOOLS_ATTEMPT'
+  | 'NAV_BLOCKED'
+  | 'CLIPBOARD_BLOCKED'
+  | 'KIOSK_CHECK_FAILED'
+  | 'HEARTBEAT_LOST';
+
+export interface DesktopSecurityEvent {
+  type: DesktopViolationType;
+  detail?: string;
+  /** Epoch ms on the device. */
+  ts: number;
+}
+
+export interface DesktopReadiness {
+  ok: boolean;
+  checks: {
+    singleDisplay: boolean;
+    backendReachable: boolean;
+    noForbiddenProcesses: boolean;
+    forbiddenList?: string[];
+  };
+}
+
+export interface DesktopBridge {
+  isDesktop: () => boolean;
+  getReadiness?: () => Promise<DesktopReadiness>;
+  exitKiosk?: (pin?: string) => Promise<{ ok: boolean; reason?: string }>;
+  notifySubmitted?: () => void;
+  setSecurityMode?: (active: boolean) => void;
+  openExternal?: (url: string) => Promise<boolean>;
+  logViolation?: (type: DesktopViolationType, detail?: string) => void;
+  onSecurityEvent?: (cb: (event: DesktopSecurityEvent) => void) => () => void;
+  /** Local Python runner (docs/local-code-runner.md). */
+  runCode?: (job: import('./coding.types').LocalRunJob) => Promise<import('./coding.types').ExecutionOutcome[]>;
+}

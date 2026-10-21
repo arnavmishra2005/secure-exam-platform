@@ -4,11 +4,13 @@
 // attempt context lives here so all three screens share it.
 
 import { Outlet } from 'react-router-dom';
+import { ViolationBanner } from '@/features/exam-taking/desktop/ViolationBanner';
 import { AttemptProvider } from '@/features/exam-taking/contexts/AttemptContext';
 
 export function ExamLayout() {
   return (
     <div className="min-h-screen select-none bg-background">
+      <ViolationBanner />
       <AttemptProvider>
         <Outlet />
       </AttemptProvider>

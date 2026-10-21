@@ -25,6 +25,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./apps/api/.env
+    environment:
+      - DATABASE_URL=postgres://exam_user:exam_pass@postgres:5432/secure_exam
     depends_on:
       postgres:
         condition: service_healthy

@@ -2,11 +2,11 @@
  * Owner: Person B. Finding the local runner Person C's Electron app exposes.
  * Contract: LocalRunner in @secure-exam/types; spec in docs/local-code-runner.md.
  */
-import type { LocalRunner } from '@secure-exam/types';
+import type { DesktopBridge, LocalRunner } from '@secure-exam/types';
 
 declare global {
   interface Window {
-    desktop?: { runCode?: LocalRunner['run'] };
+    desktop?: DesktopBridge;
   }
 }
 

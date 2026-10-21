@@ -80,6 +80,11 @@ async function upsertUser(
   );
 
   if (existing.length > 0) {
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    await ds.query(
+      `UPDATE users SET "passwordHash" = $1, "isActive" = true WHERE id = $2`,
+      [passwordHash, existing[0].id],
+    );
     return { id: existing[0].id, created: false };
   }
 

@@ -23,6 +23,7 @@ import { NavigationControls } from '../components/NavigationControls';
 import { SubmitConfirmationModal } from '../components/SubmitConfirmationModal';
 import { isFixtureAttempt } from '../contexts/AttemptContext';
 import { requestSubmit } from '../persistence';
+import { desktop } from '../desktop/desktop';
 
 export default function ExamPage() {
   const navigate = useNavigate();
@@ -67,10 +68,17 @@ export default function ExamPage() {
 
   const questionsCount = questions?.length || 0;
 
+  // Exam app only: lock the window while an attempt is running (no-op in a browser).
+  // Unlocking happens on SubmittedPage, or here when there is nothing to take.
+  useEffect(() => {
+    if (attempt?.status === AttemptStatus.IN_PROGRESS) desktop.setSecurityMode(true);
+  }, [attempt?.status]);
+
   // No attempt to take, or it is already finished: leave the exam screen.
   useEffect(() => {
     if (isAttemptLoading) return;
     if (!attempt) {
+      desktop.setSecurityMode(false);
       navigate('/student/dashboard', { replace: true });
     } else if (attempt.status !== AttemptStatus.IN_PROGRESS) {
       navigate('/student/exam/submitted', { replace: true });

@@ -1,6 +1,6 @@
 // Owner: Person A (Identity/Auth/Security)
 
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -78,5 +78,48 @@ describe('AuthService', () => {
 
     const user = await authService.validateCredentials('a@example.com', 'correct-password', null);
     expect(user.id).toBe('user-1');
+  });
+  describe('administrators in the exam app', () => {
+    const userOf = async (role: string) => ({
+      id: 'user-1',
+      email: 'a@example.com',
+      fullName: 'A',
+      role,
+      isActive: true,
+      passwordHash: await bcrypt.hash('password123', 4),
+    });
+
+    it('refuses an admin who signs in from the desktop client, before issuing tokens', async () => {
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('admin'));
+
+      await expect(authService.login('a@example.com', 'password123', null, 'DESKTOP')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(userService.setRefreshTokenHash).not.toHaveBeenCalled();
+    });
+
+    it('matches the client type case-insensitively', async () => {
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('admin'));
+
+      await expect(authService.login('a@example.com', 'password123', null, 'desktop')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('lets an admin sign in from a browser', async () => {
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('admin'));
+
+      await expect(authService.login('a@example.com', 'password123', null)).resolves.toMatchObject({
+        user: { role: 'admin' },
+      });
+    });
+
+    it('lets a student sign in from the desktop client', async () => {
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('student'));
+
+      await expect(authService.login('a@example.com', 'password123', null, 'DESKTOP')).resolves.toMatchObject({
+        user: { role: 'student' },
+      });
+    });
   });
 });

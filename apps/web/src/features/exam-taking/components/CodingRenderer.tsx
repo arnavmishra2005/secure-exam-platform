@@ -5,18 +5,18 @@
 // sync engine), so they survive offline and are graded after the attempt
 // ends even when the student never presses the editor's Submit.
 
-import { CodingQuestionView, type CodingQuestionViewProps } from '@secure-exam/exam-content-ui';
+import { CodingQuestionView, desktopLocalRunner } from '@secure-exam/exam-content-ui';
 import { Suspense, useCallback } from 'react';
 import { Spinner } from '@/components/ui/spinner';
+import { desktop } from '../desktop/desktop';
 import { useAnswer } from '../hooks/useAnswer';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import type { QuestionRendererProps } from '../questionRenderers.registry';
 import { useExamStore } from '../store/examStore';
 
-// Person C's Electron app provides window.desktop.runCode; in a browser there is
-// none and Run uses the server (allowed in development, see GET /coding/config).
-// Wire `localRunner={desktopLocalRunner()}` here once C's preload script exists.
-const LOCAL_RUNNER: CodingQuestionViewProps['localRunner'] = undefined;
+// In the exam app Run executes on the student's PC through window.desktop.runCode.
+// In a browser there is no local runner and Run uses the server (allowed in
+// development only, see GET /coding/config).
 
 export function CodingRenderer({ attemptId, question, textResponse, onTextResponseChange, disabled }: QuestionRendererProps) {
   const network = useNetworkStatus();
@@ -31,6 +31,9 @@ export function CodingRenderer({ attemptId, question, textResponse, onTextRespon
     [onTextResponseChange, saveAnswer, question.id],
   );
 
+  // Reported to the exam app's violation log (a no-op in a browser).
+  const onBlockedPaste = useCallback(() => desktop.logViolation('CLIPBOARD_BLOCKED', 'External paste blocked in the code editor'), []);
+
   return (
     <Suspense fallback={<Spinner label="Loading the code editor" />}>
       <CodingQuestionView
@@ -42,8 +45,8 @@ export function CodingRenderer({ attemptId, question, textResponse, onTextRespon
         onSaveDraft={onSaveDraft}
         online={network === 'online'}
         readOnly={disabled}
-        localRunner={LOCAL_RUNNER}
-        onBlockedPaste={() => console.warn('[exam] external paste blocked in the code editor')}
+        localRunner={desktopLocalRunner()}
+        onBlockedPaste={onBlockedPaste}
       />
     </Suspense>
   );

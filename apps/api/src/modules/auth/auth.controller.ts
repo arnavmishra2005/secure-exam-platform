@@ -19,7 +19,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request) {
-    return this.authService.login(dto.email, dto.password, req.ip ?? null);
+    return this.authService.login(dto.email, dto.password, req.ip ?? null, req.header('x-client-type'));
   }
 
   @Public()
@@ -27,7 +27,7 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshDto, @Req() req: Request) {
-    return this.authService.refresh(dto.refreshToken, req.ip ?? null);
+    return this.authService.refresh(dto.refreshToken, req.ip ?? null, req.header('x-client-type'));
   }
 
   /** The signed-in user's profile. Lets a client that restored its session from a refresh token show the user's name. */
