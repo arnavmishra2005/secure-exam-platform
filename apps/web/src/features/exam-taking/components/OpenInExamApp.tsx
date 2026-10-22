@@ -67,10 +67,14 @@ export function OpenInExamApp({ examId, resuming }: { examId: string; resuming: 
       )}
       {link && import.meta.env.DEV && (
         <p className="break-all rounded border bg-muted/40 p-2 font-mono text-[11px]">
-          Development: if the exam app did not open, run <code>npm run exam:register</code> once (see the README), or start it
-          with
+          Development: if the exam app did not open, run <code>npm run exam:register</code> once (see the README), then retry.
+          To start it manually with this link, use the command for your terminal:
           <br />
-          EXAM_LAUNCH_LINK=&quot;{link}&quot; npm run desktop:start --workspace=@secure-exam/exam-client-desktop
+          Windows PowerShell: $env:EXAM_LAUNCH_LINK=&quot;{link}&quot;; npm run desktop:start:windows
+          --workspace=@secure-exam/exam-client-desktop
+          <br />
+          macOS/Linux: EXAM_LAUNCH_LINK=&quot;{link}&quot; npm run desktop:start
+          --workspace=@secure-exam/exam-client-desktop
         </p>
       )}
     </div>

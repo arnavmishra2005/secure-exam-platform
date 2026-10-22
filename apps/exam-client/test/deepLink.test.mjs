@@ -43,6 +43,23 @@ test('finds the link among command-line arguments', () => {
   assert.equal(deepLinkFromArgv(['electron', '.']), null);
 });
 
+test('finds the link in Windows arguments when executable and app paths contain spaces', () => {
+  const link = `secure-exam://launch/${TOKEN}`;
+  const initialLaunch = [
+    'C:\\Program Files\\Secure Exam\\electron.exe',
+    'C:\\Users\\Student\\Secure Exam\\apps\\exam-client',
+    link,
+  ];
+  const secondInstance = [
+    'C:\\Program Files\\Secure Exam\\electron.exe',
+    'C:\\Users\\Student\\Secure Exam\\apps\\exam-client',
+    link,
+  ];
+
+  assert.equal(deepLinkFromArgv(initialLaunch), link);
+  assert.equal(deepLinkFromArgv(secondInstance), link);
+});
+
 test('the app can only show the launch, exam and submitted screens', () => {
   for (const ok of ['/launch', '/launch/', '/student/exam', '/student/exam/', '/student/exam/submitted']) {
     assert.equal(isAllowedAppPath(ok), true, ok);

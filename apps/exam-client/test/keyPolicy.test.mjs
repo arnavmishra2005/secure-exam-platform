@@ -14,6 +14,7 @@ const press = (code, mods = {}, key = code.replace(/^Key/, '').toLowerCase()) =>
 });
 const MAC = 'darwin';
 const LINUX = 'linux';
+const WINDOWS = 'win32';
 
 test('reload is blocked with every modifier on both systems', () => {
   for (const platform of [MAC, LINUX]) {
@@ -66,6 +67,37 @@ test('the Super key is blocked on Linux but Cmd alone is allowed on macOS', () =
   assert.ok(blockedKey({ ...press('MetaLeft', { meta: true }), key: 'Meta' }, LINUX));
   assert.ok(blockedKey(press('KeyD', { meta: true }), LINUX)); // Super+D
   assert.equal(blockedKey({ ...press('MetaLeft', { meta: true }), key: 'Meta' }, MAC), null);
+});
+
+test('Windows keys and system shortcuts are blocked when Electron receives them', () => {
+  for (const code of ['MetaLeft', 'OSLeft', 'KeyD', 'KeyM', 'KeyE', 'KeyR', 'KeyTab']) {
+    assert.ok(blockedKey(press(code, { meta: true }), WINDOWS), `Win+${code} on Windows`);
+  }
+  for (const code of ['KeyB', 'KeyL', 'KeyU', 'KeyX']) {
+    assert.ok(blockedKey(press(code, { meta: true }), WINDOWS), `Win+${code} on Windows`);
+  }
+  assert.equal(blockedKey(press('KeyD', { meta: true }), WINDOWS)?.label, 'Win+D');
+  assert.ok(blockedKey(press('Escape', { ctrl: true }), WINDOWS)); // Ctrl+Esc
+  assert.ok(blockedKey(press('Escape', { ctrl: true, shift: true }), WINDOWS)); // Task Manager
+  assert.equal(blockedKey(press('Delete', { ctrl: true, alt: true }), WINDOWS), null); // SAS is left to Windows policy
+  assert.equal(blockedKey(press('KeyD', { meta: true }), LINUX)?.label, 'Super+D');
+});
+
+test('Windows AltGr text events are not treated as Ctrl+Alt shortcuts', () => {
+  const altGrTextEvents = [
+    press('KeyQ', { ctrl: true, alt: true }, '@'),
+    press('Digit7', { ctrl: true, alt: true }, '{'),
+    press('Digit8', { ctrl: true, alt: true }, '['),
+    press('Digit9', { ctrl: true, alt: true }, ']'),
+    press('Digit0', { ctrl: true, alt: true }, '}'),
+  ];
+  for (const input of altGrTextEvents) {
+    assert.equal(blockedKey(input, WINDOWS), null, `${input.code} producing ${input.key}`);
+  }
+
+  assert.ok(blockedKey(press('KeyT', { ctrl: true, alt: true }), LINUX));
+  assert.ok(blockedKey(press('KeyT', { ctrl: true, alt: true }), MAC));
+  assert.equal(blockedKey(press('Delete', { ctrl: true, alt: true }), WINDOWS), null);
 });
 
 test('zoom is blocked', () => {

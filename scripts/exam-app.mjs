@@ -58,7 +58,8 @@ if (compile.status !== 0) fail('could not compile the exam app (npm run desktop:
 
 // ELECTRON_RUN_AS_NODE (set by some terminals) would make Electron behave like plain Node.
 const { ELECTRON_RUN_AS_NODE, ...env } = process.env;
-const app = spawn(npm, ['run', 'desktop:start', '--workspace=@secure-exam/exam-client-desktop'], {
+const startScript = process.platform === 'win32' ? 'desktop:start:windows' : 'desktop:start';
+const app = spawn(npm, ['run', startScript, '--workspace=@secure-exam/exam-client-desktop'], {
   stdio: 'inherit',
   shell,
   env: {

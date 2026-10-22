@@ -7,11 +7,10 @@
 //
 //   macOS : ~/Applications/SecureExamDev.app  (a tiny AppleScript app that handles the link)
 //   Linux : ~/.local/share/applications/secure-exam-dev.desktop  (+ xdg-mime default handler)
+//   Windows: current-user URL protocol registration in HKCU\Software\Classes
 //
-//   npm run exam:register              register (safe to repeat; also after moving the repo)
+//   npm run exam:register              register (safe to repeat; on Windows, remove before moving the repo)
 //   npm run exam:register -- --remove  undo it
-//
-// Windows is not supported (see the README).
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -19,6 +18,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { registerWindowsProtocol, windowsProtocolCommands } from './windows-exam-protocol.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(root, 'apps', 'exam-client');
@@ -41,8 +41,13 @@ function electronBinary() {
 }
 
 function compileApp() {
-  const npm = 'npm';
-  const result = spawnSync(npm, ['run', 'desktop:compile', '--silent'], { cwd: root, stdio: 'inherit' });
+  const isWindows = process.platform === 'win32';
+  const npm = isWindows ? 'npm.cmd' : 'npm';
+  const result = spawnSync(npm, ['run', 'desktop:compile', '--silent'], {
+    cwd: root,
+    stdio: 'inherit',
+    ...(isWindows ? { shell: true } : {}),
+  });
   if (result.status !== 0) fail('could not compile the exam app (npm run desktop:compile).');
 }
 
@@ -147,6 +152,81 @@ function linux() {
   console.log('The first time, the browser asks to open "Secure Exam (development)". Allow it.');
 }
 
+// ---------------------------------------------------------------- Windows
+function windows() {
+  const protocolKey = `HKCU\\Software\\Classes\\${SCHEME}`;
+  const commandKey = `${protocolKey}\\shell\\open\\command`;
+  const backupKey = 'HKCU\\Software\\SecureExamPlatform\\ExamClientDevProtocolBackup';
+  const commands = windowsProtocolCommands({
+    scriptHost: join(process.env.WINDIR ?? process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'wscript.exe'),
+    nodeExecutable: process.execPath,
+    launcherScript: join(appDir, 'scripts', 'start-electron-windows.vbs'),
+    obsoleteScript: join(appDir, 'scripts', 'start-electron.mjs'),
+  });
+
+  function queryValue(key, name) {
+    const result = spawnSync('reg.exe', ['query', key, name ? '/v' : '/ve', ...(name ? [name] : [])], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (result.error) fail(`could not query the current-user protocol registration: ${result.error.message}`);
+    if (result.status !== 0) {
+      if (!keyExists(key)) return null;
+      fail(`could not read the current-user protocol registration at ${key}.`);
+    }
+    const valueLabel = name ? name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '\\(Default\\)';
+    const match = result.stdout.match(new RegExp(`^\\s*${valueLabel}\\s+REG_\\w+\\s+(.*)\\r?$`, 'im'));
+    return match ? match[1].trim() : '';
+  }
+
+  function keyExists(key) {
+    const result = spawnSync('reg.exe', ['query', key], { encoding: 'utf8', windowsHide: true });
+    if (result.error) fail(`could not query the current-user protocol registration: ${result.error.message}`);
+    if (result.status === 0) return true;
+    if (/unable to find the specified registry key or value/i.test(`${result.stdout}\n${result.stderr}`)) return false;
+    fail(`could not verify the current-user protocol registration at ${key}.`);
+  }
+
+  function writeRegistry(args) {
+    const result = spawnSync('reg.exe', args, { stdio: 'inherit', windowsHide: true });
+    if (result.error || result.status !== 0) {
+      fail(`Windows protocol registration failed${result.error ? `: ${result.error.message}` : '.'}`);
+    }
+  }
+
+  const registry = {
+    readValue: queryValue,
+    keyExists,
+    createKey: (key) => writeRegistry(['add', key, '/f']),
+    writeValue: (key, name, value) =>
+      writeRegistry(['add', key, name ? '/v' : '/ve', ...(name ? [name] : []), '/t', 'REG_SZ', '/d', value, '/f']),
+    copyKey: (source, destination) => writeRegistry(['copy', source, destination, '/s', '/f']),
+    deleteKey: (key) => writeRegistry(['delete', key, '/f']),
+  };
+  try {
+    const result = registerWindowsProtocol({
+      registry,
+      protocolKey,
+      commandKey,
+      backupKey,
+      currentCommand: commands.current,
+      obsoleteCommand: commands.obsolete,
+      remove,
+      compile: remove ? undefined : compileApp,
+    });
+    console.log(
+      result === 'removed'
+        ? 'Removed the development secure-exam:// handler.'
+        : result === 'absent'
+          ? 'No development secure-exam:// handler is registered for this user.'
+          : `Registered ${protocolKey}\\shell\\open\\command for this Windows user.\nThe browser can now open the exam app with ${SCHEME}:// links.`,
+    );
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
 if (process.platform === 'darwin') macos();
 else if (process.platform === 'linux') linux();
-else fail(`${process.platform} is not supported. Use macOS or Ubuntu (Windows: use WSL2 and the browser fallback).`);
+else if (process.platform === 'win32') windows();
+else fail(`${process.platform} is not supported.`);

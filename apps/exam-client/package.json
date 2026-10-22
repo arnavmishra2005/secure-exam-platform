@@ -5,8 +5,11 @@
   "main": "dist/main/main.js",
   "scripts": {
     "desktop:dev": "npm run compile && concurrently -k \"npm run dev --workspace=@secure-exam/web\" \"wait-on http://localhost:3003 && env -u ELECTRON_RUN_AS_NODE electron .\"",
+    "desktop:dev:windows": "npm run compile && concurrently -k \"npm run dev --workspace=@secure-exam/web\" \"wait-on http://localhost:3003 && npm run desktop:start:windows\"",
     "desktop:build": "tsc -p tsconfig.json && npm run build --workspace=@secure-exam/web && electron-builder --linux",
+    "desktop:build:windows": "tsc -p tsconfig.json && npm run build --workspace=@secure-exam/web && electron-builder --win nsis",
     "desktop:start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "desktop:start:windows": "node scripts/start-electron.mjs",
     "compile": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.json && node --test test/*.test.mjs"
   },
@@ -30,6 +33,14 @@
       "mimeTypes": [
         "x-scheme-handler/secure-exam"
       ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "include": "build/installer.nsh"
     },
     "extraMetadata": {
       "main": "dist/main/main.js"

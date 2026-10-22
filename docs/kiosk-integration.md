@@ -151,7 +151,7 @@ emitSecurityEvent ──► banner in the page (student sees a warning)
   `DEVTOOLS_ATTEMPT`, `NAV_BLOCKED`, `CLIPBOARD_BLOCKED`, `KIOSK_CHECK_FAILED`, `HEARTBEAT_LOST`.
 - The admin opens **Monitoring** or **Results → Students** and clicks the violation count to see each event with its time.
 
-### Blocked while an exam is running (macOS and Ubuntu)
+### Electron-level protections while an exam is running
 
 | Group | Combinations |
 |---|---|
@@ -162,12 +162,53 @@ emitSecurityEvent ──► banner in the page (student sees a warning)
 | Window switching | Alt+Tab, Alt+Esc, Alt+Space, Alt+F-keys, Alt+Left/Right/Home (Linux), Cmd+H, Cmd+M, Cmd+, Cmd+\` , Ctrl+Cmd+F |
 | Screenshots | PrintScreen, Cmd+Shift+3/4/5/6 (only if the app sees them) |
 | Ubuntu desktop | Super key (alone or combined), Ctrl+Alt+T, L, Delete, Backspace, F1-F7 |
+| Windows keys (when delivered to Electron) | Win key alone or with any other key, Ctrl+Esc, Ctrl+Shift+Esc |
 | Also | window close button, context menu, pinch/keyboard zoom, new windows and popups, leaving the app's own address |
 
 Not blocked: Ctrl/Cmd+C, V, X, A, Z, Y, F, D, arrows, Backspace, normal typing, and AltGr.
-**Not blockable by the app** (the OS handles them first): Cmd+Tab, Cmd+Space, Mission Control, Ctrl+Alt+F1-F7 virtual
-terminals, Ctrl+Alt+Del. On Ubuntu `infra/linux-kiosk` removes those escape routes; on macOS kiosk mode hides the Dock and
-menu bar. Focus loss from any of them is recorded.
+Electron blocks a shortcut only if it receives the key event. Windows minimize events are detected and followed by
+an attempt to restore kiosk/fullscreen state; fullscreen-exit events also trigger re-enforcement, and focus loss is
+recorded with an attempt to restore the exam window. This is best-effort application behavior, not operating-system
+lockdown: Windows may handle Win+D, Win+M, Win+Tab, taskbar shortcuts, Ctrl+Alt+Delete,
+and other shell or secure-attention shortcuts before Electron can see them. The app deliberately does not attempt
+to intercept Ctrl+Alt+Delete. Reliable prevention on managed exam devices requires Windows-level configuration,
+configured and tested by the device administrator. The app does not enable or configure those controls. Ubuntu's `infra/linux-kiosk` removes
+its system escape routes; macOS kiosk presentation options hide the Dock and menu bar, but neither is implied by the
+Electron handlers alone.
+
+### Windows dedicated-exam-device setup recommendation
+
+For a dedicated Windows exam computer, provision a current supported Windows edition for a non-administrator
+student account and keep a separate, protected administrator/invigilator account for maintenance. Apply and validate
+Windows policy before the device is used for exams; the Electron app alone is not a secure Windows kiosk.
+
+1. Prefer **Assigned Access restricted user experience** with a narrowly allowed application set and managed
+   Start/taskbar experience. Restrict the student account to the exam client and only required system components,
+   using the supported Assigned Access profile and AppLocker/policy controls for the target Windows release.
+2. For specific key combinations, use **Keyboard Filter** on a supported edition (Enterprise, Education, or IoT
+   Enterprise). Configure and test the desired combinations at the OS level, including Ctrl+Alt+Delete if the
+   policy goal requires suppressing it. Microsoft documents that Keyboard Filter can suppress secure-attention
+   combinations; this is a Windows feature and is not implemented by Electron. Check the supported edition and
+   version, retain a controlled administrator breakout path, and validate physical and on-screen keyboards.
+3. If the deployment needs the Electron desktop app to replace Explorer as the sign-in shell, consider **Shell
+   Launcher** (Enterprise, Education, or IoT Enterprise) only with an additional application allowlist/policy.
+   Shell Launcher selects and monitors the shell process; by itself it does not prevent users from accessing other
+   applications or system components. Test Electron's child-process/restart behavior on the exact Windows image.
+4. Use Group Policy or device management to limit sign-out, user switching, Settings, Task Manager, removable
+   media, and application execution as required. Do not rely on hiding the taskbar alone. Keep Windows patched,
+   disable ordinary student admin rights, protect firmware/boot settings, and control physical access.
+5. Test the complete exit surface on the deployed image: Win keys and Task View, taskbar/notification area, Alt+Tab,
+   Ctrl+Shift+Esc, Ctrl+Alt+Delete, lock/sign-out/user switching, app switching, Safe Mode/recovery, and every
+   approved accessibility path. Confirm the administrator recovery procedure before enabling restrictions.
+
+Assigned Access supports kiosk and restricted-user-experience scenarios on Pro, Enterprise, Education, and IoT
+Enterprise editions, but **Keyboard Filter and Shell Launcher require Enterprise, Education, or IoT Enterprise**
+editions. Keyboard Filter is disabled by default, requires a restart when enabled/disabled, and can be bypassed in
+Safe Mode; its breakout-key and accessibility behavior must be included in the deployment threat model. Confirm
+the current requirements and configuration schema against Microsoft's documentation for the exact Windows build:
+[Assigned Access](https://learn.microsoft.com/windows/configuration/assigned-access/),
+[Keyboard Filter](https://learn.microsoft.com/windows/configuration/keyboard-filter/), and
+[Shell Launcher](https://learn.microsoft.com/windows/configuration/shell-launcher/).
 
 ## 6. What was verified, and what was not
 

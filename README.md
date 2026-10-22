@@ -714,10 +714,12 @@ commands from A4 / B5, in that order). If a build itself says it cannot find `@s
 
 Use **WSL2 with Ubuntu** and follow Part B inside the Ubuntu terminal: `wsl --install -d Ubuntu`, install Docker
 Desktop with WSL integration enabled, and clone the repo inside the Linux filesystem (`~`, not `/mnt/c`).
-Windows 11 shows the Electron window through WSLg. Note that `secure-exam://` links clicked in a *Windows*
-browser are not handed to a WSL app; use the fallback in C5 (`npm run exam:app`) there.
-Native Windows is not supported for the exam app: the npm scripts use Unix-only commands (`env -u`) and the
-local code runner needs `bwrap` and POSIX paths.
+Windows 11 shows the Electron window through WSLg, but `secure-exam://` links clicked in a *Windows* browser
+are not handed to a WSL app. For native Windows development, run `npm run exam:register` once, then use
+`npm run client:desktop:windows`; `npm run exam:app` is also available as a manual launch helper. A packaged
+Windows installer can be built with `npm run desktop:build:windows` and registers the protocol when installed.
+These Windows paths cover app startup and deep links only; Windows OS-level kiosk lockdown and the sandboxed
+local code runner are not implemented.
 
 ## C7. Project layout and further reading
 

@@ -9,6 +9,9 @@ node_modules/
 # Build output
 **/dist/
 **/build/
+!apps/exam-client/build/
+apps/exam-client/build/*
+!apps/exam-client/build/installer.nsh
 **/.next/
 **/out/
 **/coverage/

@@ -1,7 +1,7 @@
 // Which key combinations are blocked while an exam is running.
 //
 // Pure functions with no Electron import, so the same rules are unit-tested
-// for macOS and Linux (Ubuntu). Matching uses the PHYSICAL key (`code`, e.g.
+// for macOS, Linux (Ubuntu), and Windows. Matching uses the PHYSICAL key (`code`, e.g.
 // "KeyR") and not the produced character (`key`), because on macOS holding
 // Option changes the character (Option+I types "ˆ") and would slip past a
 // rule written for "i".
@@ -14,8 +14,8 @@
 //
 // Shortcuts handled by the operating system before the app sees them (Cmd+Tab,
 // Alt+Tab, Cmd+Space, Ctrl+Alt+F1..F7, Ctrl+Alt+Del, ...) cannot be blocked
-// here. The kiosk session (infra/linux-kiosk) and macOS kiosk presentation
-// options cover those, and focus-loss events record any attempt.
+// here. Windows secure-attention sequences must be handled by Windows policy,
+// never by the application.
 
 export interface KeyInput {
   /** Produced character, e.g. "r" or "ˆ". */
@@ -83,7 +83,6 @@ const META_ONLY_KEYS = new Set(['KeyH', 'KeyM', 'Comma', 'Backquote']);
 
 // Ubuntu / GNOME style Ctrl+Alt combinations that open a terminal, lock the screen, etc.
 const CTRL_ALT_KEYS = new Set(['KeyT', 'KeyL', 'Delete', 'Backspace', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
-
 const ALT_KEYS = new Set(['F4', 'Tab', 'Escape', 'Space', 'F1', 'F2', 'F7', 'F8', 'F10']);
 
 const PLAIN_KEYS = new Set(['F5', 'F11', 'F12', 'PrintScreen']);
@@ -91,7 +90,7 @@ const PLAIN_KEYS = new Set(['F5', 'F11', 'F12', 'PrintScreen']);
 function names(platform: Platform) {
   return platform === 'darwin'
     ? { ctrl: 'Ctrl', meta: 'Cmd', alt: 'Option', shift: 'Shift' }
-    : { ctrl: 'Ctrl', meta: 'Super', alt: 'Alt', shift: 'Shift' };
+    : { ctrl: 'Ctrl', meta: platform === 'win32' ? 'Win' : 'Super', alt: 'Alt', shift: 'Shift' };
 }
 
 function keyName(input: KeyInput): string {
@@ -145,11 +144,22 @@ export function blockedKey(input: KeyInput, platform: Platform): BlockedKey | nu
   }
 
   // Ubuntu: Ctrl+Alt+T/L/Del/F1..F7.
-  if (input.control && input.alt && CTRL_ALT_KEYS.has(code)) return block();
+  if (platform !== 'win32' && input.control && input.alt && CTRL_ALT_KEYS.has(code)) return block();
 
-  // Linux: the Super key on its own or combined with anything opens the shell. On macOS the Cmd
-  // key is held for every ordinary shortcut (Cmd+C), so pressing it alone is not a violation.
-  if (platform !== 'darwin' && (input.meta || /^(Meta|OS)(Left|Right)$/.test(code))) return block();
+  // Windows-key shortcuts that reach Electron can be blocked here; the OS may intercept them first.
+  // This covers combinations such as Win+Tab (Task View), Win+B (notification area),
+  // Win+X (Quick Link menu) and Win+L (lock), but is not an OS-level restriction.
+  if (platform === 'win32' && input.meta) return block();
+
+  // Windows shell shortcuts that reach Electron can be blocked here; the OS may intercept them first.
+  if (platform === 'win32' && input.control && code === 'Escape') return block();
+
+  // The Linux Super key opens the shell. A standalone Windows key is covered above.
+  // On macOS Cmd is held for ordinary shortcuts, so pressing it alone is not a violation.
+  const shellKey = input.meta || /^(Meta|OS)(Left|Right)$/.test(code);
+  if (platform !== 'darwin' && platform !== 'win32' && shellKey) {
+    return block();
+  }
 
   return null;
 }
