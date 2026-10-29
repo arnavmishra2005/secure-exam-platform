@@ -21,7 +21,16 @@ import {
   MERGE_INTERVALS_STATEMENT,
   MERGE_INTERVALS_TEST_CASES,
   MERGE_INTERVALS_TITLE,
+  SeedTestCase,
 } from './seed-data/merge-intervals';
+import {
+  LAST_ELEMENT_MARKS,
+  LAST_ELEMENT_REFERENCE,
+  LAST_ELEMENT_STARTER,
+  LAST_ELEMENT_STATEMENT,
+  LAST_ELEMENT_TEST_CASES,
+  LAST_ELEMENT_TITLE,
+} from './seed-data/last-element';
 
 // ── Seed data ──────────────────────────────────────────────────────────────
 
@@ -302,36 +311,68 @@ async function seedActiveExam(ds: DataSource) {
   }
 }
 
+interface SeedCodingProblem {
+  title: string;
+  marks: number;
+  difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  statement: string;
+  starter: string;
+  reference: string;
+  testCases: SeedTestCase[];
+}
+
+const CODING_PROBLEMS: SeedCodingProblem[] = [
+  {
+    title: LAST_ELEMENT_TITLE,
+    marks: LAST_ELEMENT_MARKS,
+    difficulty: 'EASY',
+    statement: LAST_ELEMENT_STATEMENT,
+    starter: LAST_ELEMENT_STARTER,
+    reference: LAST_ELEMENT_REFERENCE,
+    testCases: LAST_ELEMENT_TEST_CASES,
+  },
+  {
+    title: MERGE_INTERVALS_TITLE,
+    marks: MERGE_INTERVALS_MARKS,
+    difficulty: 'MEDIUM',
+    statement: MERGE_INTERVALS_STATEMENT,
+    starter: MERGE_INTERVALS_STARTER,
+    reference: MERGE_INTERVALS_REFERENCE,
+    testCases: MERGE_INTERVALS_TEST_CASES,
+  },
+];
+
 /**
- * A medium coding question (Merge Intervals) in the sample exam, so the code editor, the
- * runner and the grading can be tried. Separate from the MCQs above so that it is also
- * added to a database that already has them. Idempotent: skipped when the exam has a coding question.
+ * The coding questions (an easy Last Element and a medium Merge Intervals) in the sample exam,
+ * so the code editor, the runner and the grading can be tried. Separate from the MCQs above so
+ * that they are also added to a database that already has them. Idempotent: a question is
+ * skipped when the exam already has a coding question with its title.
  */
-async function seedCodingQuestion(ds: DataSource) {
+async function seedCodingQuestion(ds: DataSource, p: SeedCodingProblem) {
   const existing = await ds.query<{ id: string }[]>(
     `SELECT q.id FROM questions q JOIN exam_questions eq ON eq."question_id" = q.id
-      WHERE eq."exam_id" = $1 AND q."type" = 'CODING' LIMIT 1`,
-    [SAMPLE_EXAM_ID],
+      WHERE eq."exam_id" = $1 AND q."type" = 'CODING' AND q."text" = $2 LIMIT 1`,
+    [SAMPLE_EXAM_ID, p.title],
   );
   if (existing.length > 0) {
-    console.log('   ⏭  Coding question already in the sample exam');
+    console.log(`   ⏭  "${p.title}" already in the sample exam`);
     return;
   }
 
-  console.log('   💻 Adding the coding question…');
+  console.log(`   💻 Adding "${p.title}"…`);
   const [question] = await ds.query<{ id: string }[]>(
     `INSERT INTO questions ("text", "type", "marks", "negative_marks", "difficulty", "status")
-     VALUES ($1, 'CODING', $2, 0, 'MEDIUM', 'READY') RETURNING id`,
-    [MERGE_INTERVALS_TITLE, MERGE_INTERVALS_MARKS],
+     VALUES ($1, 'CODING', $2, 0, $3, 'READY') RETURNING id`,
+    [p.title, p.marks, p.difficulty],
   );
   await ds.query(
     `INSERT INTO coding_problems
        ("question_id", "statement_md", "starter_code", "allowed_languages", "time_limit_ms", "memory_limit_mb", "comparison_mode", "reference_solution")
      VALUES ($1, $2, $3::jsonb, '{python}', 2000, 256, 'TRIM', $4)`,
-    [question.id, MERGE_INTERVALS_STATEMENT, JSON.stringify({ python: MERGE_INTERVALS_STARTER }), MERGE_INTERVALS_REFERENCE],
+    [question.id, p.statement, JSON.stringify({ python: p.starter }), p.reference],
   );
   let order = 0;
-  for (const t of MERGE_INTERVALS_TEST_CASES) {
+  for (const t of p.testCases) {
     await ds.query(
       `INSERT INTO coding_test_cases ("question_id", "input", "expected_output", "is_sample", "weight", "order")
        VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -347,7 +388,7 @@ async function seedCodingQuestion(ds: DataSource) {
     question.id,
     next,
   ]);
-  console.log(`   ✅ "${MERGE_INTERVALS_TITLE}" (${MERGE_INTERVALS_MARKS} marks, ${MERGE_INTERVALS_TEST_CASES.length} test cases) added as question ${next}`);
+  console.log(`   ✅ "${p.title}" (${p.marks} marks, ${p.testCases.length} test cases) added as question ${next}`);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -384,7 +425,7 @@ async function seed() {
 
   // ── Active Exam ────────────────────────────────────────────────────────
   await seedActiveExam(ds);
-  await seedCodingQuestion(ds);
+  for (const problem of CODING_PROBLEMS) await seedCodingQuestion(ds, problem);
   await seedCourse(ds, studentIds);
 
   console.log('\n──────────────────────────────────────────────────────');
@@ -400,7 +441,8 @@ async function seed() {
     console.log(`    ${s.fullName.padEnd(18)} → ${s.email} / ${s.password}`);
   }
   console.log('');
-  console.log('  The sample exam has 5 multiple-choice questions and 1 coding question (Merge Intervals, 10 marks).');
+  console.log('  The sample exam has 5 multiple-choice questions and 2 coding questions');
+  console.log(`  (${CODING_PROBLEMS.map((p) => `${p.title}, ${p.marks} marks`).join('; ')}).`);
   console.log('  Active Exam ID for Testing:');
   console.log(`    ${SAMPLE_EXAM_ID}`);
   console.log('──────────────────────────────────────────────────────\n');
