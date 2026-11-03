@@ -1,13 +1,13 @@
 # Phase 5 feature plan
 
-The next round of features, checked against the code as of 3 Nov 2026. Each feature says what exists today, what to build, who owns it (A: platform, courses, publish, results, auth; B: question bank, coding, question-wise results; C: attempts, persistence, kiosk, monitoring) and how big it is (S ≈ ½–1 day, M ≈ 2–3 days, L ≈ 4+ days).
+The next round of features, checked against the code as of 3 Nov 2026. Each feature says what exists today, what to build, who owns it (A: platform, courses, publish, results, auth; B: question bank, coding, question-wise results; C: attempts, persistence, kiosk, monitoring) and how big it is (S ≈ ½–1 day, M ≈ 2–3 days, L ≈ 4+ days, XL ≈ 2 weeks split across people).
 
 ## 1. Classification
 
 | # | Feature | Bucket | Owner | Size |
 |---|---|---|---|---|
-| 1 | TA role, course staff, permissions set by the instructor | **Now** | A (+ every module's guards) | L |
-| 2 | "Admin" → "Course Instructor" in the UI | **Now** | A (+ all UI owners) | S |
+| 1 | Instructors replace admin: several instructors, each owning their courses, each choosing their TAs and the TAs' permissions | **Now** | A (+ every module owner scopes their own endpoints) | XL |
+| 2 | Remove "admin" everywhere: role, routes, UI, seed, env flags, docs | **Now** (with #1) | A (+ all owners) | M |
 | 3 | UI polishing | **Now** (pass 1) / **After** (pass 2 from pilot feedback) | all | M |
 | 4 | Show delays / rescheduled start and status on the student dashboard | **Now** | A | S |
 | 5 | Reschedule an exam after it is published | **Now** | A (exam service is B's) | M |
@@ -24,6 +24,7 @@ The next round of features, checked against the code as of 3 Nov 2026. Each feat
 | 16 | C, C++ and Java for coding questions | **Code now, finish at deployment** (needs compiler images on the grader and on lab machines) | B (+ C for the kiosk image) | L |
 | 17 | Intranet support | **Deployment** (small code changes now) | A + C + ops | M |
 | 18 | Continue the exam on another device, with timing intact | **Mostly exists**: code the gaps now, prove it in a lab rehearsal | C | M |
+| 19 | Sandbox for malicious code (server grader and lab-PC runner) | **Mostly exists** for Python: harden now; gVisor, rootless Docker and the runner host at deployment | B (server) + C (lab runner) | M |
 
 **Buckets:**
 - **Now:** application code only. It can be built and tested on a laptop today.
@@ -32,68 +33,142 @@ The next round of features, checked against the code as of 3 Nov 2026. Each feat
 - **After:** needs the system running with real users first (pilot feedback, load tests, a lab rehearsal).
 
 **Suggested order:**
-1. #1 (TA role) first. #13 and the "who can do what" checks in every other feature depend on it.
-2. Then the small, visible wins, in parallel: #2, #4, #6, #7, #11, #12, #15.
+1. #1 and #2 (instructors and TAs) first. Every other feature's "who can do what" depends on them, and they touch every controller, so it's cheaper to do them before the other features add more endpoints.
+2. Then the small, visible wins, in parallel: #4, #6, #7, #11, #12, #15.
 3. Then #5, #8, #9, #10, #13, #14, #18.
-4. In parallel, on its own track: #16 and #17. They need someone to build the images and the server setup.
+4. In parallel, on its own track: #19, then #16 and #17. They need someone to build the images and the server setup. **C and C++ (#16) must not reach students before the #19 hardening is in**: compiled code can make raw system calls, so it needs the stronger sandbox.
 5. #3 pass 2 after the pilot.
 
 ## 2. Decisions needed before building
 
 These change what gets built, so settle them first:
 
-1. **Instructors and courses.** Today there is one `admin` role and courses have no owner. Is "Course Instructor" just a new name for today's admin, who can see every course? Or does each instructor own specific courses and see only those?
-   - This plan assumes the first for now: rename only, keep the internal role value `admin`.
-   - It also leaves room for the second: the `course_staff` table in #1 can hold `INSTRUCTOR` rows later.
-2. **Unsubmitted code.** `code_submissions.fromDraft` means the last *draft* is graded today when the student never pressed Submit. Feature #6 tells students "your code is not submitted", so which rule applies?
+Already decided: **there is no admin.** There are several instructors. Each owns their own courses and sees only those, and each chooses their own TAs and what those TAs may do (#1, #2). That leaves these questions about it:
+
+1. **Who creates instructor accounts?** Nobody in the app can, once admin is gone. Recommendation:
+   - IT (or whoever runs the server) creates them with a command-line script, `npm run user:create-instructor`. There is no web page for it, so no web account can create instructors.
+   - Later, if the college wants it, add a head-of-department role that can create instructors in the web app.
+2. **One instructor per course, or co-instructors?** Recommendation: allow co-instructors. A course has one or more `INSTRUCTOR` rows in `course_staff`, so two professors can share a course and its exams. The person who creates the course is its first instructor. Any instructor of a course can add another.
+3. **Whose is the question bank?** Recommendation: each question belongs to the instructor who wrote it (`questions.owner_id`). That instructor can use it in any of their courses' exams. Their TAs with `QUESTION_BANK_*` permission see it. Other instructors don't. Sharing between instructors can be added later as "copy to my bank".
+4. **Unsubmitted code.** `code_submissions.fromDraft` means the last *draft* is graded today when the student never pressed Submit. Feature #6 tells students "your code is not submitted", so which rule applies?
    - **(a) Unsubmitted code scores 0.** This matches the warning.
    - **(b) The draft is still graded.** This is safer for students, but then the warning should say "submit to confirm it" instead.
    - This should be a per-exam setting, defaulting to (a).
-3. **Device switching.** Can a student continue on another device on their own, or only after an invigilator approves it in Monitoring? Recommendation: invigilator approval. Otherwise a second person on a second machine can take over the attempt.
-4. **Rescheduling a live exam.** Can the instructor move the times while students are already writing? Recommendation:
+5. **Device switching.** Can a student continue on another device on their own, or only after an invigilator approves it in Monitoring? Recommendation: invigilator approval. Otherwise a second person on a second machine can take over the attempt.
+6. **Rescheduling a live exam.** Can the instructor move the times while students are already writing? Recommendation:
    - before anyone starts: free to change
    - after anyone starts: only `endTime` can move later, and the change applies through extensions (#15)
 
 ## 3. Feature details
 
-### 1. TA role (A, L)
+### 1. Instructors and TAs replace admin (A + every module owner, XL)
 **Today:**
 - `Role` is only `admin | student` (`packages/types/src/user.types.ts`).
-- 19 controllers use `@Roles(Role.ADMIN)`.
-- Courses have no staff.
+- 19 controllers use `@Roles(Role.ADMIN)`. Any admin sees and changes everything.
+- Courses, exams and questions have no owner column. Only `exam_extensions.createdBy` records who made something.
+- An exam can belong to several courses (`exam_courses`). `questions.course_id` exists but is optional.
 
-**Build:**
-- `Role.TA = 'ta'` in types, plus a Postgres enum migration on `users.role`.
-- New table `course_staff` (`courseId`, `userId`, `role` `INSTRUCTOR | TA`, `permissions jsonb`, `UNIQUE(courseId, userId)`).
-  - A TA belongs to one or more courses.
-  - Permissions are set per course, by the instructor.
-- Permission keys (one enum in `packages/types`):
+**The model:**
+- **Roles:** `instructor | ta | student`. `admin` is removed (#2).
+- **Courses have staff.** New table `course_staff`:
+  - columns: `courseId`, `userId`, `role` (`INSTRUCTOR | TA`), `permissions` (jsonb, for TAs only), `addedBy`
+  - `UNIQUE(courseId, userId)`
+  - Creating a course adds the creator as its `INSTRUCTOR`.
+  - An instructor of a course can add TAs, set their permissions and remove them, and can add co-instructors (decision 2).
+  - A TA can be on several courses, with different permissions on each.
+- **Every exam belongs to exactly one course:** new `exams.course_id`, required.
+  - `exam_courses` stays for registering students from more courses. Those courses must also be taught by one of the exam's instructors.
+  - "Instructor of an exam" means instructor of `exams.course_id`.
+- **Questions belong to the instructor who wrote them:** new `questions.owner_id` and `topics.owner_id` (decision 3).
+  - Adding a question to an exam needs access to both the question and the exam.
+  - When it is shared through an exam, a TA of that course sees the question.
+- **Students are global accounts, managed through courses.**
+  - An instructor creates or imports students into *their own* course: `POST /courses/:id/students`, which creates the account if the college ID or email is new, otherwise enrols the existing one.
+  - The student list shows only students enrolled in your courses.
+  - Password resets go through the same check: you must teach the student.
+- **TA permissions** (one enum in `packages/types`; the instructor ticks them per TA, per course):
   - `QUESTION_BANK_VIEW`
   - `QUESTION_BANK_EDIT`
   - `EXAM_VIEW`
   - `EXAM_EDIT`
+  - `STUDENTS_MANAGE`
   - `MONITOR`
   - `EXTEND_TIME`
   - `RESULTS_VIEW`
   - `MARKS_ADJUST`
   - `RESULTS_PUBLISH`
-  - Start with view-only defaults.
-- **Enforcement:** replace `@Roles(Role.ADMIN)` with a `@RequirePermission(Permission.X)` decorator and a `PermissionGuard`.
-  - The guard lets `admin` through.
-  - For `ta`, it resolves the course of the resource (exam → `exam_courses` → course; question → `questions.course_id`) and checks `course_staff.permissions`.
-  - Do it controller by controller. Every endpoint must name a permission, never "any staff".
-- **Lists** (exams, questions, results, monitoring) must also be filtered to the TA's courses. A guard alone is not enough.
-- **Accounts:** `POST /staff` creates a TA user. `POST /courses/:id/staff` and `PATCH /courses/:id/staff/:userId` assign a TA and set permissions. The UI is a "Staff" tab on the course page.
-- **Login:** auth issues the JWT for TAs as well. The exam app must refuse TA login the same way it refuses admins (`ALLOW_ADMIN_ON_DESKTOP`).
-- **Web:** `RequireRole` accepts `admin | ta`. Menu items are hidden by permission, using a `GET /me/permissions` that returns the permissions per course.
-- **Audit:** every TA action is already logged with `actorId`. Add `ROLE`/`STAFF_*` event types.
-- **Tests:** a guard spec per permission, and a "TA from another course gets 403" spec.
+  - New TAs get `EXAM_VIEW`, `MONITOR` and `RESULTS_VIEW`.
+  - Instructors implicitly have all of them on their courses.
+  - Managing staff (adding TAs, changing permissions) is instructor-only and never a TA permission.
 
-### 2. "Admin" → "Course Instructor" (A, S)
-- UI text only: page titles, menus, empty states, emails/notifications and the login screen. Search `apps/web/src`, `packages/exam-content-ui` and notification templates for `Admin`/`admin`.
-- Keep the role value `admin` in the database and JWT (see decision 1). Renaming it touches every guard and migration for no user benefit.
-- Add one `roleLabel(role)` helper in `apps/web/src/lib/format.ts` so the label lives in one place: "Course Instructor", "Teaching Assistant", "Student".
-- The legacy `apps/admin-web` is superseded. Leave it alone or delete it, rather than renaming it.
+**Enforcement:**
+- One `AccessService` in `common/access/`:
+  - `courseIdsFor(user, permission)`: the courses where the user has the permission
+  - `assertExam(user, examId, permission)`, `assertCourse(…)`, `assertQuestion(…)`, `assertAttempt(…)`: resolve the resource's course and check the permission
+  - per-request cache of the user's `course_staff` rows
+- Replace `@Roles(Role.ADMIN)` with `@RequirePermission(Permission.X)` plus a `PermissionGuard`. The guard checks the permission is held on *some* course. The service then checks the specific resource through `AccessService`, because the guard can't see which course a body or query refers to.
+- **Every list is scoped**, not only single reads. Exams, questions, topics, tags, students, results, monitoring, audit, submissions, analytics and notifications filter with `courseIdsFor(...)`. One query helper, `scopeToCourses(qb, alias, courseIds)`, so each module applies it the same way.
+- Wrong course gives **404, not 403**, so other instructors' exam IDs can't be probed.
+- **Ownership work by module:** each owner scopes their own controllers and adds the specs.
+  - **A:** course, registration, publish, results, students, audit, notifications
+  - **B:** exam, question, question-bank, coding, question-analytics
+  - **C:** attempt monitoring, extensions, client-security, submissions (staff side)
+
+**Accounts and login:**
+- **Instructors:** created by IT with `npm run user:create-instructor -- --email … --name …` (decision 1). It prints a one-time password, and the instructor must change it on first login.
+- **TAs:** an instructor creates them from the course's Staff tab:
+  - `POST /courses/:id/staff` (`{ email, name, role: 'TA', permissions }`) creates the user if new, or adds an existing TA/instructor to the course
+  - `PATCH /courses/:id/staff/:userId` changes permissions
+  - `DELETE /courses/:id/staff/:userId` removes them
+  - A TA's role on the user is `ta`. The same person can be a TA on one course and nothing on another.
+- **Exam app:** refuses instructor and TA login and refresh (today: admin). `ALLOW_ADMIN_ON_DESKTOP` becomes `ALLOW_STAFF_ON_DESKTOP`.
+- `GET /me/access` returns `{ role, courses: [{ courseId, code, name, role, permissions }] }`. The web app uses it to show menus and buttons.
+
+**Data migration:**
+1. Add `instructor` and `ta` to the role enum.
+2. Turn every `admin` user into an `instructor`.
+3. Give every existing course, exam and question an owner:
+   - a course gets every former admin as an `INSTRUCTOR`, or one chosen with `MIGRATION_DEFAULT_INSTRUCTOR_EMAIL`
+   - an exam gets its first `exam_courses` course, or a "Legacy" course made for orphans
+   - a question gets the default instructor
+4. Then drop `admin` from the enum. Postgres needs the type recreated for that.
+5. The migration is reversible (`down` maps `instructor` back to `admin`).
+
+**Tests:**
+- An `AccessService` spec covers instructor, co-instructor, TA with and without each permission, another course's instructor and student.
+- Every scoped list gets one spec showing another instructor's rows are excluded.
+- The seed creates two instructors and a TA (#2), so the isolation can be tried by hand.
+
+**Phasing:**
+- **1a:** types, the migration, `course_staff`, `AccessService` and `/me/access`. A, 3 days.
+- **1b:** each owner moves their controllers to permissions and scoping, in parallel. 2–3 days each.
+- **1c:** Staff tab and permission-aware menus. A, 2 days.
+- Feature work from section 1's step 2 can start once 1a is merged.
+
+### 2. Remove "admin" everywhere (A + all owners, M)
+"Admin" is not renamed. It is removed: there is no all-seeing account any more. Everything that said admin now says instructor, or means "instructor or TA with permission X".
+
+- **Types:** remove `Role.ADMIN` and add `Role.INSTRUCTOR` and `Role.TA`. The compiler then lists every place still using it.
+- **API:**
+  - every `@Roles(Role.ADMIN)` changes (#1)
+  - `auth.service.ts` desktop check
+  - `env.validation.ts`: `ALLOW_ADMIN_ON_DESKTOP` → `ALLOW_STAFF_ON_DESKTOP`
+  - audit event types and the role-check enum in the migration
+  - Swagger tags and descriptions
+- **Web:**
+  - routes `/admin/*` → `/instructor/*`, keeping a redirect for old links
+  - `AdminLayout` → `StaffLayout`, `studentAdminRoutes` → `studentManagementRoutes` and similar names
+  - all visible text (page titles, menus, empty states, notifications, the login screen)
+  - one `roleLabel(role)` helper in `lib/format.ts`: "Instructor", "Teaching Assistant", "Student"
+  - The header shows the user's role on the current course ("Instructor · CS201" / "TA · CS201").
+- **Shared package:** `packages/exam-content-ui` text.
+- **Seed:**
+  - `admin@secure-exam.dev` → `instructor@secure-exam.dev`, owning CS201 and the sample exam
+  - add `instructor2@secure-exam.dev`, with their own course and exam, to check isolation
+  - add `ta@secure-exam.dev`, a TA on CS201 with the default permissions
+- **Docs:** `CLAUDE.md`, `README.md`, `docs/*` (e.g. "the API can't create an admin" becomes the instructor script).
+- **Legacy `apps/admin-web`:** it is superseded by `apps/web` and would need the same permission work. Delete it in this phase rather than port it.
+- **Check:** `grep -rni "admin" apps packages --include='*.ts*'` returns only migrations and the redirect.
 
 ### 3. UI polishing (all, M)
 Do this as a checklist pass, not open-ended work:
@@ -152,7 +227,7 @@ It also:
   - marked for review: C
   - The Finish button stays enabled. It is a warning, not a block.
 
-The wording depends on decision 2.
+The wording depends on decision 4.
 
 ### 7. Green only after Submit (B + C, S)
 - Add `QuestionState.SUBMITTED` (or derive it): for CODING, "answered" means "has a submission that hasn't changed since". Typing only makes it "In progress".
@@ -250,7 +325,7 @@ If the college later prefers a known provider and the API server has internet ac
   - Final `score = clamp(auto_score + manual_adjustment, 0, maxScore)`.
   - Re-grading (`result-recalculation`) updates only `auto_score`, so manual changes survive a re-grade.
 - `PATCH /results/attempts/:attemptId/questions/:questionId/score` (`{ adjustment | score, reason }`) recomputes the total through `ResultTotalsService`.
-- **Who:** the admin always; a TA only with `MARKS_ADJUST` on that course (#1). Optionally, publishing stays instructor-only.
+- **Who:** the exam's instructors always; a TA only if their instructor gave them `MARKS_ADJUST` on that course (#1). Publishing needs `RESULTS_PUBLISH`, which TAs don't get by default.
 - **Audit:** `SCORE_ADJUSTED` with the old and new values.
 - **UI:** an "Adjust" control per question on the attempt's question-wise view, showing "auto 6 · adjusted +2 → 8" and the reason. The student analysis (#10) shows the reason.
 - Retire the total-override, or keep it as "bonus marks" stored the same way.
@@ -306,6 +381,7 @@ If the college later prefers a known provider and the API server has internet ac
 - **Monaco:** add `c`, `cpp`, `java` to `monacoSetup.ts` (bundled locally, so this works offline).
 - **Desktop runner (C):** the lab image needs `gcc`, `g++` and a JDK installed, and bubblewrap must allow the compile step to write `/tmp`. Add these to `infra/linux-kiosk`.
 - **Deployment:** build or pull the three images on the grading server, and pin them by digest (`RUNNER_*_IMAGE`). Without them, grading of those languages returns `INTERNAL_ERROR`. That is why this can only be finished at deployment.
+- **Security:** compile and run happen inside the #19 sandbox. Don't enable C/C++/Java for real exams until #19's gVisor, seccomp and the new abuse tests are in.
 
 ### 17. Intranet support (A + C + ops, M)
 **Goal:** the whole exam works with the college LAN cut off from the internet.
@@ -353,23 +429,90 @@ So switching device already continues **everything that reached the server**.
 2. **Review marks and position are device-only.** Save "marked for review" and the last open question on the server: add `answers.marked_for_review` and `attempts.lastQuestionId`, sent with the existing answer save and heartbeat.
 3. **Two devices at once.**
    - Add `attempts.activeSessionId`. Every exam-app launch (`/auth/exam-launch/redeem`) for an in-progress attempt gets a new session id. Requests carrying an old one get 409 `SESSION_MOVED`, and the old device locks with "This exam was opened on another device."
-   - With **invigilator approval** (decision 3), the redeem for an IN_PROGRESS attempt waits until an invigilator clicks "Allow device change" in Monitoring.
+   - With **invigilator approval** (decision 5), the redeem for an IN_PROGRESS attempt waits until an invigilator clicks "Allow device change" in Monitoring.
    - Log it as a security event `DEVICE_CHANGED`.
 4. **Paused time while switching.** The time keeps running (it is the server clock). If the college wants switch time refunded, the invigilator uses a per-student extension (#15).
 5. **Run code / drafts.** The new device fetches the latest submission per question (endpoint added in #6) to show "submitted" state correctly.
 
 **Proof:** the code goes in now. A lab rehearsal confirms it: kill a machine mid-exam, log in on another, check the answers, timer and submitted state.
 
+### 19. Sandbox for malicious code (B + C, M; final pieces at deployment)
+Student code is untrusted. It can try to:
+- read other students' answers or the hidden tests
+- reach the network
+- crash or freeze the grader or the lab PC
+- escape to the host
+
+Code runs in two places, and both need to hold.
+
+**Today: server grader** (`execution/docker-runner.provider.ts`, documented in `docs/execution-security.md`):
+- a fresh container per run: `--network none`, `--read-only`, a 16 MB `/tmp`, `--cap-drop ALL`, `no-new-privileges`, uid 65534, `--pids-limit 64`, memory/CPU/open-file caps, `--ipc none`, a time limit per test plus a hard container deadline, a 64 KB output cap
+- expected outputs never enter the container
+- `npm run test:runner` covers nine abuse cases (fork bomb, memory bombs, endless output, filesystem writes, secret reading, killing or forging the harness, background processes, network)
+
+**Today: lab-PC runner** (`apps/exam-client/src/main/runner/localRunner.ts`):
+- `bwrap --unshare-all` binds only `/usr`, `/lib*` and `/bin` read-only. There is no home folder, so the exam app's own files and tokens are invisible.
+- It adds a private `/tmp`, a clean environment and `prlimit` memory/file/size caps.
+- It kills the whole process group at the deadline.
+- Unsandboxed mode works only in dev builds (`IS_DEV && EXAM_UNSANDBOXED_RUNNER=1`).
+
+**Gaps and what to build: server grader (B)**
+1. **A second kernel boundary.** All containers share the host kernel, so a kernel bug is an escape.
+   - Run sandboxes under **gVisor** (`--runtime=runsc`), behind `RUNNER_DOCKER_RUNTIME`. It is one flag in `DockerRunnerProvider`.
+   - It is required before C/C++ (#16): compiled code makes raw system calls directly.
+   - Measure the start-up cost in the capacity test.
+2. **A tighter seccomp profile** than Docker's default: `--security-opt seccomp=infra/runner/seccomp.json`.
+   - Deny `ptrace`, `mount`, `umount2`, `unshare`, `setns`, `bpf`, `keyctl`, `add_key`, `perf_event_open`, `userfaultfd`, `personality`, `kexec_*`, `init_module`, and `socket` for any family other than `AF_UNIX`.
+   - Abuse tests check that each is refused.
+3. **Rootless Docker** (or `userns-remap`) on the host, so root in a container isn't root on the machine. This is already recommended in the docs; make it a checked deployment step.
+   - Best is a **separate runner host** with no database and no `.env`, reached with `DOCKER_HOST=ssh://runner@…`.
+4. **Compiled languages** (with #16): compile in the same sandbox, as a separate step with its own limits.
+   - 10 s, 512 MB, compiler output capped, `-fmax-errors=5`, and the binary must fit in `/tmp`.
+   - `/tmp` keeps `nosuid,nodev` but needs exec for the compiled binary.
+   - Per-language overrides in `language.registry.ts`: Java needs a higher `--pids-limit` (JVM threads, e.g. 128) and `-XX:ActiveProcessorCount=1 -XX:+UseSerialGC -Xss…`.
+5. **Hardened images** we build ourselves: `infra/runner-images/{python,c,cpp,java}/Dockerfile`.
+   - minimal base, setuid bits removed (`find / -perm -4000 -exec chmod u-s {} +`), no shells or package managers beyond what the harness needs
+   - pinned by digest (`RUNNER_*_IMAGE`)
+6. **Leftovers and monitoring.**
+   - Label every sandbox container (`--label secure-exam-runner=1`).
+   - A reaper every minute removes any older than its deadline.
+   - Log every run's verdict and resource use.
+   - Repeated limit hits or seccomp denials from one student become a `SUSPICIOUS_CODE` security event on Monitoring. This flags only, never blocks: `import os` is legitimate in many answers.
+7. **More abuse tests** (`test:runner`), one per new language:
+   - C: fork bomb, `while(1) malloc`, null-pointer write, stack overflow
+   - raw `syscall(SYS_ptrace…)` and `unshare`
+   - compile bombs: deep template recursion, `#include "/dev/zero"`, a 1 GB static array
+   - Java: thread bomb, `Runtime.exec`
+   - reading `/proc/1/environ`
+
+**Gaps and what to build: lab-PC runner (C)**
+1. **No process-count cap.** `--unshare-all` gives a private PID namespace, but that doesn't limit how *many* processes there are. A fork bomb can exhaust the PC's process table before the deadline kill.
+   - Run each job in a cgroup: `systemd-run --user --scope -p TasksMax=64 -p MemoryMax=<limit> -p CPUQuota=100% -- bwrap …`. Ubuntu 22.04+ delegates the user cgroup.
+   - Refuse to run when the cgroup can't be created, the same way a missing `bwrap` is refused.
+2. **`prlimit` is optional today.** If it's missing, the job runs without memory limits. Make it required, like `bwrap`.
+3. **`/tmp` has no size cap.** `bwrap --tmpfs` is RAM-backed, and `prlimit --as` doesn't count it, so `while True: f.write(…)` fills the PC's memory.
+   - The cgroup `MemoryMax` from item 1 does count tmpfs pages, so it closes this.
+   - Where the lab's bwrap is new enough (`--size` arrived in 0.10; check the Ubuntu version's package), also add `--size 16M` before `--tmpfs /tmp`.
+4. **No seccomp filter.** Pass `--seccomp <fd>` with a filter compiled at build time (libseccomp), using the same deny list as the server.
+5. **Lab image** (`infra/linux-kiosk`): pin `bubblewrap`, `util-linux`, `python3.12`, and with #16 `gcc`, `g++` and a JDK. Check at app start-up that the sandbox works (a self-test run), and show "Code runner unavailable, tell the invigilator" otherwise. The student can still Submit; it runs on the server.
+6. **Non-Linux lab machines:** no sandbox exists, so the app never runs code locally there. Run falls back to the server (`CODING_SERVER_RUN=true` for those labs). The dev-only unsandboxed mode stays dev-only.
+
+**Bucket:** items 2, 4, 5, 6 and 7 (server) and 1–4 (lab) are code that can be done now. gVisor, rootless Docker, the separate runner host and the lab-image packages are **deployment**: write them as checklists in `docs/execution-security.md` and `infra/`, and tick them on the real machines.
+
 ## 4. Cross-cutting
 
-- **Migrations:** every entity change above needs a migration (see CLAUDE.md → Database). Expect about 8 migrations:
-  - `course_staff`, the `users.role` enum value, exam schedule fields, `pass_mark_enabled`, `question_scores` adjustment fields
+- **Migrations:** every entity change above needs a migration (see CLAUDE.md → Database). Expect about 10 migrations:
+  - the role change (`admin` → `instructor`, plus `ta`, with the data migration in #1), `course_staff`, `exams.course_id`, `questions.owner_id` + `topics.owner_id`
+  - exam schedule fields, `pass_mark_enabled`, `question_scores` adjustment fields
   - `topics.parent_id` (optional), `answers.marked_for_review` + `attempts.lastQuestionId` + `activeSessionId`, `captchas` (optional)
 - **Shared types first:** add the enums and DTOs to `packages/types` and `packages/validation` first, in one small PR, so A, B and C can build in parallel.
 - **Security invariants to keep:**
   - answer keys only after publishing (#9, #10)
   - hidden test inputs never sent to students (#8)
-  - every new route declares a permission (#1)
+  - every route declares a permission, and every list is scoped to the user's courses (#1)
+  - another instructor's data answers 404, not 403 (#1)
+  - student code runs only in a sandbox; no unsandboxed path in packaged builds or production (#19)
 - **Tests:**
-  - every new endpoint gets a spec, including a "student/TA of another course gets 403" case
+  - every new endpoint gets a spec, including an "instructor/TA of another course gets 404" case
+  - `test:runner` grows with each language and each sandbox control (#19)
   - the exam UI changes (#6, #7) get Vitest tests in `apps/web`
