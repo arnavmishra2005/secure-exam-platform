@@ -1,30 +1,50 @@
 # Phase 5 feature plan
 
-The next round of features, checked against the code as of 3 Nov 2026. Each feature says what exists today, what to build, who owns it (A: platform, courses, publish, results, auth; B: question bank, coding, question-wise results; C: attempts, persistence, kiosk, monitoring) and how big it is (S ≈ ½–1 day, M ≈ 2–3 days, L ≈ 4+ days, XL ≈ 2 weeks split across people).
+The next round of features, checked against the code as of 3 Nov 2026. Each feature says what exists today, what to build, who owns it and how big it is (S ≈ ½–1 day, M ≈ 2–3 days, L ≈ 4+ days, XL ≈ 2 weeks).
+
+**Each feature has exactly one owner**, who builds all of it, even where it reaches into another person's modules. We merge afterwards (see section 4). Owners follow the usual split where they can:
+- **A:** platform, courses, publish, results, auth
+- **B:** question bank, coding, code runner
+- **C:** attempts, exam-taking UI, persistence, kiosk, monitoring
+
+## Who does what
+
+| Person | Features | Rough total |
+|---|---|---|
+| **A** | #1 Instructors and TAs · #2 Remove admin · #4 Delay on dashboard · #5 Reschedule · #11 Pass mark on/off | ~17 days |
+| **B** | #8 Coding errors · #13 Manual marks · #14 Question bank by topic · #16 C/C++/Java · #19 Sandbox | ~15 days |
+| **C** | #3 UI polish · #6 Unsubmitted-code warning · #7 Green after Submit · #9 Review answers · #10 Full analysis · #12 Captcha · #15 Per-student extension · #17 Intranet · #18 Device switch | ~16 days |
+
+**Cross-person dependencies** (build against the agreed interface, merge later):
+- **#13 (B) needs #1 (A)** for the `MARKS_ADJUST` permission. B builds it behind `@RequirePermission(Permission.MARKS_ADJUST)` from A's types PR (section 4). Until #1 lands, that check is staff-only.
+- **#9/#10 (C) read B's coding data and A's results.** C uses the existing services and #13's score fields as their shape is agreed.
+- **#16 (B) must not go live before #19 (B).** Same person, so B does them in that order.
+- **#4 (A) and #5 (A)** share the schedule fields. Same person.
+- **#6 and #7 (C)** share the "submitted" state. Same person. They use the latest-submission endpoint C adds in #6.
 
 ## 1. Classification
 
 | # | Feature | Bucket | Owner | Size |
 |---|---|---|---|---|
-| 1 | Instructors replace admin: several instructors, each owning their courses, each choosing their TAs and the TAs' permissions | **Now** | A (+ every module owner scopes their own endpoints) | XL |
-| 2 | Remove "admin" everywhere: role, routes, UI, seed, env flags, docs | **Now** (with #1) | A (+ all owners) | M |
-| 3 | UI polishing | **Now** (pass 1) / **After** (pass 2 from pilot feedback) | all | M |
+| 1 | Instructors replace admin: several instructors, each owning their courses, each choosing their TAs and the TAs' permissions | **Now** | A | XL |
+| 2 | Remove "admin" everywhere: role, routes, UI, seed, env flags, docs | **Now** (with #1) | A | M |
+| 3 | UI polishing | **Now** (pass 1) / **After** (pass 2 from pilot feedback) | C | M |
 | 4 | Show delays / rescheduled start and status on the student dashboard | **Now** | A | S |
-| 5 | Reschedule an exam after it is published | **Now** | A (exam service is B's) | M |
-| 6 | "Code not submitted" warning on Save & Next; submitted count on Finish | **Now** | B (+ C for the palette) | S |
-| 7 | Coding question turns green only after Submit | **Now** | B + C | S |
+| 5 | Reschedule an exam after it is published | **Now** | A | M |
+| 6 | "Code not submitted" warning on Save & Next; submitted count on Finish | **Now** | C | S |
+| 7 | Coding question turns green only after Submit | **Now** | C | S |
 | 8 | Clear coding errors: compilation, indentation, segfault, … | **Now** | B | M |
-| 9 | Student can view their submitted answers after submitting | **Now** | A + B | M |
-| 10 | Full analysis after results are published | **Now** | A + B | M |
+| 9 | Student can view their submitted answers after submitting | **Now** | C | M |
+| 10 | Full analysis after results are published | **Now** | C | M |
 | 11 | Pass mark on/off per exam | **Now** | A | S |
-| 12 | Captcha when the student starts the exam | **Now** (self-hosted) | A + C | S |
-| 13 | Manual mark adjustment per question; instructor decides whether TAs may | **Now** (after #1) | A + B | M |
+| 12 | Captcha when the student starts the exam | **Now** (self-hosted) | C | S |
+| 13 | Manual mark adjustment per question; instructor decides whether TAs may | **Now** (after #1) | B | M |
 | 14 | Question bank by topic, then by type; filtering that works | **Now** | B | M |
 | 15 | Extend time for an individual student | **Mostly exists**: verify and close the gaps | C | S |
-| 16 | C, C++ and Java for coding questions | **Code now, finish at deployment** (needs compiler images on the grader and on lab machines) | B (+ C for the kiosk image) | L |
-| 17 | Intranet support | **Deployment** (small code changes now) | A + C + ops | M |
+| 16 | C, C++ and Java for coding questions | **Code now, finish at deployment** (needs compiler images on the grader and on lab machines) | B | L |
+| 17 | Intranet support | **Deployment** (small code changes now) | C | M |
 | 18 | Continue the exam on another device, with timing intact | **Mostly exists**: code the gaps now, prove it in a lab rehearsal | C | M |
-| 19 | Sandbox for malicious code (server grader and lab-PC runner) | **Mostly exists** for Python: harden now; gVisor, rootless Docker and the runner host at deployment | B (server) + C (lab runner) | M |
+| 19 | Sandbox for malicious code (server grader and lab-PC runner) | **Mostly exists** for Python: harden now; gVisor, rootless Docker and the runner host at deployment | B | M |
 
 **Buckets:**
 - **Now:** application code only. It can be built and tested on a laptop today.
@@ -32,12 +52,10 @@ The next round of features, checked against the code as of 3 Nov 2026. Each feat
 - **Deployment:** mostly configuration and infrastructure in the college network, plus a few small code changes.
 - **After:** needs the system running with real users first (pilot feedback, load tests, a lab rehearsal).
 
-**Suggested order:**
-1. #1 and #2 (instructors and TAs) first. Every other feature's "who can do what" depends on them, and they touch every controller, so it's cheaper to do them before the other features add more endpoints.
-2. Then the small, visible wins, in parallel: #4, #6, #7, #11, #12, #15.
-3. Then #5, #8, #9, #10, #13, #14, #18.
-4. In parallel, on its own track: #19, then #16 and #17. They need someone to build the images and the server setup. **C and C++ (#16) must not reach students before the #19 hardening is in**: compiled code can make raw system calls, so it needs the stronger sandbox.
-5. #3 pass 2 after the pilot.
+**Suggested order, per person** (all three work in parallel):
+- **A:** the shared types PR (section 4) → #1 → #2 → #11 → #4 → #5. #1 and #2 touch every controller, so A merges them early and the others rebase onto them.
+- **B:** #8 → #14 → #19 → #16 → #13. **C, C++ and Java (#16) must not reach students before the #19 hardening is in**: compiled code can make raw system calls, so it needs the stronger sandbox. #13 is last because it waits on #1.
+- **C:** #6 → #7 → #15 → #12 → #9 → #10 → #18 → #17 → #3 (pass 1). #3 pass 2 after the pilot.
 
 ## 2. Decisions needed before building
 
@@ -61,7 +79,7 @@ Already decided: **there is no admin.** There are several instructors. Each owns
 
 ## 3. Feature details
 
-### 1. Instructors and TAs replace admin (A + every module owner, XL)
+### 1. Instructors and TAs replace admin (A, XL)
 **Today:**
 - `Role` is only `admin | student` (`packages/types/src/user.types.ts`).
 - 19 controllers use `@Roles(Role.ADMIN)`. Any admin sees and changes everything.
@@ -109,10 +127,12 @@ Already decided: **there is no admin.** There are several instructors. Each owns
 - Replace `@Roles(Role.ADMIN)` with `@RequirePermission(Permission.X)` plus a `PermissionGuard`. The guard checks the permission is held on *some* course. The service then checks the specific resource through `AccessService`, because the guard can't see which course a body or query refers to.
 - **Every list is scoped**, not only single reads. Exams, questions, topics, tags, students, results, monitoring, audit, submissions, analytics and notifications filter with `courseIdsFor(...)`. One query helper, `scopeToCourses(qb, alias, courseIds)`, so each module applies it the same way.
 - Wrong course gives **404, not 403**, so other instructors' exam IDs can't be probed.
-- **Ownership work by module:** each owner scopes their own controllers and adds the specs.
-  - **A:** course, registration, publish, results, students, audit, notifications
-  - **B:** exam, question, question-bank, coding, question-analytics
-  - **C:** attempt monitoring, extensions, client-security, submissions (staff side)
+- **A does all of it**, including B's and C's controllers:
+  - course, registration, publish, results, students, audit, notifications
+  - exam, question, question-bank, coding, question-analytics
+  - attempt monitoring, extensions, client-security, submissions (staff side)
+
+  B and C review the changes to their modules when it is merged.
 
 **Accounts and login:**
 - **Instructors:** created by IT with `npm run user:create-instructor -- --email … --name …` (decision 1). It prints a one-time password, and the instructor must change it on first login.
@@ -140,12 +160,12 @@ Already decided: **there is no admin.** There are several instructors. Each owns
 - The seed creates two instructors and a TA (#2), so the isolation can be tried by hand.
 
 **Phasing:**
-- **1a:** types, the migration, `course_staff`, `AccessService` and `/me/access`. A, 3 days.
-- **1b:** each owner moves their controllers to permissions and scoping, in parallel. 2–3 days each.
-- **1c:** Staff tab and permission-aware menus. A, 2 days.
-- Feature work from section 1's step 2 can start once 1a is merged.
+- **1a:** types, the migration, `course_staff`, `AccessService` and `/me/access`. 3 days.
+- **1b:** every controller moved to permissions and scoping. About 5 days.
+- **1c:** Staff tab and permission-aware menus. 2 days.
+- B and C don't wait: they build their features against the permission names from the types PR.
 
-### 2. Remove "admin" everywhere (A + all owners, M)
+### 2. Remove "admin" everywhere (A, M)
 "Admin" is not renamed. It is removed: there is no all-seeing account any more. Everything that said admin now says instructor, or means "instructor or TA with permission X".
 
 - **Types:** remove `Role.ADMIN` and add `Role.INSTRUCTOR` and `Role.TA`. The compiler then lists every place still using it.
@@ -170,7 +190,7 @@ Already decided: **there is no admin.** There are several instructors. Each owns
 - **Legacy `apps/admin-web`:** it is superseded by `apps/web` and would need the same permission work. Delete it in this phase rather than port it.
 - **Check:** `grep -rni "admin" apps packages --include='*.ts*'` returns only migrations and the redirect.
 
-### 3. UI polishing (all, M)
+### 3. UI polishing (C, M)
 Do this as a checklist pass, not open-ended work:
 - consistent page headers and empty, loading and error states
 - spacing and type scale through the existing `components/ui`
@@ -209,7 +229,7 @@ It also:
 
 **UI:** a "Reschedule" button on the exam page, with a dialog that explains the rules for the current state.
 
-### 6. Warnings for unsubmitted code (B + C, S)
+### 6. Warnings for unsubmitted code (C, S)
 **Today:** coding drafts are saved as answers (`CodingRenderer` → `saveAnswer`). Submit stores a `code_submissions` row (`isFinal`). The exam UI doesn't connect the two.
 
 **Build:**
@@ -229,7 +249,7 @@ It also:
 
 The wording depends on decision 4.
 
-### 7. Green only after Submit (B + C, S)
+### 7. Green only after Submit (C, S)
 - Add `QuestionState.SUBMITTED` (or derive it): for CODING, "answered" means "has a submission that hasn't changed since". Typing only makes it "In progress".
 - **Palette** (`QuestionPalette.tsx`):
   - new amber colour for "In progress (not submitted)"
@@ -268,7 +288,7 @@ The wording depends on decision 4.
   - For hidden tests, show only the verdict and kind, never the input (unchanged rule).
 - **Desktop runner:** `apps/exam-client/src/main/runner/localRunner.ts` uses the same classifier. Move it to a shared package so both use one copy.
 
-### 9. Students see their submitted answers (A + B, M)
+### 9. Students see their submitted answers (C, M)
 **Today:**
 - `GET /me/dashboard` lists exams and published results
 - `GET /me/exams/:examId` is for the instructions screen
@@ -284,7 +304,7 @@ The wording depends on decision 4.
 - **UI:** clicking a submitted exam on the dashboard opens a read-only review page that reuses the question renderers in read-only mode.
 - Optionally, an instructor setting "allow students to review answers before results" (default on).
 
-### 10. Full analysis after results are published (A + B, M)
+### 10. Full analysis after results are published (C, M)
 Same endpoint as #9. Once `results.published = true`, it also returns, per question:
 - **marks:** `question_scores.score / maxScore`
 - **MCQ:** the correct options, which of the student's were wrong, and the explanation (`questions.explanation` exists)
@@ -303,7 +323,7 @@ Answer keys go out only on this path, and only after publishing. Add a spec that
 - The pass-rate tile in `results-stats.ts` shows "—".
 - One toggle in the exam form.
 
-### 12. Captcha at exam start (A + C, S)
+### 12. Captcha at exam start (C, S)
 Students should be able to start the exam without internet access (see #17), so **don't use Google reCAPTCHA or hCaptcha**. Generate the captcha on the server:
 - `POST /auth/captcha` (public, throttled) returns `{ captchaId, svg }`.
   - Use `svg-captcha` (npm, no network needed).
@@ -315,7 +335,7 @@ Students should be able to start the exam without internet access (see #17), so 
 
 If the college later prefers a known provider and the API server has internet access, add Cloudflare Turnstile behind the same interface. Self-hosted stays the default.
 
-### 13. Manual mark adjustment (A + B, M; after #1)
+### 13. Manual mark adjustment (B, M; after #1)
 **Today:**
 - `PATCH /submissions/:attemptId/result` overrides the *total*
 - `question_scores` has `source AUTO_MCQ | AUTO_CODE | MANUAL`, but nothing writes `MANUAL`
@@ -383,7 +403,7 @@ If the college later prefers a known provider and the API server has internet ac
 - **Deployment:** build or pull the three images on the grading server, and pin them by digest (`RUNNER_*_IMAGE`). Without them, grading of those languages returns `INTERNAL_ERROR`. That is why this can only be finished at deployment.
 - **Security:** compile and run happen inside the #19 sandbox. Don't enable C/C++/Java for real exams until #19's gVisor, seccomp and the new abuse tests are in.
 
-### 17. Intranet support (A + C + ops, M)
+### 17. Intranet support (C, M; the college's IT does the deployment steps)
 **Goal:** the whole exam works with the college LAN cut off from the internet.
 
 **What the system already does:**
@@ -436,7 +456,7 @@ So switching device already continues **everything that reached the server**.
 
 **Proof:** the code goes in now. A lab rehearsal confirms it: kill a machine mid-exam, log in on another, check the answers, timer and submitted state.
 
-### 19. Sandbox for malicious code (B + C, M; final pieces at deployment)
+### 19. Sandbox for malicious code (B, M; final pieces at deployment)
 Student code is untrusted. It can try to:
 - read other students' answers or the hidden tests
 - reach the network
@@ -456,7 +476,7 @@ Code runs in two places, and both need to hold.
 - It kills the whole process group at the deadline.
 - Unsandboxed mode works only in dev builds (`IS_DEV && EXAM_UNSANDBOXED_RUNNER=1`).
 
-**Gaps and what to build: server grader (B)**
+**Gaps and what to build: server grader**
 1. **A second kernel boundary.** All containers share the host kernel, so a kernel bug is an escape.
    - Run sandboxes under **gVisor** (`--runtime=runsc`), behind `RUNNER_DOCKER_RUNTIME`. It is one flag in `DockerRunnerProvider`.
    - It is required before C/C++ (#16): compiled code makes raw system calls directly.
@@ -485,7 +505,7 @@ Code runs in two places, and both need to hold.
    - Java: thread bomb, `Runtime.exec`
    - reading `/proc/1/environ`
 
-**Gaps and what to build: lab-PC runner (C)**
+**Gaps and what to build: lab-PC runner**
 1. **No process-count cap.** `--unshare-all` gives a private PID namespace, but that doesn't limit how *many* processes there are. A fork bomb can exhaust the PC's process table before the deadline kill.
    - Run each job in a cgroup: `systemd-run --user --scope -p TasksMax=64 -p MemoryMax=<limit> -p CPUQuota=100% -- bwrap …`. Ubuntu 22.04+ delegates the user cgroup.
    - Refuse to run when the cgroup can't be created, the same way a missing `bwrap` is refused.
@@ -505,7 +525,12 @@ Code runs in two places, and both need to hold.
   - the role change (`admin` → `instructor`, plus `ta`, with the data migration in #1), `course_staff`, `exams.course_id`, `questions.owner_id` + `topics.owner_id`
   - exam schedule fields, `pass_mark_enabled`, `question_scores` adjustment fields
   - `topics.parent_id` (optional), `answers.marked_for_review` + `attempts.lastQuestionId` + `activeSessionId`, `captchas` (optional)
-- **Shared types first:** add the enums and DTOs to `packages/types` and `packages/validation` first, in one small PR, so A, B and C can build in parallel.
+- **Shared types first (A, day 1):** one small PR with the names everyone builds against: the `Role` and `Permission` enums, `@RequirePermission`, and the new fields on shared types. B and C add their own types in their own branches.
+- **Merging later:**
+  - each person works on their own branch and merges into `main` feature by feature
+  - expect conflicts only in the shared barrels (`packages/*/src/index.ts`), `app.module.ts`, `data-source.ts` and the seed; keep edits there additive, one line per export or module
+  - migrations: each person uses their own timestamp range, so the order is fixed when merged (A: `17940000…`, B: `17941000…`, C: `17942000…`)
+  - A's #1/#2 change every controller's guards, so whoever merges after A updates their new endpoints to `@RequirePermission`
 - **Security invariants to keep:**
   - answer keys only after publishing (#9, #10)
   - hidden test inputs never sent to students (#8)
