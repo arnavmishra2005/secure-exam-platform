@@ -5,7 +5,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuditEventType } from '@secure-exam/types';
-import { Repository } from 'typeorm';
+import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
 import { AuditEventEntity } from './entities/audit-event.entity';
 
 export interface AuditQueryOptions {
@@ -50,9 +50,10 @@ export class AuditService {
   }
 
   /** Used by Person A's audit controller (GET /audit with type/actorId filters). */
-  async findAll(options: AuditQueryOptions = {}): Promise<AuditEventEntity[]> {
+  async findAll(options: AuditQueryOptions & { scope?: AuditScope } = {}): Promise<AuditEventEntity[]> {
     const { type, actorId, limit = 50, offset = 0 } = options;
     const qb = this.auditRepository.createQueryBuilder('e');
+    if (options.scope) applyScope(qb, options.scope);
     if (type) qb.andWhere('e.type = :type', { type });
     if (actorId) qb.andWhere('e.actorId = :actorId', { actorId });
     return qb.orderBy('e.createdAt', 'DESC').skip(offset).take(limit).getMany();
@@ -63,6 +64,7 @@ export class AuditService {
    * eventType/page/limit filters).
    */
   async listEvents(params: {
+    scope?: AuditScope;
     examId?: string;
     attemptId?: string;
     eventType?: string;
@@ -74,6 +76,7 @@ export class AuditService {
     const limit = params.limit && params.limit > 0 ? Number(params.limit) : 50;
 
     const qb = this.auditRepository.createQueryBuilder('e');
+    if (params.scope) applyScope(qb, params.scope);
     if (params.examId) qb.andWhere('e.examId = :examId', { examId: params.examId });
     if (params.attemptId) qb.andWhere('e.attemptId = :attemptId', { attemptId: params.attemptId });
     if (params.eventType) qb.andWhere('e.type = :type', { type: params.eventType });
@@ -88,4 +91,19 @@ export class AuditService {
 
     return { items, total, page, limit };
   }
+}
+
+/** What one staff member may read: their exams' events and their own actions. */
+export interface AuditScope {
+  examIds: string[];
+  selfId: string;
+}
+
+function applyScope(qb: SelectQueryBuilder<AuditEventEntity>, scope: AuditScope): void {
+  qb.andWhere(
+    new Brackets((w) => {
+      w.where('e.actorId = :selfId', { selfId: scope.selfId });
+      if (scope.examIds.length > 0) w.orWhere('e.examId = ANY(:scopeExamIds::uuid[])', { scopeExamIds: scope.examIds });
+    }),
+  );
 }

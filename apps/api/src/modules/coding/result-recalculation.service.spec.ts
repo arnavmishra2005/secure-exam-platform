@@ -68,7 +68,7 @@ describe('ResultRecalculationService', () => {
     const { service, finals, repo, totals } = setup();
     finals.push(final('f1', 'a1', ['t1', 't2'], [P, F]), final('f2', 'a2', ['t2', 't1'], [P, P]));
 
-    const res = await service.recalculate('e1', undefined, 'admin');
+    const res = await service.recalculate('e1', undefined, 'instructor');
 
     // current weights: t1=1, t2=3 → a1 passed weight 1/4 of 20 marks = 5; a2 all = 20
     expect(repo.update).toHaveBeenCalledWith({ id: 'f1' }, { score: 5, maxScore: 20 });
@@ -81,7 +81,7 @@ describe('ResultRecalculationService', () => {
     const { service, finals, repo, totals } = setup();
     finals.push(final('f1', 'a1', ['old-1', 'old-2'], [P, P]), final('f2', 'a2', ['t1', 't2'], [P, P]));
 
-    const res = await service.recalculate('e1', undefined, 'admin');
+    const res = await service.recalculate('e1', undefined, 'instructor');
 
     expect(repo.update).toHaveBeenCalledWith({ id: 'f1' }, { status: CodeSubmissionStatus.PENDING });
     expect(totals.recompute).toHaveBeenCalledTimes(1);
@@ -92,14 +92,14 @@ describe('ResultRecalculationService', () => {
   it('keeps "no code" answers at 0 with the new maximum', async () => {
     const { service, finals, repo } = setup();
     finals.push(final('f1', 'a1', [], [], '   '));
-    await service.recalculate('e1', undefined, 'admin');
+    await service.recalculate('e1', undefined, 'instructor');
     expect(repo.update).toHaveBeenCalledWith({ id: 'f1' }, { maxScore: 20, score: 0 });
   });
 
   it('recomputes MCQ-only changes without touching code answers when scoped to an MCQ', async () => {
     const { service, finals, repo, totals } = setup();
     finals.push(final('f1', 'a1', ['old'], [P]));
-    const res = await service.recalculate('e1', 'mcq', 'admin');
+    const res = await service.recalculate('e1', 'mcq', 'instructor');
     expect(repo.find).not.toHaveBeenCalled();
     expect(totals.recompute).toHaveBeenCalledTimes(2);
     expect(res.queuedToRerun).toBe(0);
@@ -107,8 +107,8 @@ describe('ResultRecalculationService', () => {
 
   it('404s for an unknown exam or a question outside the exam', async () => {
     const { service, examRepo } = setup();
-    await expect(service.recalculate('e1', 'nope', 'admin')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.recalculate('e1', 'nope', 'instructor')).rejects.toBeInstanceOf(NotFoundException);
     examRepo.exist.mockResolvedValue(false);
-    await expect(service.recalculate('e1', undefined, 'admin')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.recalculate('e1', undefined, 'instructor')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

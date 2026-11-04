@@ -21,7 +21,7 @@ export interface ExamExtension {
   studentId: string | null;
   minutes: number;
   reason: string | null;
-  /** users.id of the admin who granted it. */
+  /** users.id of the instructor or TA who granted it. */
   createdBy: string;
   /** Running attempts whose expiry was pushed when this was granted. */
   affectedAttempts: number;

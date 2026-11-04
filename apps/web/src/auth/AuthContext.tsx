@@ -1,10 +1,11 @@
 // Owner: Person A
-// One sign-in for admins and students. The access token lives in memory
+// One sign-in for instructors, TAs and students. The access token lives in memory
 // (api-client); the refresh token in localStorage so a reload — including in
 // the middle of an exam — restores the session without a login screen.
 
 import { getMe, login as loginRequest, logout as logoutRequest } from '@secure-exam/api-client';
-import { Role } from '@secure-exam/types';
+import { STAFF_ROLES } from '@secure-exam/types';
+import type { Role } from '@secure-exam/types';
 import type { LoginResponse } from '@secure-exam/types';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { clearTokens, onSessionEvent, refreshSession, storeTokens } from './session';
@@ -107,5 +108,10 @@ export function useAuth(): AuthContextValue {
 
 /** Where each role lands after signing in. */
 export function homePathFor(role: Role | string | undefined): string {
-  return role === Role.ADMIN ? '/admin/exams' : '/student/dashboard';
+  return isStaffRole(role) ? '/instructor/exams' : '/student/dashboard';
+}
+
+/** Instructors and TAs use the staff portal; students the dashboard and exam app. */
+export function isStaffRole(role: Role | string | undefined): boolean {
+  return STAFF_ROLES.includes(role as Role);
 }

@@ -12,7 +12,7 @@ const renderAt = (path: string) =>
           <Route path="/student/exam" element={<p>EXAM</p>} />
           <Route path="/student/exam/submitted" element={<p>SUBMITTED</p>} />
           <Route path="/student/dashboard" element={<p>DASHBOARD</p>} />
-          <Route path="/admin/exams" element={<p>ADMIN</p>} />
+          <Route path="/instructor/exams" element={<p>ADMIN</p>} />
           <Route path="/login" element={<p>LOGIN</p>} />
         </Route>
       </Routes>
@@ -27,7 +27,7 @@ afterEach(() => {
 describe('DesktopLockRoot', () => {
   it('in the exam app, sends every other screen back to the launch screen', () => {
     (window as { desktop?: unknown }).desktop = { isDesktop: () => true };
-    for (const path of ['/student/dashboard', '/admin/exams', '/login']) {
+    for (const path of ['/student/dashboard', '/instructor/exams', '/login']) {
       const { unmount } = renderAt(path);
       expect(screen.getByText('LAUNCH')).toBeTruthy();
       unmount();
@@ -51,7 +51,7 @@ describe('DesktopLockRoot', () => {
   });
 
   it('in a browser, changes nothing', () => {
-    for (const [path, text] of [['/student/dashboard', 'DASHBOARD'], ['/admin/exams', 'ADMIN'], ['/login', 'LOGIN']]) {
+    for (const [path, text] of [['/student/dashboard', 'DASHBOARD'], ['/instructor/exams', 'ADMIN'], ['/login', 'LOGIN']]) {
       const { unmount } = renderAt(path);
       expect(screen.getByText(text)).toBeTruthy();
       unmount();

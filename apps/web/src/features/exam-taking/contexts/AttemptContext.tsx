@@ -7,7 +7,7 @@
  *  1. The attemptId lives in sessionStorage so a reload resumes the attempt
  *     but another tab doesn't pick it up.
  *  2. `expiresAt` is always the server's. While the attempt runs, heartbeats
- *     (useServerClock) refresh it — so an admin's time extension shows up
+ *     (useServerClock) refresh it — so an instructor's time extension shows up
  *     within one heartbeat — and give the server-time offset the timer uses.
  */
 

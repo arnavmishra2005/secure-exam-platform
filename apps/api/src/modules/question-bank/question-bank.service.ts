@@ -1,12 +1,16 @@
 /**
  * Owner: Person B.
  *
- * The admin question bank: search/filter, create/replace (MCQ and CODING,
+ * The staff question bank: search/filter, create/replace (MCQ and CODING,
  * including the coding problem and its tests), metadata edits, duplicate,
  * delete, topics, tags, and bulk add to an exam.
  *
  * Content of a question used in a live exam is locked (QuestionLockService);
  * metadata never is.
+ *
+ * Person A: every question and topic belongs to one instructor's bank
+ * (owner_id). Callers pass the banks the user may see (`ownerIds`, from
+ * AccessService.bankOwnerIdsFor) and the bank new items go into (`ownerId`).
  */
 
 import {
@@ -70,9 +74,10 @@ export class QuestionBankService {
   // Read
   // ---------------------------------------------------------------------
 
-  async list(query: BankQuestionQueryDto): Promise<BankQuestionPage> {
+  async list(query: BankQuestionQueryDto, ownerIds: string[]): Promise<BankQuestionPage> {
     const page = query.page ?? 1;
     const limit = query.limit ?? DEFAULT_LIMIT;
+    if (ownerIds.length === 0) return { items: [], total: 0, page, limit };
 
     const qb = this.questionRepo
       .createQueryBuilder('q')
@@ -80,7 +85,8 @@ export class QuestionBankService {
       .orderBy('q.createdAt', 'DESC')
       .addOrderBy('q.id', 'ASC')
       .skip((page - 1) * limit)
-      .take(limit);
+      .take(limit)
+      .where('q.owner_id IN (:...ownerIds)', { ownerIds });
 
     if (query.search?.trim()) {
       qb.andWhere("q.text ILIKE :search ESCAPE '\\'", { search: `%${escapeLike(query.search.trim())}%` });
@@ -145,14 +151,16 @@ export class QuestionBankService {
   async create(
     dto: SaveBankQuestionDto,
     actorId: string,
+    ownerId: string,
     auditExtra: Record<string, unknown> = {},
   ): Promise<BankQuestionDetail> {
-    await this.validateContent(dto);
+    await this.validateContent(dto, ownerId);
     const id = await this.dataSource.transaction(async (manager) => {
       const question = await manager.getRepository(QuestionEntity).save(
         manager.getRepository(QuestionEntity).create({
           ...this.contentFields(dto),
           ...this.metaFields(dto),
+          ownerId,
           status: dto.status ?? QuestionStatus.READY,
         }),
       );
@@ -176,7 +184,7 @@ export class QuestionBankService {
   async replace(id: string, dto: SaveBankQuestionDto, actorId: string): Promise<BankQuestionDetail> {
     const existing = await this.questionRepo.findOne({ where: { id }, relations: ['options'] });
     if (!existing) throw new NotFoundException(`Question ${id} not found`);
-    await this.validateContent(dto);
+    await this.validateContent(dto, existing.ownerId);
     const locked = await this.lockService.isLocked(id);
     if (locked) {
       if (dto.type !== existing.type) {
@@ -215,6 +223,7 @@ export class QuestionBankService {
     await this.validateTopic(
       dto.topicId === undefined ? existing.topicId : dto.topicId,
       dto.courseId === undefined ? existing.courseId : dto.courseId,
+      existing.ownerId,
     );
 
     await this.dataSource.transaction(async (manager) => {
@@ -236,9 +245,10 @@ export class QuestionBankService {
     return this.get(id);
   }
 
-  /** Copy as a new DRAFT question (content, metadata, coding problem, tests). */
+  /** Copy as a new DRAFT question (content, metadata, coding problem, tests) in the same bank. */
   async duplicate(id: string, actorId: string): Promise<BankQuestionDetail> {
     const source = await this.get(id);
+    const { ownerId } = await this.questionRepo.findOneOrFail({ where: { id }, select: ['id', 'ownerId'] });
     const copy: SaveBankQuestionDto = {
       text: `${source.text} (copy)`.slice(0, 5000),
       type: source.type,
@@ -268,7 +278,7 @@ export class QuestionBankService {
           }
         : undefined,
     };
-    return this.create(copy, actorId, { duplicatedFrom: id });
+    return this.create(copy, actorId, ownerId!, { duplicatedFrom: id });
   }
 
   /** Only questions in no exam; answers keep the row alive otherwise (FK RESTRICT). */
@@ -295,13 +305,22 @@ export class QuestionBankService {
   // Exam composition
   // ---------------------------------------------------------------------
 
-  /** Appends READY questions to an exam in the given order, skipping the rest with a reason. */
-  async bulkAddToExam(examId: string, questionIds: string[], actorId: string): Promise<BulkAddToExamResult> {
+  /**
+   * Appends READY questions to an exam in the given order, skipping the rest
+   * with a reason. Questions outside `ownerIds` (banks the caller can't see)
+   * are reported as not found.
+   */
+  async bulkAddToExam(
+    examId: string,
+    questionIds: string[],
+    actorId: string,
+    ownerIds: string[],
+  ): Promise<BulkAddToExamResult> {
     await this.lockService.assertExamComposable(examId);
 
     const uniqueIds = [...new Set(questionIds)];
     const [questions, existing, problems] = await Promise.all([
-      this.questionRepo.find({ where: { id: In(uniqueIds) } }),
+      ownerIds.length ? this.questionRepo.find({ where: { id: In(uniqueIds), ownerId: In(ownerIds) } }) : [],
       this.examQuestionRepo.find({ where: { examId } }),
       this.problemRepo.find({ where: { questionId: In(uniqueIds) }, select: ['questionId'] }),
     ]);
@@ -341,15 +360,16 @@ export class QuestionBankService {
   // Topics and tags
   // ---------------------------------------------------------------------
 
-  async listTopics(courseId?: string): Promise<Topic[]> {
+  async listTopics(courseId: string | undefined, ownerIds: string[]): Promise<Topic[]> {
+    if (ownerIds.length === 0) return [];
     const topics = await this.topicRepo.find({
-      where: courseId ? { courseId } : {},
+      where: { ownerId: In(ownerIds), ...(courseId ? { courseId } : {}) },
       order: { name: 'ASC' },
     });
     return topics.map(toTopic);
   }
 
-  async createTopic(dto: CreateTopicDto): Promise<Topic> {
+  async createTopic(dto: CreateTopicDto, ownerId: string): Promise<Topic> {
     const name = dto.name.trim();
     if (!name) throw new BadRequestException('Topic name is required');
     const courseId = dto.courseId ?? null;
@@ -357,10 +377,11 @@ export class QuestionBankService {
     const clash = await this.topicRepo
       .createQueryBuilder('t')
       .where('LOWER(t.name) = LOWER(:name)', { name })
+      .andWhere('t.owner_id = :ownerId', { ownerId })
       .andWhere(courseId ? 't.course_id = :courseId' : 't.course_id IS NULL', { courseId })
       .getOne();
     if (clash) throw new ConflictException(`Topic "${clash.name}" already exists`);
-    return toTopic(await this.topicRepo.save(this.topicRepo.create({ name, courseId })));
+    return toTopic(await this.topicRepo.save(this.topicRepo.create({ name, courseId, ownerId })));
   }
 
   /** Questions keep existing; their topic is cleared (FK ON DELETE SET NULL). */
@@ -369,17 +390,20 @@ export class QuestionBankService {
     if (!res.affected) throw new NotFoundException(`Topic ${id} not found`);
   }
 
-  async listTags(search?: string): Promise<TagCount[]> {
+  async listTags(search: string | undefined, ownerIds: string[]): Promise<TagCount[]> {
+    if (ownerIds.length === 0) return [];
     const qb = this.tagRepo
       .createQueryBuilder('t')
       .select('t.tag', 'tag')
       .addSelect('COUNT(*)', 'count')
+      .innerJoin(QuestionEntity, 'q', 'q.id = t.question_id')
+      .where('q.owner_id IN (:...ownerIds)', { ownerIds })
       .groupBy('t.tag')
       .orderBy('count', 'DESC')
       .addOrderBy('t.tag', 'ASC')
       .limit(50);
     if (search?.trim()) {
-      qb.where("t.tag ILIKE :s ESCAPE '\\'", { s: `${escapeLike(search.trim().toLowerCase())}%` });
+      qb.andWhere("t.tag ILIKE :s ESCAPE '\\'", { s: `${escapeLike(search.trim().toLowerCase())}%` });
     }
     const rows: Array<{ tag: string; count: string }> = await qb.getRawMany();
     return rows.map((r) => ({ tag: r.tag, count: Number(r.count) }));
@@ -389,8 +413,8 @@ export class QuestionBankService {
   // Helpers
   // ---------------------------------------------------------------------
 
-  /** Shape rules per type, plus topic/course consistency. Throws 400. */
-  async validateContent(dto: SaveBankQuestionDto): Promise<void> {
+  /** Shape rules per type, plus topic/course/bank consistency. Throws 400. */
+  async validateContent(dto: SaveBankQuestionDto, ownerId: string | null): Promise<void> {
     if (dto.type === QuestionType.CODING) {
       if (dto.options && dto.options.length > 0) {
         throw new BadRequestException('A coding question has no options');
@@ -410,13 +434,17 @@ export class QuestionBankService {
     } else {
       throw new BadRequestException(`Unknown question type: ${dto.type}`);
     }
-    await this.validateTopic(dto.topicId ?? null, dto.courseId ?? null);
+    await this.validateTopic(dto.topicId ?? null, dto.courseId ?? null, ownerId);
   }
 
-  private async validateTopic(topicId: string | null | undefined, courseId: string | null | undefined) {
+  private async validateTopic(
+    topicId: string | null | undefined,
+    courseId: string | null | undefined,
+    ownerId: string | null,
+  ) {
     if (!topicId) return;
     const topic = await this.topicRepo.findOne({ where: { id: topicId } });
-    if (!topic) throw new BadRequestException('Topic not found');
+    if (!topic || topic.ownerId !== ownerId) throw new BadRequestException('Topic not found');
     if (topic.courseId && courseId && topic.courseId !== courseId) {
       throw new BadRequestException("The topic belongs to a different course than the question");
     }

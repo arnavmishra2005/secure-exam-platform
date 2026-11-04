@@ -8,7 +8,7 @@ export default function QuestionEditRoute() {
   const { questionId } = useParams();
   const navigate = useNavigate();
   const courses = useCourseOptions();
-  const back = () => navigate('/admin/questions');
+  const back = () => navigate('/instructor/questions');
   return (
     <div className="space-y-6">
       <PageHeader title={questionId ? 'Edit question' : 'New question'} />
@@ -18,7 +18,7 @@ export default function QuestionEditRoute() {
         courses={courses}
         onSaved={back}
         onCancel={back}
-        onDuplicated={(copy) => navigate(`/admin/questions/${copy.id}`)}
+        onDuplicated={(copy) => navigate(`/instructor/questions/${copy.id}`)}
       />
     </div>
   );

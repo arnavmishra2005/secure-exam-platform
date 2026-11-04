@@ -1,5 +1,5 @@
 // Exams are taken in the exam app only. The browser keeps the dashboard, the
-// results and the admin portal, but cannot start an attempt, fetch its
+// results and the staff portal, but cannot start an attempt, fetch its
 // questions, save answers or submit. The exam app tags every API request with
 // X-Client-Type: DESKTOP (see apps/exam-client/src/main/main.ts).
 //

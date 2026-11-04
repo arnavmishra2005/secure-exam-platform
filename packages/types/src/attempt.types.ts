@@ -2,8 +2,8 @@
  * Owner: Person C (Attempt / Answer / Submission / Monitoring)
  *
  * Plain interface/enum declarations only — no logic — per the file-structure
- * doc's rule for packages/types. Both apps/api and apps/admin-web import
- * from here so entity shapes never drift between backend and admin portal.
+ * doc's rule for packages/types. Both apps/api and apps/web import
+ * from here so entity shapes never drift between backend and staff portal.
  */
 
 export enum AttemptStatus {
@@ -38,7 +38,7 @@ export interface Attempt {
 }
 
 /**
- * Derived, read-only view used by the admin "Live Monitoring" screen.
+ * Derived, read-only view used by staff "Live Monitoring" screen.
  * Not persisted — computed per-request from Attempt + ExamSession.
  */
 export interface AttemptMonitorView extends Attempt {
@@ -49,7 +49,7 @@ export interface AttemptMonitorView extends Attempt {
   /**
    * True when status is still IN_PROGRESS but remainingSeconds has already
    * reached 0 — the timer has run out but nothing has finalized the row
-   * yet. Lets the admin UI show "closing out" instead of implying the
+   * yet. Lets the staff UI show "closing out" instead of implying the
    * attempt is live.
    */
   isOverdue: boolean;

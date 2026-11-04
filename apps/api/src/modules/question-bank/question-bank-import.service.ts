@@ -62,7 +62,8 @@ export class QuestionBankImportService {
     private readonly auditService: AuditService,
   ) {}
 
-  async importCsv(content: string, actorId: string): Promise<BulkImportResult> {
+  /** Every imported question and new topic goes into `ownerId`'s bank. */
+  async importCsv(content: string, actorId: string, ownerId: string): Promise<BulkImportResult> {
     const { rows, errors } = parseImportCsv(content);
 
     let createdCount = 0;
@@ -70,7 +71,7 @@ export class QuestionBankImportService {
       await this.dataSource.transaction(async (manager) => {
         const topicIds = new Map<string, string>();
         for (const row of rows) {
-          const topicId = row.topicName ? await this.topicId(manager, row, topicIds) : null;
+          const topicId = row.topicName ? await this.topicId(manager, row, topicIds, ownerId) : null;
           const question = await manager.getRepository(QuestionEntity).save(
             manager.getRepository(QuestionEntity).create({
               text: row.text,
@@ -81,6 +82,7 @@ export class QuestionBankImportService {
               difficulty: row.difficulty,
               courseId: row.courseId,
               topicId,
+              ownerId,
               status: row.status,
             }),
           );
@@ -104,8 +106,8 @@ export class QuestionBankImportService {
     return { createdCount, errors };
   }
 
-  /** Finds a topic by name (case-insensitive, same course) or creates it. */
-  private async topicId(manager: EntityManager, row: ParsedImportRow, cache: Map<string, string>) {
+  /** Finds a topic by name (case-insensitive, same course, same bank) or creates it. */
+  private async topicId(manager: EntityManager, row: ParsedImportRow, cache: Map<string, string>, ownerId: string) {
     const key = `${row.courseId ?? ''}|${row.topicName!.toLowerCase()}`;
     const cached = cache.get(key);
     if (cached) return cached;
@@ -114,9 +116,10 @@ export class QuestionBankImportService {
     const existing = await repo
       .createQueryBuilder('t')
       .where('LOWER(t.name) = LOWER(:name)', { name: row.topicName })
+      .andWhere('t.owner_id = :ownerId', { ownerId })
       .andWhere(row.courseId ? 't.course_id = :courseId' : 't.course_id IS NULL', { courseId: row.courseId })
       .getOne();
-    const id = existing?.id ?? (await repo.save(repo.create({ name: row.topicName!, courseId: row.courseId }))).id;
+    const id = existing?.id ?? (await repo.save(repo.create({ name: row.topicName!, courseId: row.courseId, ownerId }))).id;
     cache.set(key, id);
     return id;
   }

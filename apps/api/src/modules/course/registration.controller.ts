@@ -12,21 +12,26 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@secure-exam/types';
+import { Permission } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { AssignExamToCourseDto, EnrollStudentsDto } from '@secure-exam/validation';
+import { AccessService } from '../../common/access/access.service';
+import { RequirePermission } from '../../common/access/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RegistrationService } from './registration.service';
 
 @ApiTags('registrations')
 @ApiBearerAuth()
 @Controller('exams/:examId')
-@Roles(Role.ADMIN)
+@RequirePermission(Permission.EXAM_EDIT, { exam: 'examId' })
 export class RegistrationController {
-  constructor(private readonly registrationService: RegistrationService) {}
+  constructor(
+    private readonly registrationService: RegistrationService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get('registrations')
+  @RequirePermission(Permission.EXAM_VIEW, { exam: 'examId' })
   list(@Param('examId', ParseUUIDPipe) examId: string) {
     return this.registrationService.listForExam(examId);
   }
@@ -51,17 +56,19 @@ export class RegistrationController {
   }
 
   @Get('courses')
+  @RequirePermission(Permission.EXAM_VIEW, { exam: 'examId' })
   listCourses(@Param('examId', ParseUUIDPipe) examId: string) {
     return this.registrationService.listCoursesForExam(examId);
   }
 
-  /** Assigns a course: every enrolled student gets registered. */
+  /** Assigns a course: every enrolled student gets registered. The caller must edit exams on that course too. */
   @Post('courses')
-  assignCourse(
+  async assignCourse(
     @Param('examId', ParseUUIDPipe) examId: string,
     @Body() dto: AssignExamToCourseDto,
     @CurrentUser() user: JwtPayload,
   ) {
+    await this.access.assertCourse(user, dto.courseId, Permission.EXAM_EDIT);
     return this.registrationService.assignCourse(examId, dto.courseId, user.sub);
   }
 

@@ -39,7 +39,11 @@ export function OverviewTab({ examId }: ResultsTabProps) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Submitted" value={`${data.submittedCount} / ${data.registeredCount}`} hint={`${data.inProgressCount} in progress`} />
         <StatCard label="Absent" value={data.absentCount} hint="Registered, never started" />
-        <StatCard label="Pass rate" value={formatPercent(data.passRate)} hint={`${data.passedCount} passed · mark ${data.passPercentage}%`} />
+        <StatCard
+          label="Pass rate"
+          value={data.passMarkEnabled ? formatPercent(data.passRate) : '—'}
+          hint={data.passMarkEnabled ? `${data.passedCount} passed · mark ${data.passPercentage}%` : 'This exam has no pass mark'}
+        />
         <StatCard label="Average time" value={formatDuration(data.averageTimeSeconds)} />
         <StatCard label="Mean score" value={outOf(data.mean)} hint={data.standardDeviation !== null ? `σ ${formatScore(data.standardDeviation)}` : undefined} />
         <StatCard label="Median score" value={outOf(data.median)} />
@@ -56,13 +60,16 @@ export function OverviewTab({ examId }: ResultsTabProps) {
       <Card>
         <CardHeader>
           <CardTitle>Score distribution</CardTitle>
-          <CardDescription>Number of students per 10-point band of percentage score. The dashed line is the pass mark.</CardDescription>
+          <CardDescription>
+            Number of students per 10-point band of percentage score.
+            {data.passMarkEnabled && ' The dashed line is the pass mark.'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {data.submittedCount === 0 ? (
             <EmptyState icon={BarChart3} title="No submissions yet" description="The chart fills in as students submit." />
           ) : (
-            <ScoreHistogram buckets={data.histogram} passPercentage={data.passPercentage} />
+            <ScoreHistogram buckets={data.histogram} passPercentage={data.passMarkEnabled ? data.passPercentage : null} />
           )}
         </CardContent>
       </Card>
@@ -70,10 +77,10 @@ export function OverviewTab({ examId }: ResultsTabProps) {
   );
 }
 
-function ScoreHistogram({ buckets, passPercentage }: { buckets: HistogramBucket[]; passPercentage: number }) {
+function ScoreHistogram({ buckets, passPercentage }: { buckets: HistogramBucket[]; passPercentage: number | null }) {
   const rows = buckets.map((b) => ({ ...b, label: `${b.from}–${b.to}` }));
   // The pass mark falls inside one band; place the line at that band's position.
-  const passBand = rows[Math.min(Math.floor(passPercentage / 10), 9)]?.label;
+  const passBand = passPercentage === null ? undefined : rows[Math.min(Math.floor(passPercentage / 10), 9)]?.label;
 
   return (
     <div className="h-72 w-full" role="img" aria-label={`Histogram: ${rows.map((r) => `${r.label}%: ${r.count}`).join(', ')}`}>

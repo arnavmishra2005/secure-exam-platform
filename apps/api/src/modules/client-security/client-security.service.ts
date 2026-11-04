@@ -67,7 +67,7 @@ export class ClientSecurityService {
     return { recorded: accepted.length };
   }
 
-  /** Every event of an attempt, oldest first. Admin only (enforced on the controller). */
+  /** Every event of an attempt, oldest first. Staff only (enforced on the controller). */
   async list(attemptId: string): Promise<SecurityEventView[]> {
     const attempt = await this.attempts.findOne({ where: { id: attemptId } });
     if (!attempt) throw new NotFoundException('Attempt not found');

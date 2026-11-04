@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-/** Owner: Person C. One row per finalized attempt, published by an admin. */
+/** Owner: Person C. One row per finalized attempt, published by an instructor. */
 @Entity('results')
 @Unique('UQ_results_attemptId', ['attemptId'])
 export class ResultEntity {

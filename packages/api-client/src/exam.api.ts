@@ -1,6 +1,6 @@
 /**
  * Owner: Person B
- * Thin wrapper functions only — no business logic. The admin portal
+ * Thin wrapper functions only — no business logic. The web app
  * imports these instead of hand-writing fetch calls.
  */
 import { apiClient } from './client';
@@ -9,6 +9,7 @@ import type {
   CreateExamRequest,
   Exam,
   ExamAssignment,
+  RescheduleExamRequest,
   UpdateExamRequest,
 } from '@secure-exam/types';
 
@@ -42,6 +43,11 @@ export function startExam(examId: string): Promise<Exam> {
 
 export function closeExam(examId: string): Promise<Exam> {
   return apiClient.post<Exam>(`/exams/${examId}/close`).then((res) => res.data);
+}
+
+/** Person A: move a scheduled or published exam (rules in RescheduleExamRequest). */
+export function rescheduleExam(examId: string, data: RescheduleExamRequest): Promise<Exam> {
+  return apiClient.post<Exam>(`/exams/${examId}/reschedule`, data).then((res) => res.data);
 }
 
 export function getAssignedStudents(examId: string): Promise<ExamAssignment[]> {

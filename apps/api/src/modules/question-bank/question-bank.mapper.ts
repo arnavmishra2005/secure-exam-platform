@@ -1,6 +1,6 @@
 /**
- * Owner: Person B. Entity → admin response shapes for the question bank.
- * Admin-only: these include answer keys, hidden tests and reference solutions.
+ * Owner: Person B. Entity → staff response shapes for the question bank.
+ * Staff-only: these include answer keys, hidden tests and reference solutions.
  */
 
 import { BankQuestionDetail, BankQuestionSummary, Topic } from '@secure-exam/types';

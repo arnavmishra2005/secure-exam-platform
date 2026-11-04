@@ -1,5 +1,5 @@
 // Owner: Person A
-// Header-based CSV (same format as the Phase 1 admin portal):
+// Header-based CSV (same format as the Phase 1 staff portal):
 //   collegeId,fullName,email[,password]
 // Quoted cells are supported so names may contain commas.
 

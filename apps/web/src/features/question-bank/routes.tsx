@@ -1,4 +1,4 @@
-// Owner: Person B. Admin question bank, mounted under /admin.
+// Owner: Person B. The staff question bank, mounted under /instructor.
 // Lazy: the coding problem editor pulls in Monaco.
 
 import { lazy, Suspense } from 'react';

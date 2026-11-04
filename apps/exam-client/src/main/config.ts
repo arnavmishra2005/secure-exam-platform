@@ -27,5 +27,5 @@ export const WEB_ORIGIN = IS_DEV ? new URL(WEB_DEV_URL).origin : APP_ORIGIN;
 /** Origins the page may talk to or navigate within. */
 export const ALLOWED_ORIGINS = [new URL(API_URL).origin, IS_DEV ? new URL(WEB_DEV_URL).origin : APP_ORIGIN];
 
-/** Sent on every API request so the server can refuse administrator sessions in the exam app. */
+/** Sent on every API request so the server can refuse instructor and TA sessions in the exam app. */
 export const CLIENT_TYPE_HEADER = 'X-Client-Type';

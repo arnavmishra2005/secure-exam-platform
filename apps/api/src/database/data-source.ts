@@ -34,6 +34,8 @@ import { QuestionScoreEntity } from '../modules/results/entities/question-score.
 import { ExamExtensionEntity } from '../modules/extension/entities/exam-extension.entity';
 import { SecurityEventEntity } from '../modules/client-security/entities/security-event.entity';
 import { ExamLaunchTokenEntity } from '../modules/client-security/entities/exam-launch-token.entity';
+// Phase 5 — Person A
+import { CourseStaffEntity } from '../modules/course/entities/course-staff.entity';
 
 export default new DataSource({
   type: 'postgres',
@@ -71,6 +73,8 @@ export default new DataSource({
     ExamExtensionEntity,
     SecurityEventEntity,
     ExamLaunchTokenEntity,
+    // Phase 5 — Person A
+    CourseStaffEntity,
   ],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,

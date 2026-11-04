@@ -66,7 +66,7 @@ describe('RegistrationService', () => {
       const insertQb = qbReturning([{ id: 'r1', studentId: 's1' }, { id: 'r3', studentId: 's3' }]); // s2 was already registered
       registrationRepo.createQueryBuilder.mockReturnValue(insertQb);
 
-      const result = await service.assignCourse('exam-1', 'course-1', 'admin-1');
+      const result = await service.assignCourse('exam-1', 'course-1', 'instructor-1');
 
       expect(result.registrationsCreated).toBe(2);
       expect(insertQb.values).toHaveBeenCalledWith([
@@ -84,14 +84,14 @@ describe('RegistrationService', () => {
       enrollmentRepo.find.mockResolvedValue([{ studentId: 's1' }]);
       registrationRepo.createQueryBuilder.mockReturnValue(qbReturning([{ id: 'r1', studentId: 's1' }]));
 
-      await service.assignCourse('exam-1', 'course-1', 'admin-1');
+      await service.assignCourse('exam-1', 'course-1', 'instructor-1');
 
       expect(notificationService.notifyMany).toHaveBeenCalledWith(['user-of-s1'], expect.anything());
     });
 
     it('rejects assigning the same course twice', async () => {
       examCourseRepo.findOne.mockResolvedValue({ id: 'ec-1' });
-      await expect(service.assignCourse('exam-1', 'course-1', 'admin-1')).rejects.toThrow(ConflictException);
+      await expect(service.assignCourse('exam-1', 'course-1', 'instructor-1')).rejects.toThrow(ConflictException);
     });
   });
 
@@ -106,7 +106,7 @@ describe('RegistrationService', () => {
         .mockReturnValueOnce(qbReturning({ courseId: 'course-2' })) // s1 is also in course-2
         .mockReturnValueOnce(qbReturning(undefined)); // s2 isn't covered by anything else
 
-      const result = await service.unassignCourse('exam-1', 'course-1', 'admin-1');
+      const result = await service.unassignCourse('exam-1', 'course-1', 'instructor-1');
 
       expect(registrationRepo.update).toHaveBeenCalledWith({ id: 'r1' }, { courseId: 'course-2' });
       expect(registrationRepo.delete).toHaveBeenCalledWith({ id: 'r2' });
@@ -116,7 +116,7 @@ describe('RegistrationService', () => {
     it('only considers COURSE registrations from that course (MANUAL ones are left alone)', async () => {
       examCourseRepo.findOne.mockResolvedValue({ id: 'ec-1', examId: 'exam-1', courseId: 'course-1' });
 
-      await service.unassignCourse('exam-1', 'course-1', 'admin-1');
+      await service.unassignCourse('exam-1', 'course-1', 'instructor-1');
 
       expect(registrationRepo.find).toHaveBeenCalledWith({
         where: { examId: 'exam-1', source: RegistrationSource.COURSE, courseId: 'course-1' },

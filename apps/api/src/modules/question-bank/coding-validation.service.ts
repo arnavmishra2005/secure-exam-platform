@@ -4,7 +4,7 @@
  * Runs an author's reference solution (or any code) against a coding
  * problem's tests before the problem is saved or used, so wrong expected
  * outputs and too-tight time limits are caught early. Shares the sandbox
- * and the run limiter with students (keyed by the admin's user id).
+ * and the run limiter with students (keyed by staff's user id).
  */
 
 import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';

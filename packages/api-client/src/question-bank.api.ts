@@ -1,5 +1,5 @@
 /**
- * Owner: Person B. Admin question bank.
+ * Owner: Person B. Staff question bank.
  */
 import { apiClient } from './client';
 import type {

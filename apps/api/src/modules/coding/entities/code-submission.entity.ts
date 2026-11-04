@@ -47,7 +47,7 @@ export class CodeSubmissionEntity {
   @Column({ name: 'max_score', type: 'double precision', default: 0 })
   maxScore: number;
 
-  /** Per-test detail, admin-only. */
+  /** Per-test detail, staff-only. */
   @Column({ name: 'results_json', type: 'jsonb', default: () => `'[]'` })
   resultsJson: StoredTestResult[];
 

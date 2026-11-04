@@ -2,11 +2,12 @@
 // Exam management: status transitions, publish, and the tab registry.
 
 import { closeExam, deleteExam, getExam, scheduleExam, startExam } from '@secure-exam/api-client';
-import { ExamStatus } from '@secure-exam/types';
+import { ExamStatus, Permission } from '@secure-exam/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BarChart3, CalendarCheck, Play, Send, Square, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarCheck, CalendarClock, Play, Send, Square, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useAccess } from '@/auth/useAccess';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorState } from '@/components/ui/error-state';
@@ -19,6 +20,7 @@ import { formatDateTime } from '@/lib/format';
 import { examTabs } from './examTabs.registry';
 import { ExamStatusBadge, PublishedBadge } from './ExamStatusBadge';
 import { PublishDialog } from './PublishDialog';
+import { RescheduleDialog } from './RescheduleDialog';
 
 type Transition = { label: string; run: (id: string) => Promise<unknown>; confirm: string };
 
@@ -34,6 +36,8 @@ export default function ExamDetailPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [publishing, setPublishing] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
+  const { can } = useAccess();
   const [confirming, setConfirming] = useState<'transition' | 'delete' | null>(null);
   const { data: exam, isPending, error, refetch } = useQuery({ queryKey: ['exams', examId], queryFn: () => getExam(examId) });
 
@@ -53,13 +57,16 @@ export default function ExamDetailPage() {
   const transition = transitions[exam.status];
   const icons = { [ExamStatus.DRAFT]: CalendarCheck, [ExamStatus.SCHEDULED]: Play, [ExamStatus.ACTIVE]: Square } as const;
   const TransitionIcon = icons[exam.status as keyof typeof icons];
-  const canPublish = !exam.publishedAt && exam.status !== ExamStatus.CLOSED;
+  const canEdit = can(Permission.EXAM_EDIT, exam.courseId);
+  const canPublish = canEdit && !exam.publishedAt && exam.status !== ExamStatus.CLOSED;
+  const canReschedule = canEdit && exam.status !== ExamStatus.DRAFT && exam.status !== ExamStatus.CLOSED;
+  const canSeeResults = can(Permission.RESULTS_VIEW, exam.courseId);
 
   return (
     <>
       <PageHeader
         eyebrow={
-          <Link to="/admin/exams" className="inline-flex items-center gap-1 hover:text-foreground">
+          <Link to="/instructor/exams" className="inline-flex items-center gap-1 hover:text-foreground">
             <ArrowLeft className="h-3.5 w-3.5" /> Exams
           </Link>
         }
@@ -69,9 +76,12 @@ export default function ExamDetailPage() {
             <ExamStatusBadge status={exam.status} />
             <PublishedBadge exam={exam} />
             <span>
-              {formatDateTime(exam.startTime)} – {formatDateTime(exam.endTime)} · {exam.durationMinutes} min · pass{' '}
-              {exam.passPercentage}%
+              {formatDateTime(exam.startTime)} – {formatDateTime(exam.endTime)} · {exam.durationMinutes} min ·{' '}
+              {exam.passMarkEnabled ? `pass ${exam.passPercentage}%` : 'no pass mark'}
             </span>
+            {exam.originalStartTime && exam.originalStartTime !== exam.startTime && (
+              <span className="text-xs">(rescheduled from {formatDateTime(exam.originalStartTime)})</span>
+            )}
           </span>
         }
         actions={
@@ -81,19 +91,24 @@ export default function ExamDetailPage() {
                 <Send /> Publish
               </Button>
             )}
-            {transition && (
+            {canReschedule && (
+              <Button variant="outline" onClick={() => setRescheduling(true)}>
+                <CalendarClock /> Reschedule
+              </Button>
+            )}
+            {transition && canEdit && (
               <Button variant="outline" onClick={() => setConfirming('transition')}>
                 {TransitionIcon && <TransitionIcon />} {transition.label}
               </Button>
             )}
-            {exam.status !== ExamStatus.DRAFT && (
+            {exam.status !== ExamStatus.DRAFT && canSeeResults && (
               <Button variant="outline" asChild>
-                <Link to={`/admin/results/${exam.id}`}>
+                <Link to={`/instructor/results/${exam.id}`}>
                   <BarChart3 /> Results
                 </Link>
               </Button>
             )}
-            {exam.status === ExamStatus.DRAFT && (
+            {exam.status === ExamStatus.DRAFT && canEdit && (
               <Button variant="ghost" size="icon" aria-label="Delete draft" onClick={() => setConfirming('delete')}>
                 <Trash2 />
               </Button>
@@ -118,6 +133,7 @@ export default function ExamDetailPage() {
       </Tabs>
 
       <PublishDialog exam={exam} open={publishing} onOpenChange={setPublishing} onPublished={refresh} />
+      <RescheduleDialog exam={exam} open={rescheduling} onOpenChange={setRescheduling} onRescheduled={refresh} />
 
       {transition && (
         <ConfirmDialog
@@ -149,7 +165,7 @@ export default function ExamDetailPage() {
             await deleteExam(exam.id);
             toast.success('Draft deleted');
             refresh();
-            navigate('/admin/exams', { replace: true });
+            navigate('/instructor/exams', { replace: true });
           } catch (err) {
             toast.error(getErrorMessage(err));
           }

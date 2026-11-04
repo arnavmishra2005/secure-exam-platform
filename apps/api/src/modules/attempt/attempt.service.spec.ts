@@ -54,7 +54,7 @@ describe('AttemptService', () => {
 
   const student = { sub: 'student-1', role: Role.STUDENT } as any;
   const otherStudent = { sub: 'student-2', role: Role.STUDENT } as any;
-  const admin = { sub: 'admin-1', role: Role.ADMIN } as any;
+  const staff = { sub: 'instructor-1', role: Role.INSTRUCTOR } as any;
 
   const activeExam = {
     id: 'exam-1',
@@ -261,11 +261,11 @@ describe('AttemptService', () => {
       expect(result).toBe(attempt);
     });
 
-    it("lets an admin view any student's attempt", async () => {
+    it("lets staff view a student's attempt (PermissionGuard has checked the course)", async () => {
       const attempt = { id: 'attempt-1', studentId: student.sub, examId: 'exam-1' };
       attemptRepo.findOne.mockResolvedValue(attempt);
 
-      const result = await service.findOwnedAttemptOrThrow('attempt-1', admin);
+      const result = await service.findOwnedAttemptOrThrow('attempt-1', staff);
       expect(result).toBe(attempt);
     });
 
@@ -366,6 +366,18 @@ describe('AttemptService', () => {
   });
 
   describe('listForMonitoring', () => {
+    it('lists nothing, without querying, when the caller may monitor no exam', async () => {
+      const result = await service.listForMonitoring({ page: 1, limit: 20 }, []);
+      expect(result).toEqual({ items: [], total: 0, page: 1, limit: 20 });
+      expect(attemptRepo.findAndCount).not.toHaveBeenCalled();
+    });
+
+    it("never lists another course's exam, even when asked for it by id", async () => {
+      const result = await service.listForMonitoring({ examId: 'exam-2', page: 1, limit: 20 }, ['exam-1']);
+      expect(result.items).toEqual([]);
+      expect(attemptRepo.findAndCount).not.toHaveBeenCalled();
+    });
+
     it('returns a paginated view with computed remaining time and isOverdue=false for a live attempt', async () => {
       const attempt = {
         id: 'attempt-1',
@@ -380,7 +392,7 @@ describe('AttemptService', () => {
       };
       attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
 
-      const result = await service.listForMonitoring({ page: 1, limit: 20 });
+      const result = await service.listForMonitoring({ page: 1, limit: 20 }, ['exam-1']);
 
       expect(result.total).toBe(1);
       expect(result.items[0].id).toBe('attempt-1');
@@ -403,7 +415,7 @@ describe('AttemptService', () => {
       };
       attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
 
-      const result = await service.listForMonitoring({ page: 1, limit: 20 });
+      const result = await service.listForMonitoring({ page: 1, limit: 20 }, ['exam-1']);
 
       expect(result.items[0].remainingSeconds).toBe(0);
       expect(result.items[0].isOverdue).toBe(true);
@@ -423,7 +435,7 @@ describe('AttemptService', () => {
       };
       attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
 
-      const result = await service.listForMonitoring({ page: 1, limit: 20 });
+      const result = await service.listForMonitoring({ page: 1, limit: 20 }, ['exam-1']);
 
       expect(result.items[0].isOverdue).toBe(false);
     });
@@ -497,7 +509,7 @@ describe('AttemptService', () => {
         { examId: 'exam-1', scope: ExtensionScope.STUDENT, studentId: 'user-1', minutes: 7, createdAt: new Date() },
       ]);
 
-      const { items } = await service.listForMonitoring({ page: 1, limit: 20 });
+      const { items } = await service.listForMonitoring({ page: 1, limit: 20 }, ['exam-1']);
 
       expect(items[0]).toMatchObject({
         studentName: 'Grace Hopper',
@@ -514,7 +526,7 @@ describe('AttemptService', () => {
       attemptRepo.findAndCount.mockResolvedValue([[attempt], 1]);
       clientSecurity.countByAttempt.mockResolvedValue(new Map([['attempt-9', 5]]));
 
-      const { items } = await service.listForMonitoring({ page: 1, limit: 20 });
+      const { items } = await service.listForMonitoring({ page: 1, limit: 20 }, ['exam-1']);
 
       expect(items[0]).toMatchObject({ violationCount: 5, isFlagged: true });
       expect(clientSecurity.countByAttempt).toHaveBeenCalledWith(['attempt-9']);
@@ -528,7 +540,7 @@ describe('AttemptService', () => {
         getMany: jest.fn().mockResolvedValue([{ attemptId: 'attempt-9', lastSeenAt: new Date() }]),
       });
 
-      const { items } = await service.listForMonitoring({ page: 1, limit: 20 });
+      const { items } = await service.listForMonitoring({ page: 1, limit: 20 }, ['exam-1']);
 
       expect(items[0].isDisconnected).toBe(false);
     });

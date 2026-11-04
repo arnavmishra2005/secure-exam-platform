@@ -19,7 +19,7 @@ export enum StudentExamState {
   MISSED = 'MISSED',
 }
 
-/** An exam as a registered student sees it — no answer key, no admin data. */
+/** An exam as a registered student sees it — no answer key, no staff data. */
 export interface StudentExamView {
   examId: string;
   title: string;
@@ -27,6 +27,12 @@ export interface StudentExamView {
   durationMinutes: number;
   startTime: string;
   endTime: string;
+  /** The start time when the exam was published; differs from startTime once it was moved. */
+  originalStartTime: string | null;
+  /** True when the instructor moved the exam after publishing it. */
+  rescheduled: boolean;
+  /** The instructor's note about the change, if any. */
+  scheduleNote: string | null;
   publishedAt: string;
   state: StudentExamState;
   attemptId: string | null;
@@ -43,7 +49,8 @@ export interface DashboardResultItem {
   score: number;
   maxScore: number;
   percentage: number;
-  passed: boolean;
+  /** null when the exam has no pass mark. */
+  passed: boolean | null;
   publishedAt: string;
 }
 

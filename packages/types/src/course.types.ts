@@ -10,6 +10,8 @@
  * store the user id (JWT `sub`) instead; see docs/analytics-data-contract.md.
  */
 
+import type { CourseStaffRole, Permission } from './access.types';
+
 export interface Course {
   id: string;
   /** Short unique code, e.g. "CS201". */
@@ -23,6 +25,12 @@ export interface Course {
 export interface CourseWithCounts extends Course {
   enrolledCount: number;
   examCount: number;
+  /** Number of instructors and TAs on the course. */
+  staffCount: number;
+  /** The caller's role on this course. */
+  myRole: CourseStaffRole;
+  /** The caller's permissions on this course (all of them for an instructor). */
+  myPermissions: Permission[];
 }
 
 export interface CourseEnrollment {
@@ -60,7 +68,7 @@ export interface ExamCourse {
 export enum RegistrationSource {
   /** Created because the student is enrolled in a course assigned to the exam. */
   COURSE = 'COURSE',
-  /** Added to the exam individually by an admin. */
+  /** Added to the exam individually by an instructor or TA. */
   MANUAL = 'MANUAL',
 }
 

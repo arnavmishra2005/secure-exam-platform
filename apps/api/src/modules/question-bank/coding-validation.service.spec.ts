@@ -34,7 +34,7 @@ describe('CodingValidationService', () => {
     const { service, executor } = setup();
     executor.runBatch.mockResolvedValue([ok('4\n', 120), ok('9\n', 800)]);
 
-    const res = await service.validate({ coding }, 'admin-1');
+    const res = await service.validate({ coding }, 'instructor-1');
 
     expect(executor.runBatch).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'print(int(input())**2)', inputs: ['2', '3'], limits: { timeLimitMs: 1000, memoryLimitMb: 256 } }),
@@ -46,7 +46,7 @@ describe('CodingValidationService', () => {
   it('runs explicit code instead of the reference solution', async () => {
     const { service, executor } = setup();
     executor.runBatch.mockResolvedValue([ok('4'), ok('10')]);
-    const res = await service.validate({ coding, code: 'print("other")' }, 'admin-1');
+    const res = await service.validate({ coding, code: 'print("other")' }, 'instructor-1');
     expect(executor.runBatch.mock.calls[0][0].code).toBe('print("other")');
     expect(res.ok).toBe(true);
   });

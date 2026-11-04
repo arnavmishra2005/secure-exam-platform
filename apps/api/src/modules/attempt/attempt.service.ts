@@ -162,7 +162,7 @@ export class AttemptService {
 
   /**
    * Enforces attempt ownership: a student may only access their own
-   * attempt; an admin may access any. Shared by AnswerService and
+   * attempt; staff may access any (PermissionGuard has checked the course). Shared by AnswerService and
    * SubmissionService so ownership logic lives in exactly one place.
    *
    * This is an UNLOCKED read — fine for ownership/existence, which never
@@ -207,8 +207,9 @@ export class AttemptService {
     return toAttemptDto(attempt);
   }
 
-  /** Admin-only: powers the /monitoring screen (GET /attempts). */
-  async listForMonitoring(query: ListAttemptsQueryDto): Promise<{
+  /** Staff-only: powers the /monitoring screen (GET /attempts). */
+  /** `examIds`: the exams the caller may monitor; nothing else is listed. */
+  async listForMonitoring(query: ListAttemptsQueryDto, examIds: string[]): Promise<{
     items: AttemptMonitorView[];
     total: number;
     page: number;
@@ -217,8 +218,10 @@ export class AttemptService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
 
-    const where: FindOptionsWhere<AttemptEntity> = {};
-    if (query.examId) where.examId = query.examId;
+    const visible = query.examId ? examIds.filter((id) => id === query.examId) : examIds;
+    if (visible.length === 0) return { items: [], total: 0, page, limit };
+
+    const where: FindOptionsWhere<AttemptEntity> = { examId: In(visible) };
     if (query.status) where.status = query.status;
 
     const [attempts, total] = await this.attemptRepository.findAndCount({
@@ -280,7 +283,7 @@ export class AttemptService {
         // zero but the row hasn't been finalized yet (either the periodic
         // expiry sweep hasn't reached it, or nobody has touched the
         // attempt since it expired to trigger the lazy auto-submit path).
-        // Lets the admin UI show "closing out" rather than implying the
+        // Lets the staff UI show "closing out" rather than implying the
         // attempt is still live.
         isOverdue: a.status === AttemptStatus.IN_PROGRESS && remainingSeconds <= 0,
       };

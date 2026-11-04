@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   getExams: vi.fn(async () => []),
   getMyDashboard: vi.fn(),
   listNotifications: vi.fn(async () => ({ items: [], unreadCount: 0 })),
+  getMyAccess: vi.fn(),
 }));
 
 vi.mock('@secure-exam/api-client', async (importOriginal) => {
@@ -22,6 +23,7 @@ vi.mock('@secure-exam/api-client', async (importOriginal) => {
     getExams: api.getExams,
     getMyDashboard: api.getMyDashboard,
     listNotifications: api.listNotifications,
+    getMyAccess: api.getMyAccess,
   };
 });
 
@@ -46,19 +48,50 @@ describe('App', () => {
     expect(window.location.pathname).toBe('/login');
   });
 
-  it('lands an admin on /admin/exams', async () => {
+  it('lands an instructor on /instructor/exams, with every menu', async () => {
+    api.getMyAccess.mockResolvedValue({ userId: 'u1', role: 'instructor', courses: [] });
     api.login.mockResolvedValueOnce({
       accessToken: 'a',
       refreshToken: 'r',
-      user: { id: 'u1', email: 'admin@x.edu', fullName: 'Ada Admin', role: 'admin' },
+      user: { id: 'u1', email: 'inst@x.edu', fullName: 'Ida Instructor', role: 'instructor' },
     });
     render(<App />);
     await screen.findByRole('heading', { name: 'Sign in' });
-    signIn('admin@x.edu');
+    signIn('inst@x.edu');
 
-    await waitFor(() => expect(window.location.pathname).toBe('/admin/exams'));
+    await waitFor(() => expect(window.location.pathname).toBe('/instructor/exams'));
     expect(await screen.findByText('No exams yet')).toBeTruthy();
     expect(screen.getByRole('link', { name: /Live monitoring/ })).toBeTruthy();
+    expect(screen.getByText(/Instructor · inst@x.edu/)).toBeTruthy();
+  });
+
+  it('shows a TA only the menus their permissions allow', async () => {
+    api.getMyAccess.mockResolvedValue({
+      userId: 'u3',
+      role: 'ta',
+      courses: [{ courseId: 'c1', code: 'CS201', name: 'OS', role: 'TA', permissions: ['EXAM_VIEW', 'MONITOR'] }],
+    });
+    api.login.mockResolvedValueOnce({
+      accessToken: 'a',
+      refreshToken: 'r',
+      user: { id: 'u3', email: 'ta@x.edu', fullName: 'Tara Assistant', role: 'ta' },
+    });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Sign in' });
+    signIn('ta@x.edu');
+
+    await waitFor(() => expect(window.location.pathname).toBe('/instructor/exams'));
+    expect(await screen.findByRole('link', { name: /Live monitoring/ })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('link', { name: /Results/ })).toBeNull());
+    expect(screen.queryByRole('link', { name: /Question bank/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /New exam/ })).toBeNull();
+  });
+
+  it('redirects old /admin links to /instructor', async () => {
+    window.history.pushState({}, '', '/admin/courses');
+    render(<App />);
+    // Signed out, so the redirect ends at the login page, remembering /instructor/courses.
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
   });
 
   it('lands a student on /student/dashboard', async () => {

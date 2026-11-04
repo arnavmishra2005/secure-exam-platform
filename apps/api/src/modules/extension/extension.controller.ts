@@ -4,21 +4,22 @@
 
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@secure-exam/types';
+import { Permission } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { ExtendTimeDto } from '@secure-exam/validation';
+import { RequirePermission } from '../../common/access/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { ExtensionService } from './extension.service';
 
 @ApiTags('extensions')
 @ApiBearerAuth()
 @Controller('exams/:examId/extensions')
-@Roles(Role.ADMIN)
+@RequirePermission(Permission.EXTEND_TIME, { exam: 'examId' })
 export class ExtensionController {
   constructor(private readonly extensionService: ExtensionService) {}
 
   @Get()
+  @RequirePermission(Permission.MONITOR, { exam: 'examId' })
   list(@Param('examId', ParseUUIDPipe) examId: string) {
     return this.extensionService.listForExam(examId);
   }

@@ -27,7 +27,7 @@ export class OptionEntity {
   /**
    * Never serialize this field on a student-facing/attempt endpoint.
    * See question.controller.ts for the two response shapes
-   * (admin question bank vs. exam-taking / public).
+   * (staff question bank vs. exam-taking / public).
    */
   @Column({ name: 'is_correct', default: false })
   isCorrect: boolean;

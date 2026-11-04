@@ -1,15 +1,15 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@secure-exam/types';
+import { Permission } from '@secure-exam/types';
 import type { AttemptDrilldown, QuestionAnalyticsMatrix } from '@secure-exam/types';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../common/access/require-permission.decorator';
 import { QuestionAnalyticsService } from './question-analytics.service';
 
-/** Owner: Person B. Question-wise results (admin only: includes answer keys and hidden tests). */
+/** Owner: Person B. Question-wise results (staff only: includes answer keys and hidden tests). */
 @ApiTags('question-analytics')
 @ApiBearerAuth()
 @Controller('exams/:examId/question-analytics')
-@Roles(Role.ADMIN)
+@RequirePermission(Permission.RESULTS_VIEW, { exam: 'examId' })
 export class QuestionAnalyticsController {
   constructor(private readonly analytics: QuestionAnalyticsService) {}
 

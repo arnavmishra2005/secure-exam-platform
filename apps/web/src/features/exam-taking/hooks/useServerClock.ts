@@ -3,9 +3,9 @@
  *
  * Heartbeats for a running attempt. Each response carries the server's clock
  * and the attempt's current expiry, so:
- *  - an admin's time extension reaches the timer within one heartbeat, and
+ *  - an instructor's time extension reaches the timer within one heartbeat, and
  *  - the countdown runs on server time, not the (possibly wrong) device clock.
- * Also keeps the admin monitoring screen's "last seen" fresh.
+ * Also keeps the staff monitoring screen's "last seen" fresh.
  */
 
 import { sendHeartbeat } from '@secure-exam/api-client';

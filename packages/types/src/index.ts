@@ -20,3 +20,6 @@ export * from './results.types';        // A
 export * from './extension.types';      // C
 export * from './dashboard.types';      // C
 export * from './client-security.types'; // C (contract only)
+
+// Phase 5
+export * from './access.types';         // A — instructors, TAs, permissions

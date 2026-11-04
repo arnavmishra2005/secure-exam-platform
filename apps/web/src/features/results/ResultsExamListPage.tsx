@@ -40,9 +40,9 @@ export default function ResultsExamListPage() {
           </TableHeader>
           <TableBody>
             {data.map((exam) => (
-              <TableRow key={exam.examId} className="cursor-pointer" onClick={() => navigate(`/admin/results/${exam.examId}`)}>
+              <TableRow key={exam.examId} className="cursor-pointer" onClick={() => navigate(`/instructor/results/${exam.examId}`)}>
                 <TableCell>
-                  <Link to={`/admin/results/${exam.examId}`} className="font-medium hover:underline">
+                  <Link to={`/instructor/results/${exam.examId}`} className="font-medium hover:underline">
                     {exam.title}
                   </Link>
                 </TableCell>

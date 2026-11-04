@@ -2,7 +2,7 @@
  * Owner: Person C (Attempt / Answer / Submission / Monitoring)
  *
  * Thin wrapper functions typed against packages/types, used by
- * apps/admin-web so nobody hand-writes fetch calls.
+ * apps/web so nobody hand-writes fetch calls.
  */
 
 import { apiClient } from './client';
@@ -50,7 +50,7 @@ export interface PaginatedAttempts {
   limit: number;
 }
 
-/** Admin-only: powers the /monitoring screen. */
+/** Staff-only: powers the /monitoring screen. */
 export function listAttempts(params: ListAttemptsParams = {}): Promise<PaginatedAttempts> {
   return apiClient.get<PaginatedAttempts>('/attempts', { params }).then((res) => res.data);
 }
@@ -96,7 +96,7 @@ export function submitAttempt(attemptId: string): Promise<{ submission: Submissi
     .then((res) => res.data);
 }
 
-// ---- Admin: submissions list + result publishing (/results screen) ----
+// ---- Staff: submissions list + result publishing (/results screen) ----
 
 export interface ListSubmissionsParams {
   examId?: string;

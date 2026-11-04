@@ -1,5 +1,5 @@
 /**
- * Owner: Person B (question-wise results). Admin-only shapes.
+ * Owner: Person B (question-wise results). Staff-only shapes.
  * Plain type/interface declarations only — no logic.
  */
 
@@ -28,7 +28,7 @@ export interface AnalyticsQuestion {
   text: string;
   type: QuestionType;
   marks: number;
-  /** MCQ / True-False options in display order (admin view: includes the key). */
+  /** MCQ / True-False options in display order (staff view: includes the key). */
   options?: { id: string; text: string; isCorrect: boolean }[];
 }
 
