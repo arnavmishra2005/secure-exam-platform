@@ -741,3 +741,10 @@ infra/linux-kiosk           Linux kiosk session, firewall and USB-block scripts
 - [docs/local-code-runner.md](docs/local-code-runner.md): the student-code sandbox contract.
 - [docs/phase4-contracts.md](docs/phase4-contracts.md): shared API contracts.
 - [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md): the Linux kiosk session.
+
+### Phase 5 — Person C
+
+See [implementation, A/B merge contracts and manual test checklist](docs/phase5-person-c.md)
+and the [college intranet deployment recipe](infra/intranet/README.md). Apply the
+two C migrations before starting the updated development API. On small laptops,
+run checks one at a time with `python3 scripts/check-low-memory.py <command>`.

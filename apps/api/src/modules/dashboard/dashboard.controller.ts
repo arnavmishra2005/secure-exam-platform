@@ -8,6 +8,7 @@ import { Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { StudentSubmissionService } from './student-submission.service';
 import { DashboardService } from './dashboard.service';
 
 @ApiTags('me')
@@ -15,7 +16,12 @@ import { DashboardService } from './dashboard.service';
 @Controller('me')
 @Roles(Role.STUDENT)
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(private readonly dashboardService: DashboardService, private readonly submissions: StudentSubmissionService) {}
+
+  @Get('exams/:examId/submission')
+  submission(@CurrentUser() user: JwtPayload, @Param('examId', ParseUUIDPipe) examId: string) {
+    return this.submissions.get(user.sub, examId);
+  }
 
   @Get('dashboard')
   dashboard(@CurrentUser() user: JwtPayload) {

@@ -1,10 +1,11 @@
-import { Body, Controller, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@secure-exam/types';
 import type { CodeRunResponse, CodeSubmitResponse, JwtPayload } from '@secure-exam/types';
 import { CodeRunDto, CodeSubmitDto } from '@secure-exam/validation';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { CodeRunService } from './code-run.service';
 import { CodeSubmitService } from './code-submit.service';
 
@@ -12,6 +13,7 @@ import { CodeSubmitService } from './code-submit.service';
 @ApiTags('coding')
 @ApiBearerAuth()
 @Controller('attempts/:attemptId/code')
+@UseGuards(DesktopClientGuard)
 export class CodeRunController {
   constructor(
     private readonly codeRunService: CodeRunService,
@@ -19,6 +21,12 @@ export class CodeRunController {
   ) {}
 
   /** Run against custom stdin or the sample tests. Waits for the result (a few seconds at most). */
+  @Get('submissions')
+  @Roles(Role.STUDENT)
+  latest(@Param('attemptId', ParseUUIDPipe) attemptId: string, @CurrentUser() user: JwtPayload) {
+    return this.codeSubmitService.latest(attemptId, user);
+  }
+
   @Post('run')
   @HttpCode(200)
   @Roles(Role.STUDENT)

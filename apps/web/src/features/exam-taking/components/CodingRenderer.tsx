@@ -3,7 +3,7 @@
 //
 // Drafts go through the exam's own saveAnswer() (store -> offline store ->
 // sync engine), so they survive offline and are graded after the attempt
-// ends even when the student never presses the editor's Submit.
+// ends according to the exam's unsubmitted-draft policy.
 
 import { CodingQuestionView, desktopLocalRunner } from '@secure-exam/exam-content-ui';
 import { Suspense, useCallback } from 'react';
@@ -20,6 +20,9 @@ import { useExamStore } from '../store/examStore';
 
 export function CodingRenderer({ attemptId, question, textResponse, onTextResponseChange, disabled }: QuestionRendererProps) {
   const network = useNetworkStatus();
+  const latestSubmission = useExamStore(s => s.codeSubmissions[question.id]);
+  const recordSubmission = useExamStore(s => s.recordCodeSubmission);
+  const changeCode = useCallback((code: string) => useExamStore.getState().setTextResponse(question.id, code), [question.id]);
   const restoreVersion = useExamStore((s) => s.restoreVersion);
   const { saveAnswer } = useAnswer(attemptId);
 
@@ -42,6 +45,9 @@ export function CodingRenderer({ attemptId, question, textResponse, onTextRespon
         attemptId={attemptId}
         question={question}
         savedCode={textResponse || null}
+        onCodeChange={changeCode}
+        latestSubmission={latestSubmission}
+        onSubmitted={(code, result, language) => recordSubmission({ questionId: question.id, code, language, submissionId: result.submissionId, status: result.status, savedAt: result.savedAt })}
         onSaveDraft={onSaveDraft}
         online={network === 'online'}
         readOnly={disabled}

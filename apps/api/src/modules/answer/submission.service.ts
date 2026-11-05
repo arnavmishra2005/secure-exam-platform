@@ -10,6 +10,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { assertAttemptSession } from '../attempt/attempt-session';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
 import { AnswerEntity } from './entities/answer.entity';
 import { SubmissionEntity } from './entities/submission.entity';
@@ -98,6 +99,7 @@ export class SubmissionService {
   async withLockedInProgressAttempt<T>(
     attemptId: string,
     work: (manager: EntityManager, attempt: AttemptEntity) => Promise<T>,
+    user?: JwtPayload,
   ): Promise<T> {
     return this.dataSource.transaction(async (manager) => {
       const attempt = await manager.getRepository(AttemptEntity).findOne({
@@ -107,6 +109,7 @@ export class SubmissionService {
       if (!attempt) {
         throw new NotFoundException('Attempt not found');
       }
+      if (user) assertAttemptSession(attempt, user);
       if (attempt.status !== AttemptStatus.IN_PROGRESS) {
         throw new ConflictException('This attempt has already been submitted');
       }
@@ -175,6 +178,7 @@ export class SubmissionService {
     // clean, deterministic 409 instead of a raw constraint-violation error.
     const outcome = await this.withLockedInProgressAttempt(attemptId, (manager, lockedAttempt) =>
       this.finalizeLocked(manager, lockedAttempt, isAutoSubmit),
+      user,
     );
 
     await this.logFinalizeAudit(outcome, isAutoSubmit, user.sub);

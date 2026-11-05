@@ -3,7 +3,7 @@
  * Tech choice: class-validator + class-transformer (pairs with NestJS's
  * global ValidationPipe, which Person A configures in main.ts).
  */
-import {
+import { IsBoolean,
   IsDateString,
   IsInt,
   Max,
@@ -30,6 +30,10 @@ class IsBeforeEndTimeConstraint implements ValidatorConstraintInterface {
 }
 
 export class CreateExamDto {
+  @IsOptional()
+  @IsBoolean()
+  gradeUnsubmittedCode?: boolean;
+
   @IsString()
   @IsNotEmpty()
   title!: string;
@@ -58,6 +62,10 @@ export class CreateExamDto {
 }
 
 export class UpdateExamDto {
+  @IsOptional()
+  @IsBoolean()
+  gradeUnsubmittedCode?: boolean;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()

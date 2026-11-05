@@ -4,8 +4,10 @@
  * Exam header: title, network status, server-synced countdown, student, finish.
  */
 
+import { ExtensionNotice } from './ExtensionNotice';
 import { useAuth } from '@/auth/AuthContext';
 import { Button } from '@/components/ui/button';
+import { useExamStore } from '../store/examStore';
 import { useAttempt } from '../contexts/AttemptContext';
 import { NetworkStatusBadge } from './NetworkStatusBadge';
 import { TimerDisplay } from './TimerDisplay';
@@ -19,22 +21,26 @@ interface HeaderProps {
 
 export function Header({ onTimerExpired, onFinish }: HeaderProps) {
   const { user } = useAuth();
+  const summary = useExamStore(s => s.getSummary)();
+  useExamStore(s => s.questionStates);
   const { expiresAt, serverOffsetMs, exam, attempt } = useAttempt();
   const examTitle = exam?.title ?? (attempt ? 'Exam in progress' : 'Secure Exam');
 
   return (
     <header className="sticky top-0 z-40 border-b bg-card shadow-sm">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <span className="truncate font-serif text-base font-semibold" title={examTitle}>
             {examTitle}
           </span>
           <NetworkStatusBadge />
+          <span className="text-xs text-muted-foreground">{summary.answered + summary.answeredAndMarkedReview}/{summary.total} answered / submitted</span>
         </div>
 
         <div className="flex flex-col items-center">
           <span className="text-[10px] uppercase leading-none tracking-wider text-muted-foreground">Time left</span>
           <TimerDisplay expiresAt={expiresAt} serverOffsetMs={serverOffsetMs} onExpired={onTimerExpired} className="text-lg" />
+          <ExtensionNotice key={attempt?.id} minutes={exam?.extendedMinutes ?? 0} />
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-3 text-sm">

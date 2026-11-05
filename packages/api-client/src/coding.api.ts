@@ -22,3 +22,7 @@ export function submitCode(attemptId: string, data: CodeSubmitRequest): Promise<
 export function getCodingConfig(): Promise<CodingClientConfig> {
   return apiClient.get<CodingClientConfig>('/coding/config').then((res) => res.data);
 }
+
+export function getLatestCodeSubmissions(attemptId: string): Promise<import('@secure-exam/types').LatestCodeSubmission[]> {
+  return apiClient.get(`/attempts/${attemptId}/code/submissions`).then(res => res.data);
+}

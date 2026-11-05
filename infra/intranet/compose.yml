@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: exam_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: secure_exam
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U exam_user -d secure_exam"]
+      interval: 5s
+      retries: 10
+  migrate:
+    build: { context: ../.., dockerfile: apps/api/Dockerfile }
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    command: [node, node_modules/typeorm/cli.js, -d, apps/api/dist/database/data-source.js, migration:run]
+    depends_on:
+      postgres: { condition: service_healthy }
+  api:
+    build: { context: ../.., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY_HOPS: 1
+    # Use a dedicated/rootless runner daemon reachable via DOCKER_HOST.
+    # Do not expose the API port: all incoming HTTP passes through nginx.
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  web:
+    build: { context: ../.., dockerfile: infra/intranet/web.Dockerfile }
+    restart: unless-stopped
+    ports: ["443:443"]
+    volumes:
+      - ./tls:/etc/nginx/tls:ro
+    depends_on: [api]
+volumes:
+  pgdata:

@@ -7,10 +7,7 @@ export function installFocusMonitor(win: BrowserWindow): void {
   win.on('blur', () => {
     if (win.isDestroyed() || !isSecurityActive()) return;
     emitSecurityEvent(win, 'FOCUS_LOST', 'window blurred');
-    // Take focus straight back.
-    setTimeout(() => {
-      if (!win.isDestroyed() && isSecurityActive()) win.focus();
-    }, 200);
+    // windowLockdown restores visibility, fullscreen and focus together.
   });
 
   win.on('focus', () => {

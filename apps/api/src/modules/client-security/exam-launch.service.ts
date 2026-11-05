@@ -11,13 +11,15 @@
 // The token is 32 random bytes, valid for EXAM_LAUNCH_TTL_SECONDS (default 2 minutes),
 // works once, and only its SHA-256 hash is stored.
 
-import { ForbiddenException, GoneException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, GoneException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Role } from '@secure-exam/types';
+import { AttemptStatus, Role } from '@secure-exam/types';
 import type { ExamLaunchCreated, ExamLaunchPreview, JwtPayload, LoginResponse } from '@secure-exam/types';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
+import { AttemptEntity } from '../attempt/entities/attempt.entity';
+import { SecurityEventEntity } from './entities/security-event.entity';
 import { AuthService } from '../auth/auth.service';
 import { UserService } from '../user/user.service';
 import { ExamLaunchTokenEntity } from './entities/exam-launch-token.entity';
@@ -64,26 +66,42 @@ export class ExamLaunchService {
   }
 
   /** Uses the token up and starts a session. */
-  async redeem(token: string, ipAddress: string | null): Promise<LoginResponse & { examId: string }> {
-    // One statement decides: only one caller can ever flip usedAt, and an expired token never matches.
-    const result = await this.tokens
-      .createQueryBuilder()
-      .update()
-      .set({ usedAt: () => 'now()' })
-      .where('"tokenHash" = :hash AND "usedAt" IS NULL AND "expiresAt" > now()', { hash: sha256(token) })
-      .returning(['userId', 'examId'])
-      .execute();
-    const row = (result.raw as Array<{ userId: string; examId: string }>)[0];
-    if (!row) throw new GoneException(EXPIRED);
-
-    const user = await this.userService.findById(row.userId);
-    if (!user.isActive || user.role !== Role.STUDENT) {
-      throw new ForbiddenException('Only students can take an exam in the exam app.');
-    }
-    const session = await this.authService.startSessionForUser(user, ipAddress, {
-      via: 'exam-launch',
-      examId: row.examId,
+  async redeem(token: string, ipAddress: string | null): Promise<LoginResponse & { examId: string; examSessionId: string }> {
+    const binding = { examSessionId: randomUUID(), examId: '' };
+    const outcome = await this.tokens.manager.transaction(async manager => {
+      const repo = manager.getRepository(ExamLaunchTokenEntity);
+      const row = await repo.createQueryBuilder('t').setLock('pessimistic_write')
+        .where('t.tokenHash = :hash AND t.usedAt IS NULL AND t.expiresAt > now()', { hash: sha256(token) }).getOne();
+      if (!row) throw new GoneException(EXPIRED);
+      const user = await this.userService.findById(row.userId);
+      if (!user.isActive || user.role !== Role.STUDENT) throw new ForbiddenException('Only students can take an exam in the exam app.');
+      const attempts = manager.getRepository(AttemptEntity);
+      const attempt = await attempts.createQueryBuilder('a').addSelect('a.deviceChangeTokenHash')
+        .setLock('pessimistic_write').where('a.examId = :examId AND a.studentId = :studentId', { examId: row.examId, studentId: row.userId }).getOne();
+      if (attempt?.status === AttemptStatus.IN_PROGRESS) {
+        if (attempt.expiresAt.getTime() <= Date.now()) throw new GoneException('The exam timer has expired.');
+        if (attempt.deviceChangeTokenHash !== row.tokenHash || !attempt.deviceChangeApprovedAt) {
+          if (attempt.deviceChangeTokenHash !== row.tokenHash) {
+            await attempts.update(attempt.id, { deviceChangeTokenHash: row.tokenHash,
+              deviceChangeRequestedAt: new Date(), deviceChangeApprovedAt: null });
+            // Give the invigilator time to respond. Retrying cannot extend it again.
+            await repo.update(row.id, { expiresAt: new Date(Date.now() + 600_000) });
+          }
+          return { pending: true as const };
+        }
+        await attempts.update(attempt.id, { activeSessionId: binding.examSessionId,
+          deviceChangeTokenHash: null, deviceChangeRequestedAt: null, deviceChangeApprovedAt: null });
+        await manager.getRepository(SecurityEventEntity).insert({ attemptId: attempt.id, examId: attempt.examId,
+          studentId: attempt.studentId, type: 'DEVICE_CHANGED', detail: 'Invigilator-approved device change', occurredAt: new Date() });
+      }
+      await repo.update(row.id, { usedAt: new Date() });
+      return { pending: false as const, user, examId: row.examId };
     });
-    return { ...session, examId: row.examId };
+    if (outcome.pending) throw new ConflictException({ code: 'DEVICE_CHANGE_PENDING',
+      message: 'Waiting for your invigilator to allow this device change in Monitoring. The exam timer keeps running.' });
+    binding.examId = outcome.examId;
+    const session = await this.authService.startSessionForUser(outcome.user, ipAddress,
+      { via: 'exam-launch', examId: outcome.examId }, binding);
+    return { ...session, examId: outcome.examId, examSessionId: binding.examSessionId };
   }
 }

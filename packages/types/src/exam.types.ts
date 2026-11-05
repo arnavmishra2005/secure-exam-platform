@@ -26,6 +26,7 @@ export interface Exam {
   title: string;
   description?: string;
   durationMinutes: number;
+  gradeUnsubmittedCode?: boolean;
   startTime: string; // ISO 8601
   endTime: string; // ISO 8601
   status: ExamStatus;
@@ -59,12 +60,14 @@ export interface CreateExamRequest {
   title: string;
   description?: string;
   durationMinutes: number;
+  gradeUnsubmittedCode?: boolean;
   startTime: string;
   endTime: string;
   passPercentage?: number;
 }
 
 export interface UpdateExamRequest {
+  gradeUnsubmittedCode?: boolean;
   title?: string;
   description?: string;
   durationMinutes?: number;

@@ -61,8 +61,8 @@ export function getAttemptQuestions(attemptId: string): Promise<PublicQuestion[]
 }
 
 /** Liveness ping; the response is the client's clock source (server time + current expiry). */
-export function sendHeartbeat(attemptId: string): Promise<HeartbeatResponse> {
-  return apiClient.post<HeartbeatResponse>(`/attempts/${attemptId}/heartbeat`).then((res) => res.data);
+export function sendHeartbeat(attemptId: string, lastQuestionId?: string): Promise<HeartbeatResponse> {
+  return apiClient.post<HeartbeatResponse>(`/attempts/${attemptId}/heartbeat`, { lastQuestionId }).then((res) => res.data);
 }
 
 // ---- Answers ------------------------------------------------------------
@@ -141,4 +141,8 @@ export function unpublishResult(attemptId: string): Promise<Result> {
   return apiClient
     .post<Result>(`/submissions/${attemptId}/result/unpublish`, {})
     .then((res) => res.data);
+}
+
+export function approveDeviceChange(attemptId: string): Promise<{ approved: boolean }> {
+  return apiClient.post(`/attempts/${attemptId}/device-change/approve`).then(res => res.data);
 }

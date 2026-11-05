@@ -5,6 +5,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoginDto, RefreshDto } from '@secure-exam/validation';
 import type { Request } from 'express';
+import type { JwtPayload } from '@secure-exam/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
@@ -40,7 +41,7 @@ export class AuthController {
   @ApiBearerAuth()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  logout(@CurrentUser() user: { sub: string }, @Req() req: Request) {
-    return this.authService.logout(user.sub, req.ip ?? null);
+  logout(@CurrentUser() user: JwtPayload, @Req() req: Request) {
+    return this.authService.logout(user.sub, req.ip ?? null, user.examSessionId);
   }
 }

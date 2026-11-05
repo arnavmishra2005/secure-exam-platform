@@ -8,7 +8,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "lint": "eslint \"src/**/*.ts\"",
-    "test": "jest",
+    "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:runner": "RUNNER_DOCKER_TESTS=1 jest docker-runner",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
@@ -42,6 +42,7 @@
     "pg": "^8.12.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "svg-captcha": "^1.4.0",
     "typeorm": "^0.3.20",
     "uuid": "^9.0.1"
   },

@@ -8,10 +8,9 @@ import { API_URL } from '../config';
 async function checkBackendReachable(): Promise<boolean> {
   return new Promise((resolve) => {
     const req = net.request(`${API_URL}/health`);
-    req.on('response', () => resolve(true));
-    req.on('error', () => resolve(false));
-    // 5-second timeout
-    setTimeout(() => resolve(false), 5000);
+    const timer = setTimeout(() => { req.abort(); resolve(false); }, 5000);
+    req.on('response', response => { clearTimeout(timer); resolve(response.statusCode >= 200 && response.statusCode < 300); });
+    req.on('error', () => { clearTimeout(timer); resolve(false); });
     req.end();
   });
 }

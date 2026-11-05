@@ -2,6 +2,8 @@
 // The Auth contract: AuthGuard/JwtStrategy + @Roles() (in common/) are what
 // Person B and Person C's controllers depend on. Published Day 0-1.
 
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ExamRefreshSessionEntity } from './exam-refresh-session.entity';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -14,6 +16,7 @@ import { JwtStrategy } from './jwt.strategy';
 @Module({
   imports: [
     UserModule,
+    TypeOrmModule.forFeature([ExamRefreshSessionEntity]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

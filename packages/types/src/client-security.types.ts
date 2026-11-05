@@ -67,12 +67,13 @@ export const DESKTOP_VIOLATION_TYPES = [
   'CLIPBOARD_BLOCKED',
   'KIOSK_CHECK_FAILED',
   'HEARTBEAT_LOST',
+  'DEVICE_CHANGED',
 ] as const;
 
 export type DesktopViolationType = (typeof DESKTOP_VIOLATION_TYPES)[number];
 
 /** Informational events that do not count towards an attempt's violation total. */
-export const NON_VIOLATION_TYPES: readonly DesktopViolationType[] = ['FOCUS_REGAINED', 'HEARTBEAT_LOST'];
+export const NON_VIOLATION_TYPES: readonly DesktopViolationType[] = ['FOCUS_REGAINED', 'HEARTBEAT_LOST', 'DEVICE_CHANGED'];
 
 /** One event as the exam app sends it: POST /attempts/:attemptId/events. */
 export interface SecurityEventInput {
@@ -112,6 +113,7 @@ export interface DesktopReadiness {
 
 export interface DesktopBridge {
   isDesktop: () => boolean;
+  getApiBaseUrl?: () => Promise<string>;
   getReadiness?: () => Promise<DesktopReadiness>;
   /** The one-time launch token this app was opened with, if any. */
   getLaunchToken?: () => Promise<string | null>;
@@ -120,6 +122,7 @@ export interface DesktopBridge {
   exitKiosk?: (pin?: string) => Promise<{ ok: boolean; reason?: string }>;
   notifySubmitted?: () => void;
   setSecurityMode?: (active: boolean) => void;
+  prepareExamSecurity?: () => Promise<{ ok: boolean; reason?: string }>;
   openExternal?: (url: string) => Promise<boolean>;
   logViolation?: (type: DesktopViolationType, detail?: string) => void;
   /** Events recorded since the last call; kept in the main process so a reload loses none. */

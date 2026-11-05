@@ -21,6 +21,7 @@ export interface SyncStatus {
   attemptClosed: boolean;
   /** The server returned 401. Syncing waits for a new session instead of retrying. */
   needsAuth: boolean;
+  sessionMoved?: boolean;
 }
 
 export interface SyncEngineOptions {
@@ -33,10 +34,11 @@ export interface SyncEngineOptions {
   retryMaxMs?: number;
 }
 
-type FailureKind = 'retry' | 'unauthorized' | 'closed' | 'rejected';
+type FailureKind = 'moved' | 'retry' | 'unauthorized' | 'closed' | 'rejected';
 
 /** How the engine reacts to a failed Phase 1 request. */
 export function classifyFailure(err: unknown): FailureKind {
+  if ((err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'SESSION_MOVED') return 'moved';
   const status = httpStatus(err);
   if (status === undefined) return 'retry'; // network failure or timeout: no HTTP response at all
   if (status === 401) return 'unauthorized';
@@ -108,7 +110,7 @@ export class SyncEngine {
    * the current attempt). Resolves when this round is over; never rejects.
    */
   syncNow(attemptId = this.status.attemptId): Promise<void> {
-    if (!attemptId) return Promise.resolve();
+    if (!attemptId || (attemptId === this.status.attemptId && this.status.sessionMoved)) return Promise.resolve();
     if (attemptId !== this.status.attemptId) {
       this.stop();
       this.update(initialStatus(attemptId));
@@ -162,6 +164,7 @@ export class SyncEngine {
       for (const answer of pending) {
         if (attemptId !== this.status.attemptId || !(await this.push(answer))) return;
       }
+      if (attemptId !== this.status.attemptId) return;
       // Submit only once every answer has been pushed, or the submission would lock them out.
       if (intent && !this.rerun && !(await this.submit(attemptId))) return;
       this.failures = 0;
@@ -182,6 +185,7 @@ export class SyncEngine {
       await api.saveAnswer(answer.attemptId, answer.questionId, answer.payload);
     } catch (err) {
       const kind = classifyFailure(err);
+      if (kind === 'moved') { this.update({ sessionMoved: true, syncing: false }); return false; }
       if (kind === 'retry') return this.scheduleRetry();
       if (kind === 'unauthorized') return this.waitForAuth();
       if (kind === 'closed') this.update({ attemptClosed: true });
@@ -202,6 +206,7 @@ export class SyncEngine {
       await api.submitAttempt(attemptId);
     } catch (err) {
       const kind = classifyFailure(err);
+      if (kind === 'moved') { this.update({ sessionMoved: true, syncing: false }); return false; }
       if (kind === 'retry') return this.scheduleRetry();
       if (kind === 'unauthorized') return this.waitForAuth();
       // 409 means it's already submitted (by an earlier request, or automatically

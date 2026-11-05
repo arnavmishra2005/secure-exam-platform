@@ -23,6 +23,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 import { ATTEMPT_ID_KEY, useAttempt } from '../contexts/AttemptContext';
+import { configureExamSession } from '../persistence';
 import { desktop, isDesktop } from '../desktop/desktop';
 import { ReadinessGate } from '../desktop/ReadinessGate';
 import { AttemptUnavailableError, startOrResumeAttempt } from '../lib/startOrResumeAttempt';
@@ -31,6 +32,7 @@ type Phase =
   | { name: 'loading' }
   | { name: 'ready'; preview: ExamLaunchPreview; token: string }
   | { name: 'signing-in' }
+  | { name: 'waiting'; preview: ExamLaunchPreview; token: string }
   | { name: 'blocked'; title: string; message: string };
 
 const NO_LINK = {
@@ -87,17 +89,29 @@ export default function LaunchPage() {
   }, []);
 
   const handleLogin = useCallback(async () => {
-    if (phase.name !== 'ready') return;
-    const { token } = phase;
+    if (phase.name !== 'ready' && phase.name !== 'waiting') return;
+    const { token, preview } = phase;
     setPhase({ name: 'signing-in' });
     try {
+      const protection = await window.desktop?.prepareExamSecurity?.();
+      if (!protection?.ok) {
+        desktop.setSecurityMode(false);
+        setPhase({
+          name: 'blocked',
+          title: 'Could not secure the exam',
+          message: protection?.reason ?? 'Restart the exam app with the latest desktop build to enable exam security.',
+        });
+        return;
+      }
       const session = await redeemExamLaunch(token);
       window.desktop?.clearLaunchToken?.(); // used up: forget it
+      if (session.examSessionId) configureExamSession(session.examSessionId);
       signInWithSession(session);
       try {
         setAttemptId(await startOrResumeAttempt(session.examId));
         navigate('/student/exam', { replace: true });
       } catch (err) {
+        desktop.setSecurityMode(false);
         // The token is already spent, so there is nothing to retry here.
         setPhase({
           name: 'blocked',
@@ -106,6 +120,8 @@ export default function LaunchPage() {
         });
       }
     } catch (err) {
+      desktop.setSecurityMode(false);
+      if ((err as { response?: { data?: { code?: string } } }).response?.data?.code === 'DEVICE_CHANGE_PENDING') { setPhase({ name: 'waiting', token, preview }); return; }
       setPhase(
         getErrorStatus(err) === 410
           ? { name: 'blocked', ...EXPIRED }
@@ -160,6 +176,11 @@ export default function LaunchPage() {
           </>
         )}
 
+        {phase.name === 'waiting' && <div className="space-y-4">
+          <Alert variant="warning" title="Waiting for invigilator approval">Ask your invigilator to select “Allow device change” in Monitoring. Your timer keeps running. Retry here after approval, within 10 minutes.</Alert>
+          <Button onClick={() => void handleLogin()}>Check approval and continue</Button>
+          <Button variant="outline" onClick={() => void desktop.exitKiosk()}>Close</Button>
+        </div>}
         {phase.name === 'blocked' && (
           <div className="space-y-4">
             <Alert variant="warning" title={phase.title}>

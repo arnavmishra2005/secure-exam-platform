@@ -9,19 +9,24 @@ export class AttemptUnavailableError extends Error {}
 
 /** The id of the attempt to take. Throws AttemptUnavailableError with a message fit for the student. */
 export async function startOrResumeAttempt(examId: string): Promise<string> {
+  // An approved resumed attempt can outlive the exam's normal end time because
+  // of a student extension. Do not apply new-attempt window checks to it.
+  try {
+    const existing = await getMyAttemptForExam(examId);
+    if (existing.status === AttemptStatus.IN_PROGRESS) return existing.id;
+    throw new AttemptUnavailableError('You have already submitted this exam.');
+  } catch (error) {
+    if (error instanceof AttemptUnavailableError) throw error;
+    if (getErrorStatus(error) !== 404) throw new AttemptUnavailableError(getErrorMessage(error));
+  }
   try {
     return (await startAttempt({ examId })).id;
-  } catch (err) {
-    // 409: already started (another window, or a restart of the app). Resume it if it is still running.
-    if (getErrorStatus(err) === 409) {
-      try {
-        const existing = await getMyAttemptForExam(examId);
-        if (existing.status === AttemptStatus.IN_PROGRESS) return existing.id;
-        throw new AttemptUnavailableError('You have already submitted this exam.');
-      } catch (inner) {
-        if (inner instanceof AttemptUnavailableError) throw inner;
-      }
+  } catch (error) {
+    if (getErrorStatus(error) === 409) {
+      // Another request may have created this attempt after our initial read.
+      const existing = await getMyAttemptForExam(examId);
+      if (existing.status === AttemptStatus.IN_PROGRESS) return existing.id;
     }
-    throw new AttemptUnavailableError(getErrorMessage(err, 'Unable to start the exam. Please contact your invigilator.'));
+    throw new AttemptUnavailableError(getErrorMessage(error, 'Unable to start the exam. Please contact your invigilator.'));
   }
 }

@@ -22,6 +22,7 @@ export interface ServerClock {
   status: AttemptStatus;
   /** Device time of the last successful heartbeat. */
   syncedAt: number;
+  extendedMinutes?: number;
 }
 
 /**
@@ -52,6 +53,7 @@ export function useServerClock(attemptId: string | null, intervalMs = HEARTBEAT_
           offsetMs: computeClockOffset(sentAt, receivedAt, response.serverTime),
           status: response.status,
           syncedAt: receivedAt,
+          extendedMinutes: response.extendedMinutes,
         });
       } catch {
         // Offline or briefly unreachable: keep the last known clock. The sync

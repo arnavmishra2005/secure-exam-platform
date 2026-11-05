@@ -12,6 +12,7 @@
 #   API_URL         — backend API base URL
 
 set -euo pipefail
+export EXAM_KIOSK_SESSION=1
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/secure-exam}"
 APPIMAGE="${APPIMAGE:-$INSTALL_DIR/SecureExam.AppImage}"

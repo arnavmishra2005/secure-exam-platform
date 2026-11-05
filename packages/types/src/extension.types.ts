@@ -45,5 +45,6 @@ export interface HeartbeatResponse {
   /** Current server-authoritative expiry, including any extensions. */
   expiresAt: string;
   remainingSeconds: number;
+  extendedMinutes?: number;
   status: AttemptStatus;
 }

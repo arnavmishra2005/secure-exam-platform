@@ -2,12 +2,13 @@
 
 import { app } from 'electron';
 import * as path from 'path';
+import { readApiBaseUrl } from './installConfig';
 
 /** Development = running from source. NODE_ENV is not set in a packaged app, so don't use it. */
 export const IS_DEV = !app.isPackaged;
 
 /** The exam API. Also where the readiness check pings /health. */
-export const API_URL = process.env.EXAM_API_URL ?? 'http://localhost:3000';
+export const API_URL = readApiBaseUrl(process.env.EXAM_CONFIG_PATH ?? '/etc/secure-exam/config.json', process.env.EXAM_API_URL, IS_DEV);
 
 /** Vite dev server for apps/web. */
 export const WEB_DEV_URL = process.env.EXAM_WEB_URL ?? 'http://localhost:3003';

@@ -21,6 +21,7 @@ const IPC = {
 contextBridge.exposeInMainWorld('desktop', {
   /** Returns true when running inside the Electron kiosk shell. */
   isDesktop: () => true,
+  getApiBaseUrl: (): Promise<string> => ipcRenderer.invoke('desktop:get-api-base-url'),
 
   /** Run all pre-exam readiness checks (display count, backend, processes). */
   getReadiness: (): Promise<ReadinessResult> =>
@@ -33,6 +34,9 @@ contextBridge.exposeInMainWorld('desktop', {
   /** Notify main process that exam submission is complete. */
   notifySubmitted: (): void =>
     ipcRenderer.send(IPC.NOTIFY_SUBMITTED),
+
+  prepareExamSecurity: (): Promise<{ ok: boolean; reason?: string }> =>
+    ipcRenderer.invoke('desktop:prepare-exam-security'),
 
   /** Set active exam lockdown mode (enables fullscreen, shortcut blocking, refocusing). */
   setSecurityMode: (active: boolean): void =>

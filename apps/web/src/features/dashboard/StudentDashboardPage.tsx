@@ -93,13 +93,13 @@ export default function StudentDashboardPage() {
               ) : (
                 <ul className="divide-y">
                   {data.upcoming.map((exam) => (
-                    <li key={exam.examId} className="flex items-center justify-between gap-4 py-3">
+                    <li key={exam.examId} className="flex flex-col items-start justify-between gap-2 py-3 sm:flex-row sm:items-center sm:gap-4">
                       <div className="min-w-0">
                         <Link to={`/student/exams/${exam.examId}`} className="font-medium hover:underline">
                           {exam.title}
                         </Link>
                         <p className="text-xs text-muted-foreground">
-                          {formatDateTime(exam.startTime)} · {exam.durationMinutes} min · {exam.questionCount} questions
+                          {formatDateTime(exam.startTime)} · {exam.durationMinutes} min{exam.extendedMinutes ? ` (+${exam.extendedMinutes} min added)` : ''} · {exam.questionCount} questions
                         </p>
                       </div>
                       <Badge variant="info">Opens {formatRelative(exam.startTime)}</Badge>
@@ -141,9 +141,9 @@ export default function StudentDashboardPage() {
               ) : (
                 <ul className="divide-y">
                   {data.completed.map((exam) => (
-                    <li key={exam.examId} className="flex items-center justify-between gap-4 py-3">
+                    <li key={exam.examId} className="flex flex-col items-start justify-between gap-2 py-3 sm:flex-row sm:items-center sm:gap-4">
                       <div className="min-w-0">
-                        <p className="font-medium">{exam.title}</p>
+                        <Link className="font-medium hover:underline" to={exam.state === StudentExamState.COMPLETED ? `/student/exams/${exam.examId}/submission` : `/student/exams/${exam.examId}`}>{exam.title}</Link>
                         <p className="text-xs text-muted-foreground">{formatDateTime(exam.startTime)}</p>
                       </div>
                       {exam.state === StudentExamState.MISSED ? (
@@ -195,7 +195,7 @@ function LiveExamCard({ exam }: { exam: StudentExamView }) {
           <p className="font-serif text-lg font-semibold">{exam.title}</p>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" aria-hidden="true" /> {exam.durationMinutes} min
+              <Clock className="h-3.5 w-3.5" aria-hidden="true" /> {exam.durationMinutes} min{exam.extendedMinutes ? ` (+${exam.extendedMinutes} min added)` : ''}
             </span>
             <span>{exam.questionCount} questions</span>
             <span>Closes {formatDateTime(exam.endTime)}</span>
@@ -213,9 +213,9 @@ function LiveExamCard({ exam }: { exam: StudentExamView }) {
 
 function ResultRow({ result: r }: { result: DashboardResultItem }) {
   return (
-    <li className="flex items-center justify-between gap-4 py-3">
+    <li className="flex flex-col items-start justify-between gap-2 py-3 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0">
-        <p className="font-medium">{r.title}</p>
+        <Link className="font-medium hover:underline" to={`/student/exams/${r.examId}/submission`}>{r.title} · View analysis</Link>
         <p className="text-xs text-muted-foreground">Published {formatDateTime(r.publishedAt)}</p>
       </div>
       <div className="flex items-center gap-3 text-right">

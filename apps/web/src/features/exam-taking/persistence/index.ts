@@ -33,8 +33,18 @@ export function configurePersistence(overrides: PersistenceOptions): void {
 }
 
 /** The plan's factory, and the Phase 4 swap point: Electron returns its SQLite-backed store here. */
+export function configureExamSession(sessionId: string): void {
+  syncEngine?.stop();
+  networkMonitor?.stop();
+  syncEngine = undefined; networkMonitor = undefined; offlineStore = undefined;
+  sessionStorage.setItem('secure-exam.offline-session', sessionId);
+}
+function offlineDatabaseName(): string {
+  try { return `secure-exam-offline${sessionStorage.getItem('secure-exam.offline-session') ? ':' + sessionStorage.getItem('secure-exam.offline-session') : ''}`; }
+  catch { return 'secure-exam-offline'; }
+}
 export function getOfflineStore(): IOfflineStore {
-  offlineStore ??= options.store ?? (typeof indexedDB === 'undefined' ? createMemoryStore() : createIndexedDbStore());
+  offlineStore ??= options.store ?? (typeof indexedDB === 'undefined' ? createMemoryStore() : createIndexedDbStore(offlineDatabaseName()));
   return offlineStore;
 }
 

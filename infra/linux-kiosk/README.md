@@ -57,13 +57,25 @@ infra/linux-kiosk/
 ## Safe Testing Instructions
 
 ### 1. Development Mode (Non-destructive, User-space)
-Run the Vite renderer and Electron app without kiosk traps:
+Run the unified frontend and API, then launch the exam app from the student dashboard:
 ```bash
 npm run api:start      # Terminal 1: NestJS API (:3000)
-npm run client:dev     # Terminal 2: Vite dev server (:5173)
-npm run client:desktop # Terminal 3: Electron dev shell
+npm run web:dev        # Terminal 2: unified admin/student website (:3003)
+# One-time setup (before starting the above): npm run exam:register
 ```
-*In dev mode, window controls and DevTools remain accessible.*
+The launch window is maximised. During an active exam the app enables fullscreen,
+blocks its window controls and available escape shortcuts, and restores focus after
+window-manager escape events. These app controls **do not replace OS kiosk policies**:
+normal desktops can reserve shortcuts before Electron receives them. Ubuntu/GNOME
+now also uses a temporary user-settings shortcut guard during exams, with automatic
+restoration and a recovery journal. See `docs/phase5-person-c.md` for its scope and
+requirements. Login checks protection and fullscreen before starting an attempt.
+Use the dedicated kiosk session for lab acceptance; a nested test window does not
+lock down its host desktop. No OS hardening is applied by `npm run web:dev`.
+
+Windows Ctrl+Alt+Delete requires OS-level controls such as
+[Keyboard Filter](https://learn.microsoft.com/en-us/windows/configuration/keyboard-filter/),
+not Electron key handlers. The Linux scripts here do not configure Windows.
 
 ### 2. Nested Kiosk Window Test (Unprivileged, No Root)
 Test the kiosk session inside a nested window without altering the host desktop:

@@ -2,6 +2,8 @@
 // The running app itself configures TypeORM via app.module.ts, not this file.
 
 import 'dotenv/config';
+import { ExamRefreshSessionEntity } from '../modules/auth/exam-refresh-session.entity';
+import { CaptchaEntity } from '../modules/client-security/entities/captcha.entity';
 import { DataSource } from 'typeorm';
 import { AuditEventEntity } from '../modules/audit/entities/audit-event.entity';
 import { StudentEntity } from '../modules/user/entities/student.entity';
@@ -71,7 +73,9 @@ export default new DataSource({
     ExamExtensionEntity,
     SecurityEventEntity,
     ExamLaunchTokenEntity,
+    ExamRefreshSessionEntity,
+    CaptchaEntity,
   ],
-  migrations: ['src/database/migrations/*.ts'],
+  migrations: [__dirname + '/migrations/*' + (__filename.endsWith('.ts') ? '.ts' : '.js')],
   synchronize: false,
 });

@@ -14,6 +14,12 @@ export class StartAttemptDto {
   examId!: string;
 }
 
+export class HeartbeatDto {
+  @IsOptional()
+  @IsUUID('4')
+  lastQuestionId?: string;
+}
+
 /** Admin-only monitoring list filter (GET /attempts). */
 export class ListAttemptsQueryDto {
   @IsOptional()

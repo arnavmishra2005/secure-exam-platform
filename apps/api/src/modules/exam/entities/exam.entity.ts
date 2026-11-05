@@ -46,6 +46,9 @@ export class ExamEntity {
   @Column({ name: 'pass_percentage', type: 'int', default: 40 })
   passPercentage: number;
 
+  @Column({ name: 'grade_unsubmitted_code', default: false })
+  gradeUnsubmittedCode: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -9,6 +9,7 @@
 // REQUIRE_DESKTOP_CLIENT=false switches the rule off for development.
 
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { labNetworkAllows } from './lab-network';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -16,9 +17,12 @@ export class DesktopClientGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<{ ip?: string; header(name: string): string | undefined }>();
+    if (!labNetworkAllows(request.ip, this.config.get<string>('EXAM_ALLOWED_CIDRS'))) {
+      throw new ForbiddenException('This exam can only be accessed from an approved lab network.');
+    }
     const required = this.config.get<boolean | string>('REQUIRE_DESKTOP_CLIENT');
     if (required === false || required === 'false') return true;
-    const request = context.switchToHttp().getRequest<{ header(name: string): string | undefined }>();
     if (request.header('x-client-type')?.toUpperCase() === 'DESKTOP') return true;
     throw new ForbiddenException('This exam can only be taken in the Secure Exam app. Open it from your dashboard.');
   }

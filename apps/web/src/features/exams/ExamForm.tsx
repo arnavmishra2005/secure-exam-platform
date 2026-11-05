@@ -19,6 +19,7 @@ interface ExamFormProps {
 }
 
 export function ExamForm({ initial, submitLabel, timingLocked = false, onSubmit, onCancel }: ExamFormProps) {
+  const [gradeUnsubmittedCode, setGradeUnsubmittedCode] = useState(initial?.gradeUnsubmittedCode ?? false);
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [durationMinutes, setDurationMinutes] = useState(String(initial?.durationMinutes ?? 60));
@@ -45,6 +46,7 @@ export function ExamForm({ initial, submitLabel, timingLocked = false, onSubmit,
         title: title.trim(),
         description: description.trim() || undefined,
         passPercentage: pass,
+        gradeUnsubmittedCode,
         ...(timingLocked
           ? {}
           : {
@@ -88,6 +90,10 @@ export function ExamForm({ initial, submitLabel, timingLocked = false, onSubmit,
           <Input type="number" min={0} max={100} value={passPercentage} onChange={(e) => setPassPercentage(e.target.value)} required />
         </Field>
       </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={gradeUnsubmittedCode} disabled={initial?.status === 'ACTIVE' || initial?.status === 'CLOSED'} onChange={e => setGradeUnsubmittedCode(e.target.checked)} />
+        Grade saved coding drafts when a student never presses Submit. By default, an explicit Submit is required.
+      </label>
       <div className="flex gap-2">
         <Button type="submit" loading={saving}>
           {submitLabel}

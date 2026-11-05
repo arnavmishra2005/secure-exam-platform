@@ -7,7 +7,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
-import { ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
+import { HeartbeatDto, ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
 import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { AttemptService } from './attempt.service';
 
@@ -50,6 +50,12 @@ export class AttemptController {
    * admin monitoring screen can tell an actively-connected attempt apart
    * from one that's gone quiet.
    */
+  @Post(':id/device-change/approve')
+  @Roles(Role.ADMIN)
+  approveDeviceChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.attemptService.approveDeviceChange(id, user.sub);
+  }
+
   @Post(':id/heartbeat')
   @Roles(Role.STUDENT)
   heartbeat(
@@ -57,7 +63,8 @@ export class AttemptController {
     @CurrentUser() user: JwtPayload,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
+    @Body() dto: HeartbeatDto,
   ) {
-    return this.attemptService.heartbeat(id, user, { ipAddress: ip, userAgent });
+    return this.attemptService.heartbeat(id, user, { ipAddress: ip, userAgent, lastQuestionId: dto.lastQuestionId });
   }
 }

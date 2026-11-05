@@ -29,6 +29,8 @@ const bridge = (over: Record<string, unknown> = {}) => {
     isDesktop: () => true,
     getLaunchToken: vi.fn().mockResolvedValue(TOKEN),
     clearLaunchToken: vi.fn(),
+    prepareExamSecurity: vi.fn().mockResolvedValue({ ok: true }),
+    setSecurityMode: vi.fn(),
     getReadiness: vi.fn().mockResolvedValue(ready),
     exitKiosk: vi.fn().mockResolvedValue({ ok: true }),
     ...over,
@@ -88,6 +90,35 @@ describe('LaunchPage', () => {
     expect(signInWithSession).toHaveBeenCalled();
     expect(startOrResumeAttempt).toHaveBeenCalledWith('exam-1');
     expect(setAttemptId).toHaveBeenCalledWith('attempt-1');
+  });
+
+  it('waits for invigilator approval before starting a moved session', async () => {
+    const desktop = bridge();
+    redeemExamLaunch.mockRejectedValueOnce({ response: { status: 409, data: { code: 'DEVICE_CHANGE_PENDING' } } });
+    renderPage();
+    const login = await screen.findByRole('button', { name: 'Login' });
+    await waitFor(() => expect((login as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(login);
+    await screen.findByText('Waiting for invigilator approval');
+    expect(signInWithSession).not.toHaveBeenCalled();
+    expect(desktop.clearLaunchToken).not.toHaveBeenCalled();
+    redeemExamLaunch.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: { id: 'u1' }, examId: 'exam-1', examSessionId: 'approved-session' });
+    startOrResumeAttempt.mockResolvedValue('attempt-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Check approval and continue' }));
+    await screen.findByText('THE EXAM');
+    expect(sessionStorage.getItem('secure-exam.offline-session')).toBe('approved-session');
+  });
+
+  it('does not redeem the token or start an attempt when native security cannot be enabled', async () => {
+    const desktop = bridge({ prepareExamSecurity: vi.fn().mockResolvedValue({ ok: false, reason: 'Shortcut protection unavailable' }) });
+    renderPage();
+    const login = await screen.findByRole('button', { name: 'Login' });
+    await waitFor(() => expect((login as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(login);
+    await screen.findByText('Shortcut protection unavailable');
+    expect(redeemExamLaunch).not.toHaveBeenCalled();
+    expect(startOrResumeAttempt).not.toHaveBeenCalled();
+    expect(desktop.setSecurityMode).toHaveBeenCalledWith(false);
   });
 
   it('Login stays disabled while a readiness check fails', async () => {

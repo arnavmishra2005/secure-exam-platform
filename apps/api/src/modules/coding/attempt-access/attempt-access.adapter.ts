@@ -3,6 +3,8 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AttemptStatus } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
+import { AttemptEntity } from '../../attempt/entities/attempt.entity';
+import { ExamEntity } from '../../exam/entities/exam.entity';
 import { AnswerEntity } from '../../answer/entities/answer.entity';
 import { SubmissionService } from '../../answer/submission.service';
 import {
@@ -59,6 +61,9 @@ export class AttemptAccessAdapter implements IAttemptAccess {
   }
 
   async getDraftCode(attemptId: string, questionId: string): Promise<string | null> {
+    const attempt = await this.dataSource.getRepository(AttemptEntity).findOne({ where: { id: attemptId } });
+    const exam = attempt ? await this.dataSource.getRepository(ExamEntity).findOne({ where: { id: attempt.examId } }) : null;
+    if (!exam?.gradeUnsubmittedCode) return null;
     const answer = await this.dataSource
       .getRepository(AnswerEntity)
       .findOne({ where: { attemptId, questionId } });

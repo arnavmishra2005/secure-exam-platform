@@ -41,7 +41,7 @@ export const NavigationControls: React.FC<NavigationControlsProps> = ({
           type="button"
           onClick={onPrevious}
           disabled={!canGoPrevious || disabled}
-          className="px-4 py-2 text-xs font-semibold rounded border border-hairline bg-white text-ink hover:bg-paper disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-4 py-2 text-xs font-semibold rounded border border-hairline bg-card text-ink hover:bg-paper disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           &larr; Previous
         </button>
@@ -65,7 +65,7 @@ export const NavigationControls: React.FC<NavigationControlsProps> = ({
           className={`px-4 py-2 text-xs font-semibold rounded border transition-colors ${
             isMarkedForReview
               ? 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100'
-              : 'border-indigo-600/40 text-indigo-700 bg-white hover:bg-indigo-50'
+              : 'border-indigo-600/40 text-indigo-700 bg-card hover:bg-indigo-50'
           }`}
         >
           {isMarkedForReview ? 'Unmark Review' : 'Mark for Review & Next'}
