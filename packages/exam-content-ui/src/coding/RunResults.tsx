@@ -1,9 +1,30 @@
 /** Owner: Person B. Results of the last Run / Run samples / Submit. */
-import { CodeRunKind, CodeSubmissionStatus } from '@secure-exam/types';
+import { CodeRunKind, CodeSubmissionStatus, type CodeErrorInfo } from '@secure-exam/types';
 import { Alert, Badge } from '../ui';
 import type { LastAction } from './hooks/useCodeRun';
-import { STATUS_LABEL, VERDICT_LABEL } from './labels';
+import { ERROR_KIND_LABEL, errorTitle, STATUS_LABEL, VERDICT_LABEL } from './labels';
 import { SampleBlock } from './ProblemStatement';
+
+/** A clear title and hint for a failed run, with the raw error output folded away below. */
+function ErrorDetails({ error, stderr }: { error?: CodeErrorInfo; stderr: string }) {
+  if (!error) return stderr ? <SampleBlock label="Errors" text={stderr} /> : null;
+  return (
+    <div className="space-y-2" data-testid="run-error">
+      <Alert tone="amber">
+        <p className="font-semibold">{errorTitle(error)}</p>
+        <p>{ERROR_KIND_LABEL[error.kind].hint}</p>
+      </Alert>
+      {stderr && (
+        <details>
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">Full error output</summary>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 font-mono text-xs text-foreground">
+            {stderr}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
 
 export function RunResults({ last }: { last: LastAction }) {
   if (!last) {
@@ -45,6 +66,9 @@ export function RunResults({ last }: { last: LastAction }) {
                 <span className="text-foreground">{t.isSample ? `Sample ${t.index}` : `Test ${t.index}`}</span>
                 <span className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">{t.timeMs} ms</span>
+                  {t.errorKind && (
+                    <span className="text-xs text-muted-foreground">{ERROR_KIND_LABEL[t.errorKind].title}</span>
+                  )}
                   <Badge tone={v.tone}>{v.text}</Badge>
                 </span>
               </li>
@@ -66,8 +90,8 @@ export function RunResults({ last }: { last: LastAction }) {
             {r.outcome.timeMs} ms{last.where === 'server' ? ' · ran on the server' : ''}
           </span>
         </div>
+        <ErrorDetails error={r.outcome.error} stderr={r.outcome.stderr} />
         <SampleBlock label="Output" text={r.outcome.stdout} />
-        {r.outcome.stderr && <SampleBlock label="Errors" text={r.outcome.stderr} />}
       </div>
     );
   }
@@ -83,12 +107,12 @@ export function RunResults({ last }: { last: LastAction }) {
               <Badge tone={v.tone}>{v.text}</Badge>
               <span className="text-xs text-muted-foreground">{sample.timeMs} ms</span>
             </div>
+            <ErrorDetails error={sample.error} stderr={sample.stderr} />
             <div className="flex flex-col gap-2 lg:flex-row">
               <SampleBlock label="Input" text={sample.input} />
               <SampleBlock label="Expected" text={sample.expectedOutput} />
               <SampleBlock label="Your output" text={sample.stdout} />
             </div>
-            {sample.stderr && <SampleBlock label="Errors" text={sample.stderr} />}
           </div>
         );
       })}

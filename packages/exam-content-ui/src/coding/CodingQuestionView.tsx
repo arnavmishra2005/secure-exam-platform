@@ -4,22 +4,30 @@
  * Host contract (exam-taking page):
  *  - `question` is the PublicQuestion from GET /attempts/:id/questions (has `coding`).
  *  - `savedCode` is the answer's textResponse (the saved draft), if any.
- *  - `onSaveDraft(code)` must persist through the exam's saveAnswer()
- *    ({ textResponse: code }) so drafts survive offline and are graded at the
- *    end if the student never presses Submit.
+ *  - `onSaveDraft(text)` must persist through the exam's saveAnswer()
+ *    ({ textResponse: text }) so drafts survive offline and are graded at the
+ *    end if the student never presses Submit. `text` is the code with its
+ *    language (#16: encodeCodeDraft; plain text for Python), so the host
+ *    stores it as is.
  *  - `localRunner` runs Run / Run samples on this PC (Person C's Electron app:
  *    `desktopLocalRunner()`). Without it, Run uses the server if allowed.
  */
 import { useCallback, useState } from 'react';
 import {
+  CODE_LANGUAGE_ORDER,
+  CODE_LANGUAGES,
   CODE_MAX_LENGTH,
   CodeLanguage,
   CodeRunKind,
+  decodeCodeDraft,
+  defaultLanguage,
+  encodeCodeDraft,
+  starterFor,
   CodeSubmissionStatus,
   type LocalRunner,
   type PublicQuestion,
 } from '@secure-exam/types';
-import { Alert, Badge, Button, Textarea, cx } from '../ui';
+import { Alert, Badge, Button, Select, Textarea, cx } from '../ui';
 import { SplitPane } from '../ui/SplitPane';
 import { CodeEditor } from './editor/CodeEditor';
 import { friendlyRunError, useCodeRun, type LastAction } from './hooks/useCodeRun';
@@ -65,15 +73,30 @@ export function CodingQuestionView({
   localRunner,
 }: CodingQuestionViewProps) {
   const problem = question.coding;
-  const starter = problem?.starterCode?.[CodeLanguage.PYTHON] ?? '';
-  const [code, setCode] = useState(savedCode ?? starter);
+  const allowed = CODE_LANGUAGE_ORDER.filter((l) => problem?.allowedLanguages?.includes(l));
+  const languages = allowed.length > 0 ? allowed : [CodeLanguage.PYTHON];
+  // The saved draft remembers its language; otherwise start in the question's default.
+  const [initial] = useState(() => {
+    const saved = decodeCodeDraft(savedCode);
+    const language = saved.language && languages.includes(saved.language) ? saved.language : defaultLanguage(languages);
+    return { language, code: saved.language === language && saved.code ? saved.code : null };
+  });
+  const [language, setLanguage] = useState<CodeLanguage>(initial.language);
+  /** Code per language for this visit, so switching back keeps what was typed (like LeetCode). */
+  const [codes, setCodes] = useState<Partial<Record<CodeLanguage, string>>>(() =>
+    initial.code !== null ? { [initial.language]: initial.code } : {},
+  );
+  const starter = starterFor(problem?.starterCode, language);
+  const code = codes[language] ?? starter;
+  const setCode = useCallback((next: string) => setCodes((m) => ({ ...m, [language]: next })), [language]);
   const [stdin, setStdin] = useState(problem?.samples[0]?.input ?? '');
   const [last, setLast] = useState<LastAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [pasteBlocked, setPasteBlocked] = useState(false);
 
-  const { status: draftStatus } = useDebouncedDraft(code, onSaveDraft, draftDelayMs);
-  const { run, submit, busy, canRun, configLoading } = useCodeRun(attemptId, question.id, problem, localRunner);
+  // The saved draft is the code in the selected language: that is what gets graded without a Submit.
+  const { status: draftStatus } = useDebouncedDraft(encodeCodeDraft(language, code), onSaveDraft, draftDelayMs);
+  const { run, submit, busy, canRun, configLoading } = useCodeRun(attemptId, question.id, problem, localRunner, language);
 
   const handleBlockedPaste = useCallback(() => {
     setPasteBlocked(true);
@@ -128,6 +151,22 @@ export function CodingQuestionView({
         ? new Date(last.result.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : `· ${last.result.result?.score} / ${last.result.result?.maxScore}`
       : null;
+  const switchLanguage = (next: CodeLanguage) => {
+    if (next === language) return;
+    const changed = code !== starter && code.trim() !== '';
+    if (
+      changed &&
+      !window.confirm(
+        `Switch to ${CODE_LANGUAGES[next].shortLabel}? Your ${CODE_LANGUAGES[language].shortLabel} code is kept while you stay on this question, ` +
+          `but from now on your ${CODE_LANGUAGES[next].shortLabel} code is what gets saved and graded.`,
+      )
+    ) {
+      return;
+    }
+    setLanguage(next);
+    setLast(null);
+    setError(null);
+  };
   const resetToStarter = () => {
     if (code === starter || window.confirm('Replace your code with the starter code?')) setCode(starter);
   };
@@ -141,7 +180,23 @@ export function CodingQuestionView({
   const editorPane = (
     <div className="flex h-full min-h-[160px] flex-col gap-2">
       <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-muted-foreground">Python 3.12</span>
+        {languages.length > 1 ? (
+          <Select
+            aria-label="Language"
+            className="h-7 w-auto py-0 text-xs"
+            value={language}
+            disabled={readOnly || busy}
+            onChange={(e) => switchLanguage(e.target.value as CodeLanguage)}
+          >
+            {languages.map((l) => (
+              <option key={l} value={l}>
+                {CODE_LANGUAGES[l].label}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <span className="font-medium text-muted-foreground">{CODE_LANGUAGES[language].label}</span>
+        )}
         <span className="flex items-center gap-3">
           <span className={cx(tooLong ? 'text-destructive' : 'text-muted-foreground')}>
             {code.length.toLocaleString()} / {CODE_MAX_LENGTH.toLocaleString()}
@@ -159,6 +214,7 @@ export function CodingQuestionView({
       <div className="min-h-0 flex-1">
         <CodeEditor
           value={code}
+          language={CODE_LANGUAGES[language].monacoId}
           onChange={setCode}
           readOnly={readOnly}
           hardened={hardened}

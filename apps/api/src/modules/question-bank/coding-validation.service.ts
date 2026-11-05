@@ -25,6 +25,8 @@ export class CodingValidationService {
 
   async validate(dto: ValidateCodingDto, actorId: string): Promise<ValidateCodingResponse> {
     const code = dto.code ?? dto.coding.referenceSolution ?? '';
+    // #16: the reference solution may be in any language, e.g. Python for a C++ question.
+    const language = dto.language ?? dto.coding.referenceLanguage ?? CodeLanguage.PYTHON;
     if (!code.trim()) throw new BadRequestException('Add a reference solution (or code to test) first');
 
     const timeLimitMs = dto.coding.timeLimitMs ?? 2000;
@@ -38,10 +40,11 @@ export class CodingValidationService {
 
     const outcomes = await this.limiter.run(actorId, () =>
       this.executor.runBatch({
-        language: CodeLanguage.PYTHON,
+        language,
         code,
         inputs: tests.map((t) => t.input),
         limits: { timeLimitMs, memoryLimitMb: dto.coding.memoryLimitMb ?? 256 },
+        context: { source: 'VALIDATION', userId: actorId },
       }),
     );
     // Marks don't matter here; use 1 so `passed` / `total` are what count.

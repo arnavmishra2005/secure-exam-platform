@@ -209,7 +209,12 @@ function Matrix({ m, onOpen }: { m: QuestionAnalyticsMatrix; onOpen: (attemptId:
                         aria-label={`${s.fullName}, Q${q.number}: ${cellTitle(c)}`}
                         className={cx('relative inline-flex h-7 w-9 items-center justify-center rounded text-xs font-semibold', style.className)}
                       >
-                        {c.state === 'PARTIAL' ? c.score : style.symbol}
+                        {c.state === 'PARTIAL' || c.adjustment ? c.score : style.symbol}
+                        {c.adjustment && (
+                          <span aria-hidden className="absolute -top-1 -right-1 text-[10px] leading-none text-foreground">
+                            ±
+                          </span>
+                        )}
                         {c.markedForReview && (
                           <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-violet-500" />
                         )}

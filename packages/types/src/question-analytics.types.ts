@@ -51,10 +51,14 @@ export interface AnalyticsCell {
   attemptId: string;
   questionId: string;
   state: QuestionCellState;
-  /** Null while PENDING. */
+  /** Null while PENDING. Includes any manual adjustment. */
   score: number | null;
   maxScore: number;
   markedForReview: boolean;
+  /** Set only when a manual adjustment applies (#13): the automatic score before it. */
+  autoScore?: number;
+  /** Set only when a manual adjustment applies: the +/- marks added. */
+  adjustment?: number;
 }
 
 export interface QuestionStats {
@@ -127,9 +131,46 @@ export interface DrilldownCode {
   runCount: number;
 }
 
+/** A manual change to one question's marks (#13). */
+export interface ScoreAdjustmentInfo {
+  /** The automatic score (MCQ rule or code tests). */
+  autoScore: number;
+  /** Marks added (+) or taken away (−). The score is autoScore + adjustment, kept within 0…maxScore. */
+  adjustment: number;
+  reason: string;
+  /** users.id of who made it. */
+  adjustedBy: string;
+  adjustedByName: string | null;
+  adjustedAt: string;
+}
+
+/**
+ * PATCH /exams/:examId/question-analytics/attempts/:attemptId/questions/:questionId/score
+ * Give `score` (the new mark) or `adjustment` (+/− marks), not both. An
+ * adjustment of 0 removes an earlier one. `reason` is required either way.
+ */
+export interface AdjustQuestionScoreRequest {
+  score?: number;
+  adjustment?: number;
+  reason: string;
+}
+
+export interface AdjustQuestionScoreResponse {
+  questionId: string;
+  autoScore: number;
+  score: number;
+  maxScore: number;
+  adjustment: ScoreAdjustmentInfo | null;
+  /** The attempt's new total. */
+  total: number;
+}
+
 export interface DrilldownQuestion extends AnalyticsQuestion {
   state: QuestionCellState;
+  /** Includes the manual adjustment, if any. */
   score: number | null;
+  /** The manual adjustment, if any (#13). */
+  adjustment?: ScoreAdjustmentInfo | null;
   markedForReview: boolean;
   answeredAt: string | null;
   /** MCQ / True-False. */

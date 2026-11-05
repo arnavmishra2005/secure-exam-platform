@@ -1,6 +1,15 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { CodeRunKind, CodingGradingMode, type CodingClientConfig, type LocalRunner } from '@secure-exam/types';
+import {
+  CODE_LANGUAGES,
+  CodeLanguage,
+  CodeRunKind,
+  CodingGradingMode,
+  encodeCodeDraft,
+  ExecutionStatus,
+  type CodingClientConfig,
+  type LocalRunner,
+} from '@secure-exam/types';
 import { CodingQuestionView } from '../coding/CodingQuestionView';
 import { createFakeApi, createFakeLocalRunner, httpError, publicCodingQuestion, seedState } from '../testing/fakeApi';
 import { renderWithApi } from './render';
@@ -10,10 +19,12 @@ const SUM = 'print(sum(map(int, input().split())))';
 function setup(
   props: Partial<Parameters<typeof CodingQuestionView>[0]> = {},
   config: Partial<CodingClientConfig> = {},
+  allowedLanguages?: CodeLanguage[],
 ) {
   const state = seedState();
   const api = createFakeApi(state, { config });
-  const question = publicCodingQuestion(state);
+  const base = publicCodingQuestion(state);
+  const question = allowedLanguages ? { ...base, coding: { ...base.coding!, allowedLanguages } } : base;
   const onSaveDraft = vi.fn();
   renderWithApi(
     <CodingQuestionView attemptId="att-1" question={question} onSaveDraft={onSaveDraft} draftDelayMs={10} {...props} />,
@@ -38,6 +49,59 @@ describe('CodingQuestionView', () => {
   it('prefers the saved draft over the starter code', () => {
     setup({ savedCode: 'print(42)' });
     expect(editor().value).toBe('print(42)');
+  });
+
+  describe('languages (#16)', () => {
+    const picker = () => screen.getByLabelText('Language') as HTMLSelectElement;
+
+    it('shows the only allowed language without a picker', () => {
+      setup();
+      expect(screen.queryByLabelText('Language')).toBeNull();
+      expect(screen.getByText('Python 3.12')).toBeTruthy();
+    });
+
+    it('switches to C++ with its default template and saves the draft with its language', async () => {
+      const { onSaveDraft } = setup({}, {}, [CodeLanguage.PYTHON, CodeLanguage.CPP]);
+      expect([...picker().options].map((o) => o.textContent)).toEqual(['Python 3.12', 'C++ 17 (g++)']);
+      fireEvent.change(picker(), { target: { value: CodeLanguage.CPP } }); // starter unchanged: no question asked
+      expect(editor().value).toBe(CODE_LANGUAGES[CodeLanguage.CPP].defaultStarter);
+      fireEvent.change(editor(), { target: { value: 'int main(){}' } });
+      await waitFor(() => expect(onSaveDraft).toHaveBeenLastCalledWith(encodeCodeDraft(CodeLanguage.CPP, 'int main(){}')));
+    });
+
+    it('resumes a saved C++ draft in C++', () => {
+      setup({ savedCode: encodeCodeDraft(CodeLanguage.CPP, 'int main(){ return 0; }') }, {}, [CodeLanguage.PYTHON, CodeLanguage.CPP]);
+      expect(picker().value).toBe(CodeLanguage.CPP);
+      expect(editor().value).toBe('int main(){ return 0; }');
+    });
+
+    it('asks before switching away from edited code, and keeps it for switching back', () => {
+      setup({}, {}, [CodeLanguage.PYTHON, CodeLanguage.JAVA]);
+      fireEvent.change(editor(), { target: { value: 'print(7)' } });
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+      fireEvent.change(picker(), { target: { value: CodeLanguage.JAVA } });
+      expect(picker().value).toBe(CodeLanguage.PYTHON);
+      fireEvent.change(picker(), { target: { value: CodeLanguage.JAVA } });
+      expect(picker().value).toBe(CodeLanguage.JAVA);
+      expect(editor().value).toContain('public class Main');
+      fireEvent.change(picker(), { target: { value: CodeLanguage.PYTHON } }); // Java template unchanged: no question
+      expect(editor().value).toBe('print(7)');
+      expect(confirm).toHaveBeenCalledTimes(2);
+      confirm.mockRestore();
+    });
+
+    it('runs and submits in the selected language', async () => {
+      const localRunner = createFakeLocalRunner();
+      const run = vi.spyOn(localRunner, 'run');
+      const { api } = setup({ localRunner }, {}, [CodeLanguage.PYTHON, CodeLanguage.C]);
+      const submit = vi.spyOn(api, 'submitCode');
+      fireEvent.change(picker(), { target: { value: CodeLanguage.C } });
+      fireEvent.click(button('Run'));
+      await waitFor(() => expect(run).toHaveBeenCalledWith(expect.objectContaining({ language: CodeLanguage.C })));
+      await enabled('Submit');
+      fireEvent.click(button('Submit'));
+      await waitFor(() => expect(submit).toHaveBeenCalledWith('att-1', expect.objectContaining({ language: CodeLanguage.C })));
+    });
   });
 
   describe('with a local runner (exam app)', () => {
@@ -188,5 +252,33 @@ describe('desktopLocalRunner', () => {
     await desktopLocalRunner()!.run({ language: 'python' as never, code: 'x', inputs: [], timeLimitMs: 1, memoryLimitMb: 1, outputLimitBytes: 1 });
     expect(run).toHaveBeenCalled();
     delete window.desktop;
+  });
+});
+
+describe('CodingQuestionView error messages (desktop runner)', () => {
+  const rawRunner = (stderr: string): LocalRunner => ({
+    run: async (job) =>
+      job.inputs.map(() => ({ status: ExecutionStatus.RUNTIME_ERROR, stdout: '', stderr, exitCode: 1, timeMs: 5 })),
+  });
+
+  it('names a syntax error and its line, with the raw output folded away', async () => {
+    const stderr = `  File "/sandbox/main.py", line 3\n    x = (1,\n        ^\nSyntaxError: '(' was never closed\n`;
+    setup({ localRunner: rawRunner(stderr) });
+    fireEvent.change(editor(), { target: { value: 'x = (1,' } });
+    fireEvent.click(button('Run'));
+    const error = await screen.findByTestId('run-error');
+    expect(error.textContent).toContain('Syntax error on line 3');
+    expect(screen.getByText('Compilation error')).toBeTruthy();
+    expect(screen.getByText('Full error output').closest('details')?.textContent).toContain('was never closed');
+  });
+
+  it('labels each failing sample with the kind of runtime error', async () => {
+    const stderr = 'Traceback (most recent call last):\n  File "/sandbox/main.py", line 2, in <module>\n    print(nums[5])\nIndexError: list index out of range\n';
+    setup({ localRunner: rawRunner(stderr) });
+    fireEvent.change(editor(), { target: { value: SUM } });
+    fireEvent.click(button('Run samples'));
+    await screen.findByTestId('samples-result');
+    expect(screen.getAllByText('Index error on line 2')).toHaveLength(2);
+    expect(screen.getAllByText('Runtime error')).toHaveLength(2);
   });
 });

@@ -5,6 +5,7 @@ separate walkthrough for **macOS** (Part A) and **Ubuntu** (Part B), then shared
 material (Part C). Follow only your own part, top to bottom.
 
 - [How it works](#how-it-works)
+- [Which commands, when](#which-commands-when)
 - [Part A: macOS](#part-a-macos)
 - [Part B: Ubuntu](#part-b-ubuntu)
 - [Part C: reference (both systems)](#part-c-reference-both-systems)
@@ -51,6 +52,56 @@ app, so an exam can only be taken in it.
 
 ---
 
+## Which commands, when
+
+All commands run from the repo root. The step numbers refer to Part A (macOS) / Part B (Ubuntu).
+
+**1. One time per computer** (a fresh machine; nothing is assumed to be installed):
+
+| Step | macOS | Ubuntu |
+|---|---|---|
+| Tools: Git, Node 22.12+, Python 3, Docker (+ Ubuntu: bubblewrap, compilers, Electron libraries) | A1 | B1 |
+| Get the code | A2 | B2 |
+| `npm install` (also downloads Electron) | A3 | B3 |
+| Allow Electron's and the code runner's sandboxes | — | B4, B4b |
+| `npm run typecheck` (builds the shared packages) | A4 | B5 |
+| `.env` files | A5 | B6 |
+| Database, `npm run migration:run`, `npm run db:seed`, code-runner images | A6–A7 | B7 |
+| `npm run exam:register` (opens `secure-exam://` links with the exam app) | A8 | B8 |
+
+**2. Every day, no matter what** (Docker Desktop / the Docker service must be running):
+
+```bash
+docker compose up -d postgres      # if the database container is stopped (harmless if it is running)
+npm run dev                        # API + website; or `npm run api:start` and `npm run web:dev` in two terminals
+```
+
+**3. After `git pull` or switching branches** (stop the API first):
+
+```bash
+npm install                                   # if any package.json changed
+npm run typecheck                             # if anything under packages/ changed (when in doubt, run it)
+npm run migration:run                         # new migrations (harmless when there are none)
+npm run runner:images --workspace=apps/api    # if infra/runner-images changed
+npm run desktop:compile                       # if apps/exam-client/src changed (npm run dev does this)
+```
+
+**4. Fresh data** (wipes the local database, then recreates tables and sample data):
+
+```bash
+# stop the API first (Ctrl+C), or it recreates the tables itself and the migrations then fail
+docker compose down -v
+docker compose up -d postgres
+docker compose ps                  # wait until postgres shows (healthy)
+npm run migration:run
+npm run db:seed
+```
+
+The seed alone (`npm run db:seed`) can be re-run at any time without wiping: it is idempotent and
+moves the sample exam's time window forward so it is open again.
+
+---
+
 # Part A: macOS
 
 Tested on macOS (Apple Silicon). Steps 1 to 8 are one-time setup; step 9 is what you do every day.
@@ -87,9 +138,10 @@ docker compose version
 
 (Docker runs the database, and runs student code on the server for coding questions.)
 
-macOS has no `bubblewrap`, so student code that is run *inside the exam app* ("Run" in the code
-editor) runs **without a sandbox** on macOS. That is acceptable for development only. The launcher
-installed in step 8 sets this up for you.
+macOS has no `bubblewrap`, so student **Python** that is run *inside the exam app* ("Run" in the
+code editor) runs **without a sandbox** on macOS. That is acceptable for development only. The
+launcher installed in step 8 sets this up for you. C, C++ and Java are never run unsandboxed: on
+macOS their "Run" goes to the server's Docker sandbox instead (allowed in development).
 
 ## A2. Get the code
 
@@ -185,22 +237,26 @@ docker compose ps
 `postgres` must show `running (healthy)`. If it says `starting`, wait ten seconds and repeat.
 (A warning that the `version` attribute is obsolete is harmless.)
 
-## A7. Create the tables, add sample data, pull the Python image
+## A7. Create the tables, add sample data, build the code-runner images
 
 ```bash
 npm run migration:run       # must be done BEFORE the API has ever started
 npm run db:seed             # sample accounts, a course and a sample exam
 docker pull python:3.12-slim
+npm run runner:images --workspace=apps/api    # C/C++ and Java images (+ a hardened Python one); ~2 min, ~1.4 GB
 ```
 
 - **Migrations before the API:** in development the API creates tables itself. If it starts on an
   empty database first, the migrations then fail with `relation "..." already exists`. If that
   happens, reset ([C4](#c4-stop-reset-start-over)).
-- The seed is safe to repeat. It creates the accounts in [C1](#c1-accounts-and-ports) and an
-  **active** sample exam (`11111111-1111-4111-8111-111111111111`) with five multiple-choice
-  questions and one coding question ("Merge Intervals"). Never run it against shared data.
-- `python:3.12-slim` is used by the **server** to run and grade coding questions. Without it,
-  everything else works but coding questions cannot be graded.
+- The seed is safe to repeat. It creates the accounts in [C1](#c1-accounts-and-ports), a course, and
+  an **active** sample exam (`11111111-1111-4111-8111-111111111111`) with five multiple-choice
+  questions and two coding questions ("Last Element of a List" and "Merge Intervals") that accept
+  Python, C, C++ and Java, plus two question-bank topics. Never run it against shared data.
+- The **server** runs and grades code in Docker: `python:3.12-slim` for Python, and the images built
+  by `runner:images` (`secure-exam/runner-gcc:1`, `secure-exam/runner-java:21`) for C, C++ and Java.
+  Without them everything else works, but code in that language can't be run or graded (it shows
+  "Code runner is unavailable" and grading waits). Rebuild them when `infra/runner-images` changes.
 
 ## A8. Register the exam app as the opener of `secure-exam://` links (one time)
 
@@ -230,6 +286,7 @@ Notes:
 
 ## A9. Run it (every day)
 
+Docker Desktop must be running, and the database container up (`docker compose up -d postgres`).
 Open two terminals at the repo root.
 
 ```bash
@@ -276,7 +333,9 @@ Open a terminal (Ctrl+Alt+T).
 
 ```bash
 sudo apt update
-sudo apt install -y git curl ca-certificates build-essential python3 bubblewrap xdg-utils
+sudo apt install -y git curl ca-certificates build-essential python3 bubblewrap util-linux systemd xdg-utils
+# Compilers for running C, C++ and Java inside the exam app ("Run"); optional for Python-only work
+sudo apt install -y gcc g++ libc6-dev default-jdk-headless
 
 # Node.js 22 (NodeSource). Do NOT use plain `apt install nodejs`: that version is too old.
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -317,12 +376,14 @@ sudo apt install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 lib
 If a later run says `error while loading shared libraries: libXXX.so`, install the package that
 provides that file.
 
-`bubblewrap` (installed above) is the sandbox in which student code runs inside the exam app.
-`python3` runs it. `xdg-utils` provides `xdg-mime`, used in step 8.
+`bubblewrap` (installed above) is the sandbox in which student code runs inside the exam app, with
+`prlimit` (util-linux) and `systemd-run` for its limits; `python3` runs Python, `gcc`/`g++`/the JDK
+compile C, C++ and Java. `xdg-utils` provides `xdg-mime`, used in step 8.
 
 Check:
 ```bash
-bwrap --version && python3 --version && xdg-mime --version
+bwrap --version && prlimit --version && systemd-run --version | head -1
+python3 --version && gcc --version | head -1 && javac -version && xdg-mime --version
 ```
 
 You need a normal **graphical** session. Over plain SSH or on a server install there is no window
@@ -379,6 +440,38 @@ sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 (Alternative that lasts until reboot: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.)
 Do not use `--no-sandbox`.
 
+## B4b. Allow the code runner's sandbox (one time)
+
+The exam app runs each "Run" in its own cgroup (`systemd-run --user --scope`) with process, memory
+and CPU limits, then inside bubblewrap. At start-up it checks this works; if not, Run shows "The
+code sandbox does not work on this computer" (details: [docs/local-code-runner.md](docs/local-code-runner.md)).
+
+1. Let user sessions set process and memory limits (both 22.04 and 24.04):
+   ```bash
+   sudo mkdir -p /etc/systemd/system/user@.service.d
+   printf '[Service]\nDelegate=pids memory cpu\n' | sudo tee /etc/systemd/system/user@.service.d/90-secure-exam-delegate.conf
+   sudo systemctl daemon-reload
+   ```
+   **Log out and back in**, then check (must print `64`):
+   ```bash
+   systemd-run --user --scope -q -p TasksMax=64 -- sh -c 'cat /sys/fs/cgroup$(sed -n "s/^0:://p" /proc/self/cgroup)/pids.max'
+   ```
+2. Ubuntu 24.04 only: let bubblewrap create its sandbox (24.04 blocks unprivileged user namespaces
+   by default):
+   ```bash
+   sudo tee /etc/apparmor.d/secure-exam-bwrap >/dev/null <<'CONF'
+   abi <abi/4.0>,
+   include <tunables/global>
+   profile secure-exam-bwrap /usr/bin/bwrap flags=(unconfined) {
+     userns,
+   }
+   CONF
+   sudo apparmor_parser -r /etc/apparmor.d/secure-exam-bwrap
+   bwrap --ro-bind / / true && echo "bubblewrap works"
+   ```
+
+The lab kiosk script (`infra/linux-kiosk/setup-exam-kiosk.sh`) does both on lab PCs.
+
 ## B5. Build the shared packages
 
 ```bash
@@ -425,16 +518,22 @@ docker compose ps                  # postgres must show running (healthy); wait 
 
 npm run migration:run              # must be done BEFORE the API has ever started
 npm run db:seed                    # sample accounts, a course and a sample exam
-docker pull python:3.12-slim       # the server runs and grades coding questions in this image
+docker pull python:3.12-slim       # the server runs and grades Python in this image
+npm run runner:images --workspace=apps/api   # C/C++ and Java images (+ a hardened Python one); ~2 min, ~1.4 GB
 ```
 
 - **Migrations before the API:** in development the API creates tables itself. If it starts on an
   empty database first, the migrations fail with `relation "..." already exists`. If that happens,
   reset ([C4](#c4-stop-reset-start-over)).
 - If port 5432 is taken by a local PostgreSQL: `sudo systemctl stop postgresql`.
-- The seed is safe to repeat and creates the accounts in [C1](#c1-accounts-and-ports) and an
-  **active** sample exam (`11111111-1111-4111-8111-111111111111`) with five multiple-choice questions
-  and one coding question ("Merge Intervals"). Never run it against shared data.
+- The seed is safe to repeat. It creates the accounts in [C1](#c1-accounts-and-ports), a course, and
+  an **active** sample exam (`11111111-1111-4111-8111-111111111111`) with five multiple-choice
+  questions and two coding questions ("Last Element of a List" and "Merge Intervals") that accept
+  Python, C, C++ and Java, plus two question-bank topics. Never run it against shared data.
+- The **server** runs and grades code in Docker: `python:3.12-slim` for Python, and the images built
+  by `runner:images` (`secure-exam/runner-gcc:1`, `secure-exam/runner-java:21`) for C, C++ and Java.
+  Without them everything else works, but code in that language can't be run or graded (it shows
+  "Code runner is unavailable" and grading waits). Rebuild them when `infra/runner-images` changes.
 
 ## B8. Register the exam app as the opener of `secure-exam://` links (one time)
 
@@ -471,7 +570,8 @@ Notes:
 
 ## B9. Run it (every day)
 
-Open two terminals at the repo root.
+The Docker service must be running (`sudo systemctl start docker` if not), and the database
+container up (`docker compose up -d postgres`). Open two terminals at the repo root.
 
 ```bash
 # Terminal 1
@@ -542,7 +642,14 @@ Login is limited to 5 attempts per minute per IP. If you see "Too many requests"
 | `EXAM_LAUNCH_TTL_SECONDS` | `120` | How long a launch token lives. |
 | `VIOLATION_FLAG_THRESHOLD` | `5` | Violations before an attempt is flagged for the invigilator. |
 | `CODING_GRADING_MODE` | `DEFERRED` | `DEFERRED` grades code after the attempt ends; `LIVE` grades on submit. |
-| `RUNNER_DOCKER_BIN`, `RUNNER_PYTHON_IMAGE` | `docker`, `python:3.12-slim` | The server runs student code in this Docker image. |
+| `CODING_SERVER_RUN` | unset (on in development) | Whether "Run" may execute on the server (fallback when the exam app can't run code locally). Off in production unless `true`. |
+| `RUNNER_DOCKER_BIN` | `docker` | Docker CLI for the code sandbox (`DOCKER_HOST` is passed through). |
+| `RUNNER_PYTHON_IMAGE`, `RUNNER_GCC_IMAGE`, `RUNNER_JAVA_IMAGE` | `python:3.12-slim`, `secure-exam/runner-gcc:1`, `secure-exam/runner-java:21` | Sandbox images per language (build the last two with `npm run runner:images --workspace=apps/api`). Pin by digest in production. |
+| `RUNNER_DOCKER_RUNTIME` | unset | `runsc` runs sandboxes under gVisor (Linux runner host only). |
+| `RUNNER_REQUIRE_GVISOR_FOR_COMPILED` | unset (= production only) | Refuse C/C++/Java without `RUNNER_DOCKER_RUNTIME`. |
+| `RUNNER_SECCOMP_PROFILE` | `../../infra/runner/seccomp.json` | System-call filter for sandboxes; `docker-default` uses Docker's own. The API refuses to start if the file is missing. |
+| `RUNNER_MAX_CONCURRENCY`, `RUNNER_MAX_QUEUE`, `RUNNER_RUNS_PER_MINUTE` | `4`, `100`, `20` | Sandbox capacity and per-student run limits. |
+| `RUNNER_FLAG_LIMIT_BATCHES` | `3` | Limit-hitting runs before an attempt is flagged as suspicious code. |
 | `THROTTLE_LIMIT` | `1000` | Global rate limit (login has its own 5 per minute). |
 | `ALLOW_ADMIN_ON_DESKTOP` | unset | `true` lets an administrator sign in inside the exam app (testing only). |
 
@@ -578,6 +685,7 @@ All from the repo root, none needs the database. Build the shared packages first
 | What | Command |
 |---|---|
 | API unit tests | `npm run api:test` |
+| Real sandbox tests (Docker + runner images needed) | `npm run test:runner --workspace=apps/api` |
 | One API test file | `npm test --workspace=apps/api -- timer.service` |
 | Website tests | `npm run web:test` |
 | Exam content UI tests | `npm run content-ui:test` |
@@ -587,6 +695,7 @@ All from the repo root, none needs the database. Build the shared packages first
 | Type-check website / content UI | `npm run web:typecheck`, `npm run content-ui:typecheck` |
 | Build API / website | `npm run api:build`, `npm run web:build` |
 | Apply / undo a migration | `npm run migration:run` / `npm run migration:revert` |
+| Build the code-runner images | `npm run runner:images --workspace=apps/api` |
 
 ## C4. Stop, reset, start over
 
@@ -600,11 +709,13 @@ lsof -i :3000 -i :3003 -i :5432        # who is holding the ports
 
 **Stop the database, keep the data:** `docker compose stop postgres`
 
-**Wipe the database** (deletes all local data):
+**Wipe the database** (deletes all local data). Stop the API first, or it recreates the tables
+before the migrations run:
 
 ```bash
 docker compose down -v
 docker compose up -d postgres
+docker compose ps                  # wait for (healthy)
 npm run migration:run
 npm run db:seed
 ```
@@ -679,7 +790,9 @@ commands from A4 / B5, in that order). If a build itself says it cannot find `@s
 | Ubuntu: `SUID sandbox helper binary ... not configured correctly` / `No usable sandbox` | Step B4. |
 | Ubuntu: `error while loading shared libraries: libXXX.so` | Install the library (B1; `t64` names on 24.04). |
 | Ubuntu: `Missing X server or $DISPLAY` | There is no graphical session (SSH or server install). Run it on the desktop. |
-| "Cannot run code on this computer: the sandbox (bubblewrap) is not installed." | Ubuntu: `sudo apt install bubblewrap`. macOS: the launcher sets `EXAM_UNSANDBOXED_RUNNER=1`; if you start the app by hand add it yourself. |
+| "Cannot run code on this computer: the sandbox (bubblewrap) is not installed." (or prlimit / systemd-run) | Ubuntu: `sudo apt install bubblewrap util-linux systemd`. macOS: the launcher sets `EXAM_UNSANDBOXED_RUNNER=1`; if you start the app by hand add it yourself. |
+| "The code sandbox does not work on this computer (...)" | Ubuntu: step B4b (cgroup delegation, and the AppArmor rule on 24.04). The part in brackets says which check failed. |
+| "Cannot run C++ code on this computer: g++ is not installed" (or gcc / Java) | `sudo apt install gcc g++ libc6-dev default-jdk-headless`. Or let the server run it: `CODING_SERVER_RUN` (on in development). |
 | Readiness check fails about the API | The API is not running at `EXAM_API_URL`, or `CORS_ORIGIN` lacks `app://exam`. |
 | Admin login fails inside the exam app | By design. `ALLOW_ADMIN_ON_DESKTOP=true` in `apps/api/.env` for testing. |
 | macOS says the app is unverified | Electron 44.9.3 is unsigned by design; expected in development. |
@@ -701,7 +814,9 @@ commands from A4 / B5, in that order). If a build itself says it cannot find `@s
 | HTTP 429 on login | 5 per minute per IP. Wait a minute. |
 | CORS error in the browser console | Add the origin (no trailing slash) to `CORS_ORIGIN` and restart the API. |
 | "This exam must be taken in the exam app" | Intended. Press **Start exam in exam app**. To sit one in a browser anyway: `REQUIRE_DESKTOP_CLIENT=false` in `apps/api/.env` **and** `VITE_REQUIRE_DESKTOP_EXAM=false` in `apps/web/.env`, restart both. |
-| Coding question cannot be run/graded on the server | Docker not running, or `docker pull python:3.12-slim` not done. |
+| Coding question cannot be run/graded on the server ("Code runner is unavailable") | Docker not running, or the image is missing: `docker pull python:3.12-slim` (Python), `npm run runner:images --workspace=apps/api` (C, C++, Java). |
+| `RUNNER_SECCOMP_PROFILE: ... does not exist` at API start | Start the API from the repo scripts (they run in `apps/api`), or set `RUNNER_SECCOMP_PROFILE` to the absolute path of `infra/runner/seccomp.json`. |
+| C/C++/Java: "needs RUNNER_DOCKER_RUNTIME (gVisor)" | Production refuses compiled languages without gVisor. Install it on the runner host ([docs/execution-security.md](docs/execution-security.md)), or `RUNNER_REQUIRE_GVISOR_FOR_COMPILED=false` for a test machine. |
 
 ### Website
 
@@ -732,12 +847,16 @@ packages/validation         shared DTOs           (needs build)
 packages/api-client         axios API wrappers    (needs build)
 packages/exam-content-ui    shared exam UI + code editor (used from source)
 scripts/                    exam:register and exam:app helpers
-docs/                       design notes and contracts
+docs/                       design notes and contracts (index: docs/README.md)
 infra/linux-kiosk           Linux kiosk session, firewall and USB-block scripts
+infra/runner                system-call filter for the server's code sandbox
+infra/runner-images         Docker images for running Python, C/C++ and Java (npm run runner:images)
 ```
 
 - [CLAUDE.md](CLAUDE.md): architecture, invariants and gotchas.
 - [docs/kiosk-integration.md](docs/kiosk-integration.md): the exam app design, what has been verified and what has not.
-- [docs/local-code-runner.md](docs/local-code-runner.md): the student-code sandbox contract.
+- [docs/local-code-runner.md](docs/local-code-runner.md): running code on the lab PC (sandbox, languages, checklist).
+- [docs/execution-security.md](docs/execution-security.md): running and grading code on the server (sandbox, languages, capacity, deployment checklist).
+- [docs/merge-notes-person-b.md](docs/merge-notes-person-b.md): Person B's Phase 5 changes that touch A's or C's code, for merging.
 - [docs/phase4-contracts.md](docs/phase4-contracts.md): shared API contracts.
 - [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md): the Linux kiosk session.

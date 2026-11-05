@@ -16,12 +16,24 @@ export interface ExecutionLimits {
   memoryLimitMb: number;
 }
 
+/** Who and what a run is for: used only for run logs and suspicious-code flags. */
+export interface RunContext {
+  /** RUN = Run / Run samples on the server; SUBMIT = live grading; GRADING = after the attempt; VALIDATION = "Test reference solution". */
+  source: 'RUN' | 'SUBMIT' | 'GRADING' | 'REGRADE' | 'VALIDATION';
+  /** users.id of whoever's code it is (the student, or the author for VALIDATION). */
+  userId: string;
+  attemptId?: string;
+  examId?: string;
+  questionId?: string;
+}
+
 export interface BatchExecutionJob {
   language: CodeLanguage;
   code: string;
   /** The program runs once per input, in order, inside one sandbox. */
   inputs: string[];
   limits: ExecutionLimits;
+  context?: RunContext;
 }
 
 export interface ExecutionProvider {

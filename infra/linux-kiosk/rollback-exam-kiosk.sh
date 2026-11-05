@@ -38,6 +38,13 @@ done
 systemctl unmask ctrl-alt-del.target 2>/dev/null || true
 
 rm -f /etc/sysctl.d/99-exam-kiosk.conf
+# Code runner sandbox (#19). The packages stay installed; they are harmless.
+rm -f /etc/systemd/system/user@.service.d/90-secure-exam-delegate.conf
+rmdir /etc/systemd/system/user@.service.d 2>/dev/null || true
+if [[ -f /etc/apparmor.d/secure-exam-bwrap ]]; then
+  apparmor_parser -R /etc/apparmor.d/secure-exam-bwrap 2>/dev/null || true
+  rm -f /etc/apparmor.d/secure-exam-bwrap
+fi
 sysctl --system >/dev/null 2>&1 || true
 
 rm -f /etc/X11/xorg.conf.d/99-no-zap.conf

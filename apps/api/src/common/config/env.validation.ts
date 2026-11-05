@@ -23,11 +23,22 @@ export const envValidationSchema = Joi.object({
   // Person B: sandboxed code runner (modules/execution)
   RUNNER_DOCKER_BIN: Joi.string().default('docker'),
   RUNNER_PYTHON_IMAGE: Joi.string().default('python:3.12-slim'),
+  // #16: C/C++ (gcc + g++) and Java images, built from infra/runner-images (`npm run runner:images`).
+  RUNNER_GCC_IMAGE: Joi.string().default('secure-exam/runner-gcc:1'),
+  RUNNER_JAVA_IMAGE: Joi.string().default('secure-exam/runner-java:21'),
+  // C/C++/Java only under gVisor (RUNNER_DOCKER_RUNTIME). Unset = required in production only.
+  RUNNER_REQUIRE_GVISOR_FOR_COMPILED: Joi.boolean(),
   RUNNER_MAX_CONCURRENCY: Joi.number().integer().min(1).default(4),
   RUNNER_MAX_QUEUE: Joi.number().integer().min(0).default(100),
   RUNNER_RUNS_PER_MINUTE: Joi.number().integer().min(1).default(20),
   RUNNER_OUTPUT_LIMIT_BYTES: Joi.number().integer().min(1024).default(65536),
   RUNNER_STARTUP_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
+  // #19 sandbox hardening (docs/execution-security.md). Docker runtime for sandboxes, e.g. `runsc` (gVisor).
+  RUNNER_DOCKER_RUNTIME: Joi.string().allow('').optional(),
+  // seccomp profile path (relative to apps/api), or `docker-default` for Docker's own, weaker profile.
+  RUNNER_SECCOMP_PROFILE: Joi.string().default('../../infra/runner/seccomp.json'),
+  // Runs of one attempt stopped by limits before it is flagged as suspicious on Monitoring.
+  RUNNER_FLAG_LIMIT_BATCHES: Joi.number().integer().min(1).default(3),
   // Person B: execution modes — see "Decision log" in person_b_plan.md.
   // DEFERRED: Submit only saves; grading runs after the attempt ends. LIVE: Submit grades immediately.
   CODING_GRADING_MODE: Joi.string().valid('DEFERRED', 'LIVE').default('DEFERRED'),

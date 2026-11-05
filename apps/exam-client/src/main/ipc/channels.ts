@@ -4,7 +4,7 @@ import { IS_DEV } from '../config';
 import { isExamActive, isExamSubmitted, isSecurityActive, setExamActive, setExamSubmitted, setQuitting } from '../examState';
 import { getLaunchToken, setLaunchToken } from '../launchState';
 import { runReadinessChecks } from '../readiness/checks';
-import { runCode, type LocalRunJob } from '../runner/localRunner';
+import { checkSandbox, runCode, type LocalRunJob } from '../runner/localRunner';
 import { drainSecurityEvents, emitSecurityEvent } from '../securityEvents';
 
 // ponytail: the invigilator exit PIN comes from the environment for now; fetch it from the API policy later.
@@ -92,9 +92,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // Run the student's Python locally. Failures of the program are normal outcomes; the
   // promise rejects only when the runner itself cannot work.
-  ipcMain.handle(IPC.RUN_CODE, (_event, job: LocalRunJob) =>
-    runCode(job, { allowUnsandboxed: IS_DEV && process.env.EXAM_UNSANDBOXED_RUNNER === '1' }),
-  );
+  const runnerOptions = { allowUnsandboxed: IS_DEV && process.env.EXAM_UNSANDBOXED_RUNNER === '1' };
+  ipcMain.handle(IPC.RUN_CODE, (_event, job: LocalRunJob) => runCode(job, runnerOptions));
+  // #19: prove the code sandbox works now, not at the student's first Run. If it doesn't,
+  // Run is refused and the exam view shows its "tell the invigilator" fallback.
+  if (process.platform === 'linux') {
+    void checkSandbox(runnerOptions).then((status) => {
+      if (!status.ok) console.warn(`[runner] ${status.reason}`);
+    });
+  }
 
   // Events the page detects itself (a blocked paste in the editor, a lost heartbeat).
   ipcMain.on(IPC.LOG_VIOLATION, (_event, violation: { type?: ViolationType; detail?: unknown }) => {

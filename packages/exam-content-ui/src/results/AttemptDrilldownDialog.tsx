@@ -1,12 +1,17 @@
-/** Owner: Person B. One student's attempt, question by question (admin). */
-import { lazy, Suspense } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { QuestionType, type DrilldownQuestion } from '@secure-exam/types';
+/**
+ * Owner: Person B. One student's attempt, question by question (admin), with
+ * manual mark adjustment per question (#13), in the style of Moodle's
+ * "Make comment or override mark": the automatic score stays visible, the
+ * marker sets a new mark (or adds/takes away marks) and must give a reason.
+ */
+import { lazy, Suspense, useState, type FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AttemptStatus, CODE_LANGUAGES, QuestionType, type DrilldownQuestion } from '@secure-exam/types';
 import { errorMessage, useExamContentApi } from '../api/ExamContentApi';
 import { SampleBlock } from '../coding/ProblemStatement';
 import { VERDICT_LABEL } from '../coding/labels';
-import { Alert, Badge, Dialog, Spinner, cx } from '../ui';
-import { CELL_STYLE } from './cellStyles';
+import { Alert, Badge, Button, Dialog, Input, Spinner, Textarea, cx } from '../ui';
+import { CELL_STYLE, signed } from './cellStyles';
 
 const CodeEditor = lazy(() => import('../coding/editor/CodeEditor').then((m) => ({ default: m.CodeEditor })));
 
@@ -17,8 +22,115 @@ const CODE_SOURCE = {
   DRAFT: 'Saved draft (not graded yet)',
 } as const;
 
-function QuestionDetail({ q }: { q: DrilldownQuestion }) {
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** "Adjust marks" form for one question. */
+function AdjustMarks({
+  examId,
+  attemptId,
+  q,
+  onDone,
+}: {
+  examId: string;
+  attemptId: string;
+  q: DrilldownQuestion;
+  onDone: () => void;
+}) {
+  const api = useExamContentApi();
+  const qc = useQueryClient();
+  const auto = q.adjustment ? q.adjustment.autoScore : (q.score ?? 0);
+  const [mode, setMode] = useState<'score' | 'adjustment'>('score');
+  const [value, setValue] = useState(String(q.score ?? auto));
+  const [reason, setReason] = useState('');
+  const save = useMutation({
+    mutationFn: (body: { score?: number; adjustment?: number; reason: string }) =>
+      api.adjustQuestionScore(examId, attemptId, q.id, body),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['question-analytics', examId] });
+      onDone();
+    },
+  });
+
+  const n = Number(value);
+  const valid = value.trim() !== '' && Number.isFinite(n);
+  const newScore = valid ? round2(mode === 'score' ? n : auto + n) : null;
+  const inRange = newScore !== null && newScore >= 0 && newScore <= q.marks;
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!inRange || !reason.trim()) return;
+    save.mutate({ ...(mode === 'score' ? { score: n } : { adjustment: n }), reason: reason.trim() });
+  };
+  const remove = () => {
+    if (!reason.trim()) return;
+    save.mutate({ adjustment: 0, reason: reason.trim() });
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-md border border-border bg-muted p-3" aria-label={`Adjust marks for Q${q.number}`}>
+      <div className="flex flex-wrap items-end gap-3 text-sm">
+        <span className="text-muted-foreground">Automatic score: {auto} / {q.marks}</span>
+        <label className="flex items-center gap-1">
+          <input type="radio" name={`mode-${q.id}`} checked={mode === 'score'} onChange={() => { setMode('score'); setValue(String(q.score ?? auto)); }} />
+          Set mark to
+        </label>
+        <label className="flex items-center gap-1">
+          <input type="radio" name={`mode-${q.id}`} checked={mode === 'adjustment'} onChange={() => { setMode('adjustment'); setValue('0'); }} />
+          Add / take away
+        </label>
+        <Input
+          aria-label={mode === 'score' ? 'New mark' : 'Marks to add (negative to take away)'}
+          type="number"
+          step="0.25"
+          className="w-24"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        {newScore !== null && (
+          <span className={cx('text-sm', inRange ? 'text-foreground' : 'text-destructive')}>
+            → {newScore} / {q.marks}
+            {!inRange && ` (must be 0–${q.marks})`}
+          </span>
+        )}
+      </div>
+      <Textarea
+        aria-label="Reason"
+        rows={2}
+        maxLength={500}
+        placeholder="Why the marks change (kept in the audit log)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      {save.isError && <Alert>{errorMessage(save.error)}</Alert>}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="primary" type="submit" disabled={!inRange || !reason.trim()} busy={save.isPending}>
+          Save
+        </Button>
+        {q.adjustment && (
+          <Button size="sm" variant="ghost" onClick={remove} disabled={!reason.trim() || save.isPending} title="Go back to the automatic score">
+            Remove adjustment
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function QuestionDetail({
+  q,
+  examId,
+  attemptId,
+  canAdjust,
+}: {
+  q: DrilldownQuestion;
+  examId: string;
+  attemptId: string;
+  canAdjust: boolean;
+}) {
   const style = CELL_STYLE[q.state];
+  const [adjusting, setAdjusting] = useState(false);
   return (
     <section className="space-y-3 rounded-lg border border-border p-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
@@ -30,9 +142,26 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
           <span className={cx('rounded px-2 py-0.5 text-xs font-medium', style.className)}>
             {style.symbol} {style.label}
           </span>
+          {q.adjustment && (
+            <span className="text-xs text-muted-foreground" data-testid={`adjusted-${q.number}`}>
+              auto {q.adjustment.autoScore} · adjusted {signed(q.adjustment.adjustment)} →
+            </span>
+          )}
           <span className="font-medium text-foreground">{q.score === null ? '—' : q.score} / {q.marks}</span>
+          {canAdjust && q.score !== null && !adjusting && (
+            <Button size="sm" variant="ghost" onClick={() => setAdjusting(true)}>
+              Adjust
+            </Button>
+          )}
         </span>
       </header>
+      {q.adjustment && (
+        <p className="text-xs text-muted-foreground">
+          “{q.adjustment.reason}” — {q.adjustment.adjustedByName ?? 'someone'}
+          {q.adjustment.adjustedAt && `, ${new Date(q.adjustment.adjustedAt).toLocaleString()}`}
+        </p>
+      )}
+      {adjusting && <AdjustMarks examId={examId} attemptId={attemptId} q={q} onDone={() => setAdjusting(false)} />}
 
       {q.options && (
         <ul className="space-y-1 text-sm">
@@ -60,14 +189,18 @@ function QuestionDetail({ q }: { q: DrilldownQuestion }) {
         (q.code ? (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              {CODE_SOURCE[q.code.source]}
+              {CODE_LANGUAGES[q.code.language]?.shortLabel ?? q.code.language} · {CODE_SOURCE[q.code.source]}
               {q.code.status === 'PENDING' && q.code.source.startsWith('FINAL') && ' · being graded again'} · {q.code.submitCount} submit{q.code.submitCount === 1 ? '' : 's'},{' '}
               {q.code.runCount} run{q.code.runCount === 1 ? '' : 's'}
               {q.code.total > 0 && ` · ${q.code.passed}/${q.code.total} tests passed`}
             </p>
             <div className="h-64">
               <Suspense fallback={<Spinner />}>
-                <CodeEditor value={q.code.code} readOnly ariaLabel={`Q${q.number} submitted code`} />
+                <CodeEditor
+                  value={q.code.code}
+                  language={CODE_LANGUAGES[q.code.language]?.monacoId}
+                  readOnly
+                  ariaLabel={`Q${q.number} submitted code`} />
               </Suspense>
             </div>
             {q.code.tests.length > 0 && (
@@ -132,7 +265,13 @@ export function AttemptDrilldownDialog({
             {q.data.student.answeredCount} of {q.data.questions.length}
           </p>
           {q.data.questions.map((question) => (
-            <QuestionDetail key={question.id} q={question} />
+            <QuestionDetail
+              key={question.id}
+              q={question}
+              examId={examId}
+              attemptId={attemptId!}
+              canAdjust={[AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED].includes(q.data.student.status)}
+            />
           ))}
         </div>
       ) : null}

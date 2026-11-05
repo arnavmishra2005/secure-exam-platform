@@ -228,10 +228,16 @@ migrations only (no drift for the new table, revert and re-apply work).
 - Packaging: confirm `extraResources` copies `apps/web/dist` to `resources/web`, and test an installer on a clean lab image. Add code signing later.
 
 ### Runner (B / C)
-- Add the acceptance checklist in `docs/local-code-runner.md` as an automated Linux CI test (fork bomb, memory bomb, network, filesystem, environment).
-- The cap is address space (`prlimit --as`). Python can fail to start with very small budgets. A cgroup memory limit is stronger if the lab image allows it.
-- Add a small unit test suite for `runner/localRunner.ts` (the manual test used the unsandboxed dev mode).
-- Cap total CPU time per exam so repeated Run clicks cannot slow the PC.
+- Done in Phase 5 (B, #19 and #16; see `docs/merge-notes-person-b.md` §3):
+  - a cgroup per run (`systemd-run --user --scope`: 64 tasks, memory cap counting `/tmp`, one CPU);
+  - a system-call filter (`seccompFilter.ts`) and a start-up self-test (`checkSandbox`);
+  - `prlimit` required;
+  - C, C++ and Java;
+  - unit tests in `test/runnerSandbox.test.mjs`.
+- Still open:
+  - Run the acceptance checklist in `docs/local-code-runner.md` on the Ubuntu lab image. It has only been exercised in a privileged Linux container, without systemd.
+  - Make the checklist an automated Linux CI test.
+  - Cap total CPU time per exam, so repeated Run clicks can't slow the PC.
 
 ### Web app (A / B)
 - Tests for `ReadinessGate`, `ViolationBanner`, the violations dialog and `SubmittedPage`'s unlock behaviour with a fake `window.desktop`. (`flushSecurityQueue`, `OpenInExamApp` and `DesktopOnly` are covered.)

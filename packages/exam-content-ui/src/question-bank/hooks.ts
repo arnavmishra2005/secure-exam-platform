@@ -12,14 +12,16 @@ export const bankKeys = {
   list: (q: BankQuestionQuery) => ['question-bank', 'list', q] as const,
   detail: (id: string) => ['question-bank', 'detail', id] as const,
   topics: (courseId?: string) => ['question-bank', 'topics', courseId ?? null] as const,
+  topicSummary: (courseId?: string) => ['question-bank', 'topic-summary', courseId ?? null] as const,
   tags: (search: string) => ['question-bank', 'tags', search] as const,
 };
 
-export function useBankQuestions(query: BankQuestionQuery) {
+export function useBankQuestions(query: BankQuestionQuery, enabled = true) {
   const api = useExamContentApi();
   return useQuery({
     queryKey: bankKeys.list(query),
     queryFn: () => api.listBankQuestions(query),
+    enabled,
     placeholderData: keepPreviousData,
   });
 }
@@ -36,6 +38,16 @@ export function useBankQuestion(id: string | undefined) {
 export function useTopics(courseId?: string) {
   const api = useExamContentApi();
   return useQuery({ queryKey: bankKeys.topics(courseId), queryFn: () => api.listTopics(courseId) });
+}
+
+/** Topics with question counts per type (the bank's topic tree). */
+export function useTopicSummary(courseId?: string) {
+  const api = useExamContentApi();
+  return useQuery({
+    queryKey: bankKeys.topicSummary(courseId),
+    queryFn: () => api.getTopicSummary(courseId),
+    placeholderData: keepPreviousData,
+  });
 }
 
 export function useTags(search: string) {

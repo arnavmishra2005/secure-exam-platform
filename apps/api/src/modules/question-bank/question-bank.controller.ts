@@ -25,6 +25,7 @@ import type {
   JwtPayload,
   TagCount,
   Topic,
+  TopicSummary,
   ValidateCodingResponse,
 } from '@secure-exam/types';
 import {
@@ -127,6 +128,12 @@ export class QuestionBankController {
   @Get('question-bank/topics')
   listTopics(@Query() query: TopicQueryDto): Promise<Topic[]> {
     return this.bank.listTopics(query.courseId);
+  }
+
+  /** Topics with question counts per type, plus the "no topic" and "all" buckets. */
+  @Get('question-bank/topics/summary')
+  topicSummary(@Query() query: TopicQueryDto): Promise<TopicSummary> {
+    return this.bank.topicSummary(query.courseId);
   }
 
   @Post('question-bank/topics')

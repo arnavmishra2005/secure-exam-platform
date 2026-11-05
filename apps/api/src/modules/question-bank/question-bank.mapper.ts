@@ -3,7 +3,7 @@
  * Admin-only: these include answer keys, hidden tests and reference solutions.
  */
 
-import { BankQuestionDetail, BankQuestionSummary, Topic } from '@secure-exam/types';
+import { BankQuestionDetail, BankQuestionSummary, CodeLanguage, Topic } from '@secure-exam/types';
 import { CodingProblemEntity } from '../coding/entities/coding-problem.entity';
 import { CodingTestCaseEntity } from '../coding/entities/coding-test-case.entity';
 import { QuestionEntity } from '../question/entities/question.entity';
@@ -71,6 +71,7 @@ export function toDetail(
           memoryLimitMb: problem.memoryLimitMb,
           comparisonMode: problem.comparisonMode,
           referenceSolution: problem.referenceSolution,
+          referenceLanguage: problem.referenceLanguage ?? CodeLanguage.PYTHON,
           tests: tests.map((t) => ({
             id: t.id,
             input: t.input,

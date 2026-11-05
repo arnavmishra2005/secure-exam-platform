@@ -10,6 +10,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  classifyOutcome,
   CodeLanguage,
   CodeRunKind,
   type CodeRunResponse,
@@ -54,7 +55,8 @@ export function useCodeRun(
   const runLocally = async (code: string, kind: CodeRunKind, stdin?: string): Promise<CodeRunResponse> => {
     const samples = problem?.samples ?? [];
     const inputs = kind === CodeRunKind.SAMPLES ? samples.map((s) => s.input) : [stdin ?? ''];
-    const outcomes = await localRunner!.run({
+    // The desktop runner returns raw outcomes; classify them the same way the server does.
+    const raw = await localRunner!.run({
       language,
       code,
       inputs,
@@ -62,6 +64,7 @@ export function useCodeRun(
       memoryLimitMb: problem?.memoryLimitMb ?? 256,
       outputLimitBytes: LOCAL_OUTPUT_LIMIT_BYTES,
     });
+    const outcomes = raw.map((o) => classifyOutcome(o, language));
     if (kind === CodeRunKind.CUSTOM) return { runId: null, kind, outcome: outcomes[0] };
     return {
       runId: null,
@@ -74,6 +77,7 @@ export function useCodeRun(
         stdout: outcomes[i].stdout,
         stderr: outcomes[i].stderr,
         timeMs: outcomes[i].timeMs,
+        ...(outcomes[i].error && { error: outcomes[i].error }),
       })),
     };
   };
