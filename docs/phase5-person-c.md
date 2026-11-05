@@ -1,5 +1,45 @@
 # Phase 5 — Person C implementation and handoff
 
+## Team note: what Person C adds and what to preserve when merging
+
+This note compares Person C's work with the starting checkout at `a8e1218`
+(`Pahse 5 plan updated`). It also records issues found and corrected during
+Phase 5 testing. It is not an audit of newer commits on GitHub's `main` branch:
+if `main` has advanced, check whether the corresponding fix is already present.
+
+The starting project already had Electron guards, security-event reporting,
+offline answer saving, a coding runner and server-controlled timing. These were
+extended and corrected here; they were not all missing implementations.
+
+| Area | Starting limitation or issue found during testing | Person C's delivered behavior |
+| --- | --- | --- |
+| Coding submission and grading | Saved drafts and explicit submissions were not clearly distinguished throughout the exam workflow. | New exams require explicit Submit by default, with an instructor-controlled draft-grading option. Palette state distinguishes drafts, submitted code and later edits; the finish dialog explains unsubmitted work. |
+| Leaving a coding question | Clicking a question in the palette could bypass the unsubmitted-code warning. | Palette, Previous, Save & Next and review navigation share the warning. The cross stays on the question; Continue and Submit now are the two actions. |
+| Run/test panel sizing | Running code could enlarge the panel and leave inconsistent spacing after switching questions. | The coding workspace has bounded sizing and scrollable output so Run results do not keep stretching the layout. |
+| Student review and results | Review feedback was duplicated below the question; wrong selected options could appear green, and awarded marks were separated from the question header. | Inline correct/incorrect colours, marks beside the question number, and removal of duplicate option feedback. Published, owner-only review includes hidden-test details for learning; active-exam responses still redact them. |
+| Additional time | Whole-exam time granted before a student started did not reliably reach that student's allowance; the added-time notice persisted and Instructions showed only the base duration. | Pre-start and running extensions apply, the notice clears after 30 seconds, and Instructions refreshes and shows base minutes plus extra minutes. |
+| Desktop window and shortcut security | Reporting focus loss alone did not stop desktop shortcuts from leaving the exam. Window sizing/fullscreen regressions were also found during Phase 5 testing. | Maximised startup, confirmed fullscreen before entry, Linux fullscreen recovery, and temporary Ubuntu/GNOME shortcut suppression with restoration. Ordinary escape attempts keep the exam open and use warnings/admin logging. Key labels use Win/Ctrl and readable names. |
+| Ctrl+Alt+Delete and re-entry | A dedicated interruption/re-entry workflow was needed. | On Linux, this shortcut closes the app without submitting. Reopening an active attempt requires approval through Monitoring's Allow device change action. Server-saved answers remain and the timer continues. |
+| Launch and session isolation | Exam launch replaced the browser refresh session, and active-attempt re-entry needed explicit approval/session binding. | Separate exam refresh sessions, invigilator-approved launch sessions, rejection of displaced sessions, and separate offline stores for new sessions. Browser launch also uses a server-validated, single-use captcha. |
+| Answer continuity and deployment | Review marks/last position and college intranet setup needed additional support. | Persisted review marks and last question, improved save/sync feedback, two additive migrations, and an intranet deployment/backup recipe with configurable API URLs and optional LAN restrictions. |
+
+The shortcut-setup timeout was introduced during this Phase 5 work and fixed by
+batching GNOME settings writes; it should not be described as an original
+`main` defect. The fullscreen ordering and dialog-overflow fixes likewise include
+follow-up corrections made during integration.
+
+The user reported the final Ubuntu workflow working as required on 5 November
+2026. This does not establish equivalent OS-level protection on every Linux
+desktop, Windows or macOS. Preserve the existing managed kiosk-session support
+and the platform requirements documented below. Offline data that has not reached
+the server is not guaranteed to survive an app-close storage wipe.
+
+For A and B: merge the API, shared contracts, active web app, Electron worker and
+its resource-copy script together. Apply both C migrations and retain the
+publication/ownership checks, explicit-submit policy, navigation guard and
+desktop restoration logic. The next sections identify the permission and coding
+integration points that must be reconciled with your own Phase 5 changes.
+
 ## Scope and decisions
 
 Implements the code portions of #3, #6, #7, #9, #10, #12, #15, #17 and #18
