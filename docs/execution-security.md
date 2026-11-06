@@ -17,6 +17,8 @@ Rationale and how to change each choice: decision log in `person_b_plan.md` (§1
 ## Summary
 
 - Student code runs only inside a throw-away Docker container: no network, read-only filesystem, non-root user, no Linux capabilities, and limits on memory, CPU, processes, open files and output.
+- A stricter system-call filter than Docker's default (`infra/runner/seccomp.json`) kills a program that tries `ptrace`, `mount`, `unshare`, `bpf`, `io_uring` and similar calls, and allows only local sockets. Optionally, gVisor adds a second kernel boundary (`RUNNER_DOCKER_RUNTIME=runsc`).
+- Runs that look like an attack on the sandbox are flagged on Monitoring (`SUSPICIOUS_CODE`), never blocked.
 - Expected outputs never enter the container. A program that tampers with the in-container test harness can't learn or fake hidden answers.
 - Nine abuse scenarios are contained (fork bomb, memory bombs, endless output, filesystem writes, reading secrets, killing or forging the harness, background processes).
 - **The API's access to Docker is root-equivalent on that Docker host.** The ideal is a dedicated runner host with no secrets. The college setup (decision log L6) runs Docker on the API/database machine to save cost: use **rootless Docker** there, and keep the machine dedicated to this system.
@@ -56,6 +58,11 @@ Admins' "Test reference solution" (`POST /question-bank/validate-coding`) also u
 | Output cap | 64 KB per stream (`RUNNER_OUTPUT_LIMIT_BYTES`) | Endless printing |
 | Isolated Python | `python3 -I -B`; the program gets only `PATH`, `HOME`, `LANG` | `PYTHON*` environment tricks; no API secrets reach the program |
 | Pinned image | `RUNNER_PYTHON_IMAGE`; pin by digest in production | A changed base image altering behavior mid-term |
+| Stricter system-call filter | `--security-opt seccomp=infra/runner/seccomp.json` (`RUNNER_SECCOMP_PROFILE`) | Kernel attack surface: `ptrace`, `mount`, `unshare`/`setns`, `bpf`, `perf_event_open`, `userfaultfd`, `io_uring_*`, `keyctl`, `personality`, module loading and more kill the program (SIGSYS, shown as *Blocked by the sandbox*); sockets other than `AF_UNIX` fail with EPERM |
+| Second kernel boundary (optional) | `--runtime runsc` (gVisor, `RUNNER_DOCKER_RUNTIME`) | A Linux kernel bug becoming a container escape. Required before C/C++/Java (#16) |
+| No executables in `/tmp` | `noexec` on the tmpfs (a language can opt out for a compiled binary) | Dropping and running binaries |
+| Hardened image | `infra/runner-images/python/Dockerfile`: no setuid programs, no package managers or pip | Privilege tricks inside the image |
+| Leftover containers | Label `secure-exam-runner=1` plus a deadline label; `SandboxReaperService` removes overdue ones every minute | Containers outliving an API restart |
 
 **Why the expected outputs stay outside:** the student's program runs as the same user as the harness, so it could in principle interfere with the harness. Because the container only ever holds the inputs, the worst a hostile program can do is break its own result, which then counts as a runtime error against it. It can't see or fake the hidden expected answers.
 
@@ -79,8 +86,56 @@ A sandbox failure (Docker down, image missing) is reported as *Runner error* and
 | Writing a fake result to the harness's output | Ignored; can't produce a passing result |
 | Background process left running (`sleep 300`) | Removed with the container; the run returns immediately |
 | Network access | Fails (no network) |
+| `ptrace`, `unshare`, `mount`, `personality`, `bpf`, `keyctl`, `io_uring_setup`, `userfaultfd` (raw calls through `ctypes`) | Program killed, *Blocked by the sandbox* |
+| Opening an internet socket | `PermissionError`; the program keeps running |
+| Local sockets, subprocesses, threads | Still work |
+| Reading `/proc/1/environ` (the harness) | No code, harness or secrets in it |
+| Blocked call / fork bomb with an attempt context | Flagged once (`BLOCKED_SYSCALL`, `PROCESS_LIMIT`); ordinary wrong code is not |
+| Labelled container past its deadline | Removed by the reaper; other containers untouched |
+
+The suite also passes against the hardened image: `RUNNER_PYTHON_IMAGE=secure-exam/runner-python:3.12 npm run test:runner --workspace=apps/api`. The gVisor tests run on a Linux host with `runsc` installed: add `RUNNER_GVISOR_TESTS=1`.
 
 The same suite also covers the normal cases: hello world, several inputs, runtime and syntax errors, and per-test timeouts.
+
+## Languages (#16)
+
+| Language | Image (`RUNNER_*_IMAGE`) | Compile (once per batch) | Run (per test) | Limits beyond the defaults |
+|---|---|---|---|---|
+| Python 3.12 | `python:3.12-slim`, or `secure-exam/runner-python:3.12` | syntax check, 5 s | `python3 -I -B /tmp/main.py` | none |
+| C 17 (gcc, GNU dialect) | `secure-exam/runner-gcc:1` | `gcc -std=gnu17 -O2 -pipe -fmax-errors=5 … -lm`, 10 s | `/tmp/main` | exec `/tmp` (64 MB), +192 MB for the compiler, 64 MB stack |
+| C++ 17 (g++) | same image | `g++ -std=gnu++17 …`, 10 s | `/tmp/main` | same |
+| Java 21 (Temurin) | `secure-exam/runner-java:21` | `javac -J-Xmx256m …`, 15 s | `java -Xmx<limit>m -Xss64m -XX:+UseSerialGC -XX:ActiveProcessorCount=1 -cp /tmp Main` | 2× time, +320 MB for the JVM, 128 processes and threads |
+
+- **Images.** Build them with `npm run runner:images --workspace=apps/api` (`infra/runner-images/build.sh`). Each is `python:3.12-slim` (the harness is Python) plus its compiler, hardened by `harden.sh`. Pin them by digest in production.
+- **gVisor.** C, C++ and Java are marked `requiresIsolatedRuntime`. In production the runner refuses them unless `RUNNER_DOCKER_RUNTIME` is set, because compiled code makes raw system calls. `RUNNER_REQUIRE_GVISOR_FOR_COMPILED` overrides this; when unset, the rule applies in production only.
+- **Time limits.** The question's limit applies to Python, C and C++. Java gets twice the limit for JVM start-up, as judges like HackerRank do.
+- **Capacity.** These are additions to the Python numbers above, measured on Docker Desktop (Mac):
+  - C/C++ add one compile per graded answer: about 0.2 s for C and 1 s for C++ with `bits/stdc++.h`.
+  - Java adds about 0.5 s of compile, plus about 0.3–0.5 s of JVM start-up per test.
+  - With deferred grading this only delays results. For example, 500 Java answers with 10 tests each add roughly 30–40 container-minutes, which takes about 8–10 minutes at the default 4 parallel containers.
+  - Raise `RUNNER_MAX_CONCURRENCY` on a bigger runner host to grade faster.
+- **Drafts.** A draft is saved as the answer's `textResponse` with its language on a first line (`encodeCodeDraft` in `@secure-exam/types`). A plain draft is Python, as before #16.
+
+## Monitoring and suspicious code
+
+Every sandbox run writes one log line (logger `SandboxRun`), without code or output:
+
+```
+GRADING attempt=… question=… user=… lang=python inputs=10 verdicts=OK×9,TLE×1 maxMs=2000 wallMs=3400 memMb=31 pidsHits=0 oomKills=0 runtime=runsc
+```
+
+Memory peak, process-limit hits and OOM kills come from the container's own cgroup, read by the harness at the end of the run.
+
+A run is flagged as **suspicious** when:
+
+| Reason | When |
+|---|---|
+| `BLOCKED_SYSCALL` | The system-call filter killed the program |
+| `PROCESS_LIMIT` | The program hit the process cap (fork bomb) |
+| `HARNESS_TAMPERING` | The program broke the in-sandbox harness |
+| `REPEATED_LIMITS` | `RUNNER_FLAG_LIMIT_BATCHES` (default 3) runs of one attempt were stopped at the container deadline, or hit the memory/output limit on every test |
+
+A flag is a `SUSPICIOUS_CODE` row in `security_events` (so it counts on Monitoring and Results like other violations), plus an audit line with the exam and attempt ids. It never blocks the student or changes a score, and it is raised at most once per attempt, question and reason. An author's "Test reference solution" runs are only logged. Practice runs on the lab PC are not seen by the server.
 
 ## Deployment requirements
 
@@ -88,7 +143,14 @@ The same suite also covers the normal cases: hello world, several inputs, runtim
 2. **Network.** The runner host needs no inbound access except from the API host for Docker. Sandboxes themselves have no network.
 3. **Pin the image** by digest (`RUNNER_PYTHON_IMAGE=python:3.12-slim@sha256:…`) and pre-pull it on the runner host. The digest used during development was `a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1`.
 4. **Recommended hardening on the runner host:** Docker's user-namespace remapping (`userns-remap`) or rootless Docker, so root inside a container isn't root on the host. Optionally use the gVisor runtime (`--runtime=runsc`) for a second kernel boundary; this needs one extra flag in `DockerRunnerProvider`.
-5. **One API instance.** The run limits are kept in the API's memory. With more than one API instance, each would admit its own runs, so limits must move to a shared store (Redis) or a real queue first.
+5. **Deployment checklist for #19** (tick on the real runner host):
+   - [ ] **gVisor** installed and registered with Docker (`runsc install`, restart dockerd; `docker info` lists `runsc`). Set `RUNNER_DOCKER_RUNTIME=runsc`. Run `RUNNER_DOCKER_TESTS=1 RUNNER_GVISOR_TESTS=1 npm run test:runner --workspace=apps/api`, then the load test (`scripts/load-test-runner.ts`) to measure the start-up cost.
+   - [ ] **Rootless Docker** (or `userns-remap`) for the daemon the API uses.
+   - [ ] Ideally a **separate runner host** with no database or `.env`, reached with `DOCKER_HOST=ssh://runner@…`.
+   - [ ] **seccomp profile** reachable from the API's working directory (`RUNNER_SECCOMP_PROFILE`, default `../../infra/runner/seccomp.json`). The API refuses to start if the file is missing. The Docker CLI reads it, so it also works with a remote `DOCKER_HOST`.
+   - [ ] **Hardened image** built and pinned: `docker build -t secure-exam/runner-python:3.12 infra/runner-images/python`, then `RUNNER_PYTHON_IMAGE=secure-exam/runner-python:3.12@sha256:<digest>`. Rerun `test:runner` against it.
+   - [ ] C, C++ and Java (#16) stay off until gVisor is in: their registry entries set `requiresIsolatedRuntime`, so the runner refuses them without `RUNNER_DOCKER_RUNTIME`.
+6. **One API instance.** The run limits are kept in the API's memory. With more than one API instance, each would admit its own runs, so limits must move to a shared store (Redis) or a real queue first.
 
 ## Capacity
 
@@ -130,11 +192,17 @@ STUDENTS=100 API_URL=http://localhost:3000 npx ts-node scripts/load-test-runner.
 |---|---|---|
 | `RUNNER_DOCKER_BIN` | `docker` | Docker CLI to call (`DOCKER_HOST` etc. are passed through) |
 | `RUNNER_PYTHON_IMAGE` | `python:3.12-slim` | Sandbox image; pin by digest in production |
+| `RUNNER_GCC_IMAGE` | `secure-exam/runner-gcc:1` | C and C++ image |
+| `RUNNER_JAVA_IMAGE` | `secure-exam/runner-java:21` | Java image |
+| `RUNNER_REQUIRE_GVISOR_FOR_COMPILED` | unset (= production only) | Refuse C/C++/Java without `RUNNER_DOCKER_RUNTIME` |
 | `RUNNER_MAX_CONCURRENCY` | 4 | Containers at once |
 | `RUNNER_MAX_QUEUE` | 100 | Requests allowed to wait; beyond that 503 |
 | `RUNNER_RUNS_PER_MINUTE` | 20 | Per student (Run and Submit together) |
 | `RUNNER_OUTPUT_LIMIT_BYTES` | 65536 | Per stream, per test |
 | `RUNNER_STARTUP_TIMEOUT_MS` | 10000 | Allowance for container start in the overall deadline |
+| `RUNNER_DOCKER_RUNTIME` | unset | Docker runtime for sandboxes, e.g. `runsc` (gVisor). Unset: Docker's default (a warning in production) |
+| `RUNNER_SECCOMP_PROFILE` | `../../infra/runner/seccomp.json` | seccomp profile; `docker-default` keeps Docker's own, weaker profile |
+| `RUNNER_FLAG_LIMIT_BATCHES` | 3 | Limit-stopped runs of one attempt before `REPEATED_LIMITS` is flagged |
 
 | `CODING_GRADING_MODE` | `DEFERRED` | `DEFERRED`: Submit saves, grading after the attempt. `LIVE`: Submit grades immediately |
 | `CODING_SERVER_RUN` | unset | Run / Run samples on the server: unset = on in development, off in production; `true`/`false` to force |

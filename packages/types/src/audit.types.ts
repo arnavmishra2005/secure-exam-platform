@@ -31,6 +31,10 @@ export enum AuditEventType {
   // Coding events (Person B)
   CODE_SUBMITTED = 'CODE_SUBMITTED',
   CODE_GRADED = 'CODE_GRADED',
+  /** The code runner saw something no solution needs (blocked system call, fork bomb...). Flag only. */
+  SUSPICIOUS_CODE = 'SUSPICIOUS_CODE',
+  /** A question's marks were adjusted by hand (#13); metadata has the old and new values and the reason. */
+  SCORE_ADJUSTED = 'SCORE_ADJUSTED',
   RESULTS_RECALCULATED = 'RESULTS_RECALCULATED',
 
   // Student assignment events (Person B)

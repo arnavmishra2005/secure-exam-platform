@@ -1,23 +1,35 @@
 /** Owner: Person B. Search + filter bar shared by the bank page and the exam picker. */
 import { useEffect, useState } from 'react';
-import { QuestionDifficulty, QuestionStatus, QuestionType, type BankQuestionQuery } from '@secure-exam/types';
+import { NO_TOPIC, QuestionDifficulty, QuestionStatus, QuestionType, type BankQuestionQuery } from '@secure-exam/types';
 import { Input, Select } from '../ui';
+import { ALL_TOPICS } from './bankQuery';
 import { useTopics } from './hooks';
-import { DIFFICULTY_LABEL, STATUS_LABEL, TYPE_LABEL, type CourseOption } from './labels';
+import { DIFFICULTY_LABEL, STATUS_LABEL, TYPE_LABEL, UNCATEGORISED, type CourseOption } from './labels';
 
 export function BankFilters({
   query,
   onChange,
   courses,
   hideStatus,
+  hideTopicAndType,
 }: {
   query: BankQuestionQuery;
   onChange: (q: BankQuestionQuery) => void;
   courses?: CourseOption[];
   hideStatus?: boolean;
+  /** The bank page picks topic and type in its topic tree and type tabs instead. */
+  hideTopicAndType?: boolean;
 }) {
   const [search, setSearch] = useState(query.search ?? '');
   const topics = useTopics(query.courseId);
+
+  // Follow outside changes to the search (Back/Forward through the URL), so
+  // the debounce below doesn't put the old text back.
+  const [lastSearch, setLastSearch] = useState(query.search);
+  if (query.search !== lastSearch) {
+    setLastSearch(query.search);
+    setSearch(query.search ?? '');
+  }
 
   // Debounce typing; filters below apply immediately.
   useEffect(() => {
@@ -44,7 +56,13 @@ export function BankFilters({
           aria-label="Course"
           className="w-auto"
           value={query.courseId ?? ''}
-          onChange={(e) => set({ courseId: val(e.target.value), topicId: undefined })}
+          // Topics belong to a course; "All" and "Uncategorised" exist in every course.
+          onChange={(e) =>
+            set({
+              courseId: val(e.target.value),
+              topicId: query.topicId === ALL_TOPICS || query.topicId === NO_TOPIC ? query.topicId : undefined,
+            })
+          }
         >
           <option value="">All courses</option>
           {courses.map((c) => (
@@ -54,27 +72,32 @@ export function BankFilters({
           ))}
         </Select>
       )}
-      <Select aria-label="Topic" className="w-auto" value={query.topicId ?? ''} onChange={(e) => set({ topicId: val(e.target.value) })}>
-        <option value="">All topics</option>
-        {(topics.data ?? []).map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </Select>
-      <Select
-        aria-label="Type"
-        className="w-auto"
-        value={query.type ?? ''}
-        onChange={(e) => set({ type: val(e.target.value) as QuestionType | undefined })}
-      >
-        <option value="">All types</option>
-        {Object.values(QuestionType).map((t) => (
-          <option key={t} value={t}>
-            {TYPE_LABEL[t]}
-          </option>
-        ))}
-      </Select>
+      {!hideTopicAndType && (
+        <>
+          <Select aria-label="Topic" className="w-auto" value={query.topicId ?? ''} onChange={(e) => set({ topicId: val(e.target.value) })}>
+            <option value="">All topics</option>
+            {(topics.data ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+            <option value={NO_TOPIC}>{UNCATEGORISED}</option>
+          </Select>
+          <Select
+            aria-label="Type"
+            className="w-auto"
+            value={query.type ?? ''}
+            onChange={(e) => set({ type: val(e.target.value) as QuestionType | undefined })}
+          >
+            <option value="">All types</option>
+            {Object.values(QuestionType).map((t) => (
+              <option key={t} value={t}>
+                {TYPE_LABEL[t]}
+              </option>
+            ))}
+          </Select>
+        </>
+      )}
       <Select
         aria-label="Difficulty"
         className="w-auto"

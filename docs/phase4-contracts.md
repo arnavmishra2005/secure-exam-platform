@@ -1,5 +1,9 @@
 # Phase 4 — contracts and handoff
 
+> **Historical.** This records the Phase 4 handoff. Current work is planned in
+> `phase5_feature_plan.md`; Person B's Phase 5 changes that touch others' code are in
+> [merge-notes-person-b.md](merge-notes-person-b.md). The status table below is as of Phase 4's start.
+
 For the three developers working the 9-day plan. It records what the Day 1
 contract session produced, what Person A and Person C (time extension,
 dashboard) have delivered, and exactly where Person B and Person C's
@@ -44,7 +48,7 @@ clean database, revert, and re-run.
 | `ScoreRecorder` | `apps/api/src/common/scoring/` | `@Inject(SCORE_RECORDER)`. `record()` / `recordMany()` upsert per `(attemptId, questionId)` and recompute `results.score`. Real implementation: `modules/results/score-recorder.service.ts`; `NoopScoreRecorder` remains for tests. |
 | `ExamService.extendEndTime(examId, minutes, manager?)` | `modules/exam/exam.service.ts` | Implemented by A. Pass `manager` to join a transaction. |
 | Registration check | `RegistrationService.isUserRegistered(examId, userId)` | Use this; don't read the tables. |
-| `ExecutionProvider` + language registry | `apps/api/src/modules/code-runner/` | Interface, `LANGUAGE_REGISTRY` with `python`, and `NotImplementedExecutionProvider`. Not wired into `AppModule` yet. |
+| `ExecutionProvider` + language registry | `apps/api/src/modules/execution/` (moved from `code-runner/`) | Interface and `LANGUAGE_REGISTRY`, now implemented by `DockerRunnerProvider` (Python, and since Phase 5 C, C++ and Java). See `docs/execution-security.md`. |
 | Shared types | `packages/types/src/*.types.ts` | One file per feature. `question-bank.types.ts`, `coding.types.ts` and `client-security.types.ts` are contracts only. |
 
 Data rules for anything reading results are in

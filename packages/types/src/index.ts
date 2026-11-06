@@ -7,6 +7,7 @@ export * from './audit.types';
 export * from './exam.types';
 export * from './question.types';
 export * from './coding.types';
+export * from './code-languages';
 export * from './question-bank.types';
 export * from './question-analytics.types';
 export * from './attempt.types';
@@ -20,6 +21,7 @@ export * from './results.types';        // A
 export * from './extension.types';      // C
 export * from './dashboard.types';      // C
 export * from './client-security.types'; // C (contract only)
+export * from './error-classifier';  // B (Phase 5 #8)
 
 // Phase 5
 export * from './access.types';         // A — instructors, TAs, permissions

@@ -3,6 +3,8 @@
  */
 import { apiClient } from './client';
 import type {
+  AdjustQuestionScoreRequest,
+  AdjustQuestionScoreResponse,
   AttemptDrilldown,
   QuestionAnalyticsMatrix,
   RecalculateRequest,
@@ -16,6 +18,18 @@ export function getQuestionAnalytics(examId: string): Promise<QuestionAnalyticsM
 export function getAttemptDrilldown(examId: string, attemptId: string): Promise<AttemptDrilldown> {
   return apiClient
     .get<AttemptDrilldown>(`/exams/${examId}/question-analytics/attempts/${attemptId}`)
+    .then((res) => res.data);
+}
+
+/** Manual mark adjustment for one question of a finished attempt (#13). */
+export function adjustQuestionScore(
+  examId: string,
+  attemptId: string,
+  questionId: string,
+  data: AdjustQuestionScoreRequest,
+): Promise<AdjustQuestionScoreResponse> {
+  return apiClient
+    .patch<AdjustQuestionScoreResponse>(`/exams/${examId}/question-analytics/attempts/${attemptId}/questions/${questionId}/score`, data)
     .then((res) => res.data);
 }
 

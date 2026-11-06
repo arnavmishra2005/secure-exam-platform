@@ -73,6 +73,41 @@ apt-get install -y --no-install-recommends \
   usbutils \
   2>/dev/null || true
 
+echo "==> [2b/8] Code runner sandbox (#19, docs/local-code-runner.md)"
+# Required by the exam app's local code runner; it refuses to run code without them.
+apt-get install -y --no-install-recommends bubblewrap util-linux systemd python3 \
+  || { echo "ERROR: could not install the code runner sandbox packages" >&2; exit 1; }
+# C, C++ and Java questions (#16): Run compiles on this PC. Without these, Run
+# for those languages shows the invigilator message (Submit still works).
+apt-get install -y --no-install-recommends gcc g++ libc6-dev default-jdk-headless \
+  || echo "  WARNING: could not install gcc/g++/JDK; C, C++ and Java can't be run on this PC." 
+if ! command -v python3.12 >/dev/null; then
+  echo "  WARNING: python3.12 not found; the grader uses Python 3.12 (install it, e.g. from the deadsnakes PPA, or use Ubuntu 24.04)."
+fi
+# Per-run limits (TasksMax, MemoryMax, CPUQuota through systemd-run --user --scope)
+# need these cgroup controllers delegated to user sessions.
+mkdir -p /etc/systemd/system/user@.service.d
+cat > /etc/systemd/system/user@.service.d/90-secure-exam-delegate.conf <<'CONF'
+# secure-exam: lets the exam app cap processes, memory and CPU per code run.
+[Service]
+Delegate=pids memory cpu
+CONF
+# Ubuntu 24.04+ blocks unprivileged user namespaces unless an AppArmor profile
+# allows them; bubblewrap needs one to build the sandbox.
+if [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" == "1" ]] \
+   && [[ ! -e /etc/apparmor.d/bwrap-userns-restrict ]]; then
+  cat > /etc/apparmor.d/secure-exam-bwrap <<'CONF'
+# secure-exam: allow bubblewrap (only) to create the code-runner sandbox.
+abi <abi/4.0>,
+include <tunables/global>
+profile secure-exam-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/secure-exam-bwrap>
+}
+CONF
+  apparmor_parser -r /etc/apparmor.d/secure-exam-bwrap
+fi
+
 echo "==> [3/8] Installing Electron AppImage and session binaries"
 mkdir -p "$INSTALL_DIR/bin"
 if [[ -f "$APPIMAGE" ]]; then

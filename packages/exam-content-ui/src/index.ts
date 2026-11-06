@@ -10,6 +10,7 @@ export { ExamContentApiProvider, defaultExamContentApi, useExamContentApi, type 
 
 // Question bank (staff)
 export { QuestionBankPage } from './question-bank/QuestionBankPage';
+export { ALL_TOPICS, bankQueryFromParams, bankQueryToParams } from './question-bank/bankQuery';
 export { QuestionForm } from './question-bank/QuestionForm';
 export { PickForExamDialog } from './question-bank/PickForExamDialog';
 export { ImportDialog } from './question-bank/ImportDialog';

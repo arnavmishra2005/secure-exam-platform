@@ -11,7 +11,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AttemptStatus, CodeSubmissionStatus } from '@secure-exam/types';
-import { buildCell, type MatrixQuestion } from '../question-analytics/matrix';
+import { applyAdjustment, buildCell, type MatrixQuestion } from '../question-analytics/matrix';
+import { QuestionScoreEntity } from '../results/entities/question-score.entity';
 import { ExamQuestionEntity } from '../question/entities/exam-question.entity';
 import { QuestionEntity } from '../question/entities/question.entity';
 import { ATTEMPT_ACCESS, IAttemptAccess } from './attempt-access/attempt-access.interface';
@@ -57,6 +58,14 @@ export class ResultTotalsService {
     const finals = await manager.getRepository(CodeSubmissionEntity).find({
       where: { attemptId, isFinal: true, status: CodeSubmissionStatus.GRADED },
     });
+    // Manual adjustments (#13) survive a recalculation: they are added to the new automatic scores.
+    const adjusted = await manager
+      .getRepository(QuestionScoreEntity)
+      .createQueryBuilder('qs')
+      .select(['qs.questionId', 'qs.manualAdjustment'])
+      .where('qs.attemptId = :attemptId AND qs.manualAdjustment <> 0', { attemptId })
+      .getMany();
+    const adjustmentBy = new Map(adjusted.map((a) => [a.questionId, a.manualAdjustment]));
     const answerBy = new Map(answers.map((a) => [a.questionId, { ...a, attemptId }]));
     const finalBy = new Map(finals.map((f) => [f.questionId, f]));
     const attempt = {
@@ -72,13 +81,10 @@ export class ResultTotalsService {
     let score = 0;
     for (const q of qs) {
       const f = finalBy.get(q.id);
-      const cell = buildCell(
-        q,
-        attempt,
-        answerBy.get(q.id),
-        f ? { attemptId, questionId: q.id, score: f.score, passed: f.passed, total: f.total, hasCode: f.code.trim().length > 0 } : undefined,
-        false,
-      );
+      const final = f
+        ? { attemptId, questionId: q.id, score: f.score, passed: f.passed, total: f.total, hasCode: f.code.trim().length > 0 }
+        : undefined;
+      const cell = applyAdjustment(buildCell(q, attempt, answerBy.get(q.id), final, false), adjustmentBy.get(q.id));
       score += cell.score ?? 0;
     }
     const maxScore = qs.reduce((sum, q) => sum + q.marks, 0);

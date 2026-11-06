@@ -20,7 +20,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import {
   AuditEventType,
   BankQuestionDetail,
@@ -28,11 +28,14 @@ import {
   BulkAddToExamResult,
   CODE_MAX_LENGTH,
   CodeLanguage,
+  NO_TOPIC,
   OutputComparisonMode,
   QuestionStatus,
   QuestionType,
   TagCount,
   Topic,
+  TopicCounts,
+  TopicSummary,
 } from '@secure-exam/types';
 import {
   BankQuestionQueryDto,
@@ -92,7 +95,8 @@ export class QuestionBankService {
       qb.andWhere("q.text ILIKE :search ESCAPE '\\'", { search: `%${escapeLike(query.search.trim())}%` });
     }
     if (query.courseId) qb.andWhere('q.course_id = :courseId', { courseId: query.courseId });
-    if (query.topicId) qb.andWhere('q.topic_id = :topicId', { topicId: query.topicId });
+    if (query.topicId === NO_TOPIC) qb.andWhere('q.topic_id IS NULL');
+    else if (query.topicId) qb.andWhere('q.topic_id = :topicId', { topicId: query.topicId });
     if (query.difficulty) qb.andWhere('q.difficulty = :difficulty', { difficulty: query.difficulty });
     if (query.type) qb.andWhere('q.type = :type', { type: query.type });
     if (query.status) qb.andWhere('q.status = :status', { status: query.status });
@@ -268,7 +272,9 @@ export class QuestionBankService {
             timeLimitMs: source.coding.timeLimitMs,
             memoryLimitMb: source.coding.memoryLimitMb,
             comparisonMode: source.coding.comparisonMode,
+            allowedLanguages: source.coding.allowedLanguages,
             referenceSolution: source.coding.referenceSolution ?? null,
+            referenceLanguage: source.coding.referenceLanguage,
             tests: source.coding.tests.map((t) => ({
               input: t.input,
               expectedOutput: t.expectedOutput,
@@ -360,13 +366,63 @@ export class QuestionBankService {
   // Topics and tags
   // ---------------------------------------------------------------------
 
+  /**
+   * Topics in the given banks; with a course, that course's topics plus the
+   * ones without a course (usable in any course).
+   */
   async listTopics(courseId: string | undefined, ownerIds: string[]): Promise<Topic[]> {
     if (ownerIds.length === 0) return [];
+    const ownerId = In(ownerIds);
     const topics = await this.topicRepo.find({
-      where: { ownerId: In(ownerIds), ...(courseId ? { courseId } : {}) },
+      where: courseId ? [{ ownerId, courseId }, { ownerId, courseId: IsNull() }] : { ownerId },
       order: { name: 'ASC' },
     });
     return topics.map(toTopic);
+  }
+
+  /**
+   * The topic list with question counts per type, for the bank's topic tree.
+   * Counts every status (the bank lists archived questions too); with a
+   * course, only that course's questions. Only questions in the given banks.
+   */
+  async topicSummary(courseId: string | undefined, ownerIds: string[]): Promise<TopicSummary> {
+    const qb = this.questionRepo
+      .createQueryBuilder('q')
+      .select('q.topic_id', 'topicId')
+      .addSelect('q.type', 'type')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('q.topic_id')
+      .addGroupBy('q.type')
+      .where(ownerIds.length ? 'q.owner_id IN (:...ownerIds)' : 'FALSE', { ownerIds });
+    if (courseId) qb.andWhere('q.course_id = :courseId', { courseId });
+
+    const [topics, rows] = await Promise.all([
+      this.listTopics(courseId, ownerIds),
+      qb.getRawMany<{ topicId: string | null; type: QuestionType; count: string }>(),
+    ]);
+
+    const empty = (): TopicCounts => ({ total: 0, byType: {} });
+    const add = (c: TopicCounts, type: QuestionType, n: number) => {
+      c.total += n;
+      c.byType[type] = (c.byType[type] ?? 0) + n;
+    };
+    const byTopic = new Map<string, TopicCounts>();
+    const uncategorised = empty();
+    const all = empty();
+    for (const r of rows) {
+      const n = Number(r.count);
+      add(all, r.type, n);
+      if (r.topicId === null) add(uncategorised, r.type, n);
+      else {
+        if (!byTopic.has(r.topicId)) byTopic.set(r.topicId, empty());
+        add(byTopic.get(r.topicId)!, r.type, n);
+      }
+    }
+    return {
+      topics: topics.map((t) => ({ id: t.id, name: t.name, courseId: t.courseId ?? null, ...(byTopic.get(t.id) ?? empty()) })),
+      uncategorised,
+      all,
+    };
   }
 
   async createTopic(dto: CreateTopicDto, ownerId: string): Promise<Topic> {
@@ -502,11 +558,12 @@ export class QuestionBankService {
         questionId,
         statementMd: c.statementMd,
         starterCode: c.starterCode ?? {},
-        allowedLanguages: [CodeLanguage.PYTHON],
+        allowedLanguages: c.allowedLanguages?.length ? c.allowedLanguages : [CodeLanguage.PYTHON],
         timeLimitMs: c.timeLimitMs ?? 2000,
         memoryLimitMb: c.memoryLimitMb ?? 256,
         comparisonMode: c.comparisonMode ?? OutputComparisonMode.TRIM,
         referenceSolution: c.referenceSolution ?? null,
+        referenceLanguage: c.referenceLanguage ?? CodeLanguage.PYTHON,
       });
       await problemRepo.save(problem);
 

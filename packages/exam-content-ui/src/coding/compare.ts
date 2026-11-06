@@ -28,6 +28,7 @@ export function outputsMatch(mode: OutputComparisonMode, expected: string, actua
 
 const STATUS_TO_VERDICT: Record<ExecutionStatus, TestCaseVerdict> = {
   [ExecutionStatus.OK]: TestCaseVerdict.PASSED,
+  [ExecutionStatus.COMPILATION_ERROR]: TestCaseVerdict.COMPILATION_ERROR,
   [ExecutionStatus.RUNTIME_ERROR]: TestCaseVerdict.RUNTIME_ERROR,
   [ExecutionStatus.TIME_LIMIT_EXCEEDED]: TestCaseVerdict.TIME_LIMIT_EXCEEDED,
   [ExecutionStatus.MEMORY_LIMIT_EXCEEDED]: TestCaseVerdict.MEMORY_LIMIT_EXCEEDED,

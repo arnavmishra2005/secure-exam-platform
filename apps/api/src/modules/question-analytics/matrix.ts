@@ -122,12 +122,29 @@ export function buildCell(
     : { ...base, state: QuestionCellState.NOT_ANSWERED, score: 0 };
 }
 
+/** Manual adjustments (#13) by `attemptId|questionId`: marks added (+) or taken away (−). */
+export type AdjustmentMap = Map<string, number>;
+export const adjustmentKey = key;
+
+/**
+ * Applies a manual adjustment (#13): score = clamp(auto + adjustment, 0, max).
+ * A cell that isn't graded yet (PENDING) stays as it is: there is nothing to
+ * adjust until grading finishes. The state (correct/partial/wrong) stays the
+ * automatic one; `autoScore` and `adjustment` show that marks were changed.
+ */
+export function applyAdjustment(cell: AnalyticsCell, adjustment: number | undefined): AnalyticsCell {
+  if (!adjustment || cell.score === null) return cell;
+  const score = round2(Math.min(Math.max(cell.score + adjustment, 0), cell.maxScore));
+  return { ...cell, autoScore: cell.score, adjustment, score };
+}
+
 export function buildMatrix(
   questions: MatrixQuestion[],
   attempts: MatrixAttempt[],
   answers: MatrixAnswer[],
   finals: MatrixFinalCode[],
   submitted: SubmittedKeys,
+  adjustments: AdjustmentMap = new Map(),
 ): MatrixResult {
   const answerBy = new Map(answers.map((a) => [key(a.attemptId, a.questionId), a]));
   const finalBy = new Map(finals.map((f) => [key(f.attemptId, f.questionId), f]));
@@ -139,7 +156,7 @@ export function buildMatrix(
     let answeredCount = 0;
     for (const q of questions) {
       const k = key(a.attemptId, q.id);
-      const cell = buildCell(q, a, answerBy.get(k), finalBy.get(k), submitted.has(k));
+      const cell = applyAdjustment(buildCell(q, a, answerBy.get(k), finalBy.get(k), submitted.has(k)), adjustments.get(k));
       cells.push(cell);
       if (cell.score !== null) score += cell.score;
       if (cell.state !== QuestionCellState.NOT_ANSWERED) answeredCount++;

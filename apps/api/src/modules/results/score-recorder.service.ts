@@ -50,13 +50,21 @@ export class ScoreRecorderService implements ScoreRecorder {
             questionId: input.questionId,
             source: input.source,
             score: input.score,
+            // Person B (#13): grading sets the automatic score; a manual adjustment is re-applied below.
+            autoScore: input.score,
             maxScore: input.maxScore,
             isCorrect: input.isCorrect ?? null,
             details: input.details ?? null,
           })) as QueryDeepPartialEntity<QuestionScoreEntity>[],
         )
-        .orUpdate(['source', 'score', 'maxScore', 'isCorrect', 'details', 'gradedAt'], ['attemptId', 'questionId'])
+        .orUpdate(['source', 'score', 'autoScore', 'maxScore', 'isCorrect', 'details', 'gradedAt'], ['attemptId', 'questionId'])
         .execute();
+      // Person B (#13): re-grading must not undo a manual adjustment.
+      await manager.query(
+        `UPDATE question_scores SET score = LEAST(GREATEST("autoScore" + "manualAdjustment", 0), "maxScore")
+          WHERE "attemptId" = $1 AND "manualAdjustment" <> 0`,
+        [attemptId],
+      );
     }
 
     await this.recomputeResult(manager, attemptId);

@@ -452,8 +452,8 @@ async function seedCodingQuestion(ds: DataSource, p: SeedCodingProblem, ownerId:
   await ds.query(
     `INSERT INTO coding_problems
        ("question_id", "statement_md", "starter_code", "allowed_languages", "time_limit_ms", "memory_limit_mb", "comparison_mode", "reference_solution")
-     VALUES ($1, $2, $3::jsonb, '{python}', 2000, 256, 'TRIM', $4)`,
-    [question.id, p.statement, JSON.stringify({ python: p.starter }), p.reference],
+     VALUES ($1, $2, $3::jsonb, $5, 2000, 256, 'TRIM', $4)`,
+    [question.id, p.statement, JSON.stringify({ python: p.starter }), p.reference, SEED_LANGUAGES],
   );
   let order = 0;
   for (const t of p.testCases) {
@@ -533,6 +533,52 @@ async function seedBankCodingQuestions(ds: DataSource, ownerId: string) {
   }
 }
 
+/** #16: the sample coding questions accept every language (C/C++/Java start from the default templates). */
+const SEED_LANGUAGES = ['python', 'c', 'cpp', 'java'];
+
+/** Opens the sample exam's Python-only coding questions to every language. Idempotent. */
+async function seedCodingLanguages(ds: DataSource) {
+  const updated = await ds.query<{ question_id: string }[]>(
+    `UPDATE coding_problems SET "allowed_languages" = $1
+      WHERE "allowed_languages" = '{python}'
+        AND "question_id" IN (SELECT "question_id" FROM exam_questions WHERE "exam_id" = $2)
+      RETURNING "question_id"`,
+    [SEED_LANGUAGES, SAMPLE_EXAM_ID],
+  );
+  if (updated.length > 0) console.log(`   ✅ ${updated.length} coding question(s) now accept Python, C, C++ and Java`);
+}
+
+/**
+ * Bank topics for the sample exam's questions, so the question bank's topic
+ * tree has something in it. Only fills questions that have no topic yet.
+ */
+const SEED_TOPICS = [
+  { name: 'Operating systems & networks', types: ['MCQ_SINGLE', 'MCQ_MULTI', 'TRUE_FALSE'] },
+  { name: 'Python basics', types: ['CODING'] },
+];
+
+async function seedTopics(ds: DataSource, ownerId: string) {
+  console.log('\n🗂  Seeding question bank topics…');
+  for (const t of SEED_TOPICS) {
+    const existing = await ds.query<{ id: string }[]>(
+      `SELECT id FROM topics WHERE "course_id" IS NULL AND LOWER("name") = LOWER($1) AND ("owner_id" = $2 OR "owner_id" IS NULL) LIMIT 1`,
+      [t.name, ownerId],
+    );
+    const topicId =
+      existing[0]?.id ??
+      (await ds.query<{ id: string }[]>(`INSERT INTO topics ("name", "owner_id") VALUES ($1, $2) RETURNING id`, [t.name, ownerId]))[0].id;
+    await ds.query(`UPDATE topics SET "owner_id" = $1 WHERE id = $2 AND "owner_id" IS NULL`, [ownerId, topicId]);
+    const updated = await ds.query<{ id: string }[]>(
+      `UPDATE questions SET "topic_id" = $1
+        WHERE "topic_id" IS NULL AND "type"::text = ANY($2)
+          AND id IN (SELECT "question_id" FROM exam_questions WHERE "exam_id" = $3)
+        RETURNING id`,
+      [topicId, t.types, SAMPLE_EXAM_ID],
+    );
+    console.log(`   ✅ "${t.name}"${updated.length ? ` (${updated.length} questions)` : ''}`);
+  }
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function seed() {
@@ -584,7 +630,9 @@ async function seed() {
   // ── Exams ──────────────────────────────────────────────────────────────
   await seedActiveExam(ds, courseId, instructorId);
   for (const problem of CODING_PROBLEMS) await seedCodingQuestion(ds, problem, instructorId);
+  await seedCodingLanguages(ds);
   await seedBankCodingQuestions(ds, instructorId);
+  await seedTopics(ds, instructorId);
   await assignExamToCourse(ds, SAMPLE_EXAM_ID, courseId, studentIds);
   await seedOtherInstructorExam(ds, otherCourseId);
 

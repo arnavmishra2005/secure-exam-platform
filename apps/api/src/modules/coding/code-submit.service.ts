@@ -90,6 +90,7 @@ export class CodeSubmitService {
           code: dto.code,
           inputs: tests.map((t) => t.input),
           limits: { timeLimitMs: problem.timeLimitMs, memoryLimitMb: problem.memoryLimitMb },
+          context: { source: 'SUBMIT', userId: user.sub, attemptId: attempt.id, examId: attempt.examId, questionId: dto.questionId },
         }),
       );
       const evaluation = evaluate(tests, outcomes, problem.comparisonMode, question.marks);
@@ -133,6 +134,7 @@ export class CodeSubmitService {
           index: i + 1,
           isSample: tests[i].isSample,
           verdict: r.verdict,
+          ...(r.errorKind && { errorKind: r.errorKind }),
           timeMs: r.timeMs,
         })),
       };

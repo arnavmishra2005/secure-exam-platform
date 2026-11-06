@@ -43,6 +43,27 @@ export class QuestionScoreEntity {
   @Column({ type: 'jsonb', nullable: true })
   details!: Record<string, unknown> | null;
 
+  // ---- Manual adjustment (Person B, #13; docs/merge-notes-person-b.md) ----
+  // `score` = clamp(autoScore + manualAdjustment, 0, maxScore). Grading writes
+  // autoScore; only the adjustment endpoint writes the other four.
+
+  /** The automatic score (MCQ rule or code tests). Null on rows from before #13 (then it equals `score`). */
+  @Column({ type: 'double precision', nullable: true })
+  autoScore!: number | null;
+
+  @Column({ type: 'double precision', default: 0 })
+  manualAdjustment!: number;
+
+  /** users.id */
+  @Column({ type: 'uuid', nullable: true })
+  adjustedBy!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  adjustedAt!: Date | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  adjustReason!: string | null;
+
   @UpdateDateColumn({ type: 'timestamptz' })
   gradedAt!: Date;
 }

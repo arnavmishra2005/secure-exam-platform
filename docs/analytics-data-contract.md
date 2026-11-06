@@ -57,13 +57,33 @@ Totals are not floored at zero.
 
 Person B's grader records one row per coding question after
 `attempt.submitted`, using the last Submit, or the latest saved draft if the
-student never pressed Submit.
+student never pressed Submit. Since Phase 5 (#16) the answer can be in Python,
+C, C++ or Java; the code runs in the language the student used
+(`code_submissions.language`, or the language header of the saved draft).
 
 ### Manual changes
 
-`PATCH /submissions/:attemptId/result` overrides `results.score` directly.
-A later `ScoreRecorder` write for that attempt (for example
-`POST /results/exams/:examId/recompute`) recomputes the sum and replaces the override.
+**Per question (Person B, Phase 5 #13; preferred).**
+`PATCH /exams/:examId/question-analytics/attempts/:attemptId/questions/:questionId/score`
+with `{ score | adjustment, reason }` stores a manual adjustment next to the
+automatic score on the `question_scores` row:
+
+| Column | Meaning |
+|---|---|
+| `autoScore` | The automatic score (MCQ rule or code tests). Written by grading. |
+| `manualAdjustment` | Marks added (+) or taken away (−). Default 0. |
+| `adjustedBy`, `adjustedAt`, `adjustReason` | Who, when and why (reason required). |
+
+`score = clamp(autoScore + manualAdjustment, 0, maxScore)` whenever an
+adjustment is set. Re-grading writes `autoScore` only and re-applies the
+adjustment (`ScoreRecorder` and B's `ResultTotalsService` both do), so a
+manual change survives a re-grade or a recalculation. Every change is audited
+as `SCORE_ADJUSTED` with the old and new values.
+
+**Whole attempt (legacy).** `PATCH /submissions/:attemptId/result` overrides
+`results.score` directly. A later `ScoreRecorder` write or recalculation for
+that attempt recomputes the total and replaces the override, so prefer the
+per-question adjustment.
 
 ## Statistics (`GET /results/exams/:examId/overview`)
 
@@ -91,6 +111,8 @@ publishes every unpublished result for the exam and notifies those students.
 
 ## Stub columns
 
-`violationCount` (Students tab, monitoring) is `null` until Person C's
-client-security module records security events. Treat `null` as "not
-tracked", not as zero.
+`violationCount` (Students tab, monitoring) counts the attempt's
+`security_events` (Person C's client-security module), not counting
+informational events. It is `null` for a student with no attempt. Since
+Phase 5 (#19) the code runner can also add `SUSPICIOUS_CODE` events, which
+count here too.

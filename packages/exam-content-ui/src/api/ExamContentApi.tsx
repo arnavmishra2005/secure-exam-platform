@@ -8,6 +8,8 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import * as client from '@secure-exam/api-client';
 import type {
+  AdjustQuestionScoreRequest,
+  AdjustQuestionScoreResponse,
   AttemptDrilldown,
   BankQuestionDetail,
   BankQuestionPage,
@@ -26,6 +28,7 @@ import type {
   SaveBankQuestionRequest,
   TagCount,
   Topic,
+  TopicSummary,
   UpdateBankQuestionMetaRequest,
   ValidateCodingRequest,
   ValidateCodingResponse,
@@ -41,6 +44,7 @@ export interface ExamContentApi {
   deleteBankQuestion(id: string): Promise<void>;
   importBankQuestions(file: File): Promise<BulkImportResult>;
   listTopics(courseId?: string): Promise<Topic[]>;
+  getTopicSummary(courseId?: string): Promise<TopicSummary>;
   createTopic(data: CreateTopicRequest): Promise<Topic>;
   listTags(search?: string): Promise<TagCount[]>;
   addBankQuestionsToExam(examId: string, questionIds: string[]): Promise<BulkAddToExamResult>;
@@ -48,6 +52,12 @@ export interface ExamContentApi {
   submitCode(attemptId: string, data: CodeSubmitRequest): Promise<CodeSubmitResponse>;
   getQuestionAnalytics(examId: string): Promise<QuestionAnalyticsMatrix>;
   getAttemptDrilldown(examId: string, attemptId: string): Promise<AttemptDrilldown>;
+  adjustQuestionScore(
+    examId: string,
+    attemptId: string,
+    questionId: string,
+    data: AdjustQuestionScoreRequest,
+  ): Promise<AdjustQuestionScoreResponse>;
   validateCodingProblem(data: ValidateCodingRequest): Promise<ValidateCodingResponse>;
   getCodingConfig(): Promise<CodingClientConfig>;
   recalculateResults(examId: string, data?: RecalculateRequest): Promise<RecalculateResponse>;
@@ -64,6 +74,7 @@ export const defaultExamContentApi: ExamContentApi = {
   deleteBankQuestion: client.deleteBankQuestion,
   importBankQuestions: client.importBankQuestions,
   listTopics: client.listTopics,
+  getTopicSummary: client.getTopicSummary,
   createTopic: client.createTopic,
   listTags: client.listTags,
   addBankQuestionsToExam: client.addBankQuestionsToExam,
@@ -71,6 +82,7 @@ export const defaultExamContentApi: ExamContentApi = {
   submitCode: client.submitCode,
   getQuestionAnalytics: client.getQuestionAnalytics,
   getAttemptDrilldown: client.getAttemptDrilldown,
+  adjustQuestionScore: client.adjustQuestionScore,
   validateCodingProblem: client.validateCodingProblem,
   getCodingConfig: client.getCodingConfig,
   recalculateResults: client.recalculateResults,

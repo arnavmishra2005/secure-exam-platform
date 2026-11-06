@@ -55,5 +55,7 @@ import { CodingTestCaseEntity } from './entities/coding-test-case.entity';
     // Code scores go through Person A's ScoreRecorder (global SCORE_RECORDER) into question_scores.
     { provide: CODE_SCORE_SINK, useClass: ScoreRecorderCodeScoreSink },
   ],
+  // For manual mark adjustment (question-analytics, #13).
+  exports: [ResultTotalsService],
 })
 export class CodingModule {}

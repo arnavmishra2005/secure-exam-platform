@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { QuestionStatus, QuestionType } from '@secure-exam/types';
-import type { SaveBankQuestionDto } from '@secure-exam/validation';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { CodeLanguage, NO_TOPIC, QuestionDifficulty, QuestionStatus, QuestionType } from '@secure-exam/types';
+import { BankQuestionQueryDto, CodingProblemInputDto, type SaveBankQuestionDto } from '@secure-exam/validation';
 import { QuestionBankService } from './question-bank.service';
 
 function setup() {
@@ -203,5 +205,213 @@ describe('QuestionBankService.bulkAddToExam', () => {
     expect(questionRepo.find).not.toHaveBeenCalled();
     expect(res.added).toEqual([]);
     expect(res.skipped).toEqual([{ questionId: 'q-1', reason: 'Question not found' }]);
+  });
+});
+
+/** Records the query builder calls `list()` and `topicSummary()` make. */
+function recordingQueryBuilder(result: { many?: unknown[]; total?: number; raw?: unknown[] } = {}) {
+  const where: Array<[string, Record<string, unknown> | undefined]> = [];
+  const qb: Record<string, jest.Mock> = {};
+  for (const m of ['leftJoinAndSelect', 'orderBy', 'addOrderBy', 'skip', 'take', 'select', 'addSelect', 'groupBy', 'addGroupBy']) {
+    qb[m] = jest.fn(() => qb);
+  }
+  qb.andWhere = jest.fn((sql: string, params?: Record<string, unknown>) => {
+    where.push([sql, params]);
+    return qb;
+  });
+  qb.where = qb.andWhere;
+  qb.getManyAndCount = jest.fn().mockResolvedValue([result.many ?? [], result.total ?? 0]);
+  qb.getRawMany = jest.fn().mockResolvedValue(result.raw ?? []);
+  return { qb, where };
+}
+
+describe('QuestionBankService.list filters', () => {
+  const TOPIC = '5f0c3c4e-6a3e-4d55-9a40-2b5b3b1f6a01';
+  const COURSE = '9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
+  const EXAM = '11111111-1111-4111-8111-111111111111';
+  const OWNERS = ['instructor-1'];
+
+  function listWith(query: Parameters<QuestionBankService['list']>[0]) {
+    const { service, questionRepo } = setup();
+    const { qb, where } = recordingQueryBuilder();
+    (questionRepo as unknown as { createQueryBuilder: jest.Mock }).createQueryBuilder = jest.fn(() => qb);
+    // Every list is limited to the caller's banks; that filter comes first, then the query's own.
+    const run = async () => {
+      const page = await service.list(query, OWNERS);
+      expect(where.shift()).toEqual(['q.owner_id IN (:...ownerIds)', { ownerIds: OWNERS }]);
+      return page;
+    };
+    return { run, qb, where };
+  }
+
+  it('applies no filter and the first page by default', async () => {
+    const { run, qb, where } = listWith({});
+    await expect(run()).resolves.toEqual({ items: [], total: 0, page: 1, limit: 20 });
+    expect(where).toEqual([]);
+    expect(qb.skip).toHaveBeenCalledWith(0);
+    expect(qb.take).toHaveBeenCalledWith(20);
+  });
+
+  it.each([
+    ['courseId', { courseId: COURSE }, 'q.course_id = :courseId', { courseId: COURSE }],
+    ['topicId', { topicId: TOPIC }, 'q.topic_id = :topicId', { topicId: TOPIC }],
+    ['difficulty', { difficulty: QuestionDifficulty.HARD }, 'q.difficulty = :difficulty', { difficulty: QuestionDifficulty.HARD }],
+    ['type', { type: QuestionType.CODING }, 'q.type = :type', { type: QuestionType.CODING }],
+    ['status', { status: QuestionStatus.DRAFT }, 'q.status = :status', { status: QuestionStatus.DRAFT }],
+    ['tag (normalized)', { tag: '  Arrays ' }, expect.stringContaining('t.tag = :tag'), { tag: 'arrays' }],
+    ['search', { search: '  sorting  ' }, expect.stringContaining('q.text ILIKE :search'), { search: '%sorting%' }],
+    ['excludeExamId', { excludeExamId: EXAM }, expect.stringContaining('NOT EXISTS'), { excludeExamId: EXAM }],
+  ])('filters by %s', async (_name, query, sql, params) => {
+    const { run, where } = listWith(query);
+    await run();
+    expect(where).toEqual([[sql, params]]);
+  });
+
+  it('filters "no topic" with topicId=none', async () => {
+    const { run, where } = listWith({ topicId: NO_TOPIC });
+    await run();
+    expect(where).toEqual([['q.topic_id IS NULL', undefined]]);
+  });
+
+  it('escapes LIKE wildcards in the search', async () => {
+    const { run, where } = listWith({ search: '50%_off' });
+    await run();
+    expect(where[0][1]).toEqual({ search: '%50\\%\\_off%' });
+  });
+
+  it('ignores a blank search', async () => {
+    const { run, where } = listWith({ search: '   ' });
+    await run();
+    expect(where).toEqual([]);
+  });
+
+  it('combines topic, type, difficulty, search and tag with paging', async () => {
+    const { run, qb, where } = listWith({
+      topicId: TOPIC,
+      type: QuestionType.MCQ_SINGLE,
+      difficulty: QuestionDifficulty.EASY,
+      search: 'loop',
+      tag: 'basics',
+      page: 3,
+      limit: 10,
+    });
+    await expect(run()).resolves.toMatchObject({ page: 3, limit: 10 });
+    expect(where.map(([, p]) => p)).toEqual([
+      { search: '%loop%' },
+      { topicId: TOPIC },
+      { difficulty: QuestionDifficulty.EASY },
+      { type: QuestionType.MCQ_SINGLE },
+      { tag: 'basics' },
+    ]);
+    expect(qb.skip).toHaveBeenCalledWith(20);
+    expect(qb.take).toHaveBeenCalledWith(10);
+  });
+
+  it('keeps excludeExamId alongside the other filters (add-to-exam picker)', async () => {
+    const { run, where } = listWith({ topicId: NO_TOPIC, status: QuestionStatus.READY, excludeExamId: EXAM, type: QuestionType.CODING });
+    await run();
+    expect(where.map(([sql]) => sql)).toEqual([
+      'q.topic_id IS NULL',
+      'q.type = :type',
+      'q.status = :status',
+      expect.stringContaining('NOT EXISTS (SELECT 1 FROM exam_questions'),
+    ]);
+  });
+});
+
+describe('BankQuestionQueryDto', () => {
+  const errors = async (plain: Record<string, unknown>) =>
+    (await validate(plainToInstance(BankQuestionQueryDto, plain))).map((e) => e.property);
+
+  it('accepts a topic id or "none"', async () => {
+    expect(await errors({ topicId: '5f0c3c4e-6a3e-4d55-9a40-2b5b3b1f6a01' })).toEqual([]);
+    expect(await errors({ topicId: NO_TOPIC })).toEqual([]);
+  });
+
+  it('rejects any other topic value', async () => {
+    expect(await errors({ topicId: 'nope' })).toEqual(['topicId']);
+  });
+
+  it('turns page and limit from the query string into numbers', async () => {
+    const dto = plainToInstance(BankQuestionQueryDto, { page: '2', limit: '50' });
+    expect(await validate(dto)).toEqual([]);
+    expect(dto).toMatchObject({ page: 2, limit: 50 });
+  });
+});
+
+describe('QuestionBankService.topicSummary', () => {
+  const topics = [
+    { id: 't-arrays', name: 'Arrays', courseId: null },
+    { id: 't-dp', name: 'DP', courseId: 'course-1' },
+    { id: 't-empty', name: 'Graphs', courseId: null },
+  ];
+
+  function summaryWith(raw: unknown[]) {
+    const { service, questionRepo, topicRepo } = setup();
+    const { qb, where } = recordingQueryBuilder({ raw });
+    (questionRepo as unknown as { createQueryBuilder: jest.Mock }).createQueryBuilder = jest.fn(() => qb);
+    (topicRepo as unknown as { find: jest.Mock }).find = jest.fn().mockResolvedValue(topics);
+    return { service, qb, where, topicRepo: topicRepo as unknown as { find: jest.Mock } };
+  }
+
+  it('counts questions per topic and type in one grouped query', async () => {
+    const { service, qb } = summaryWith([
+      { topicId: 't-arrays', type: QuestionType.MCQ_SINGLE, count: '3' },
+      { topicId: 't-arrays', type: QuestionType.CODING, count: '2' },
+      { topicId: 't-dp', type: QuestionType.CODING, count: '4' },
+      { topicId: null, type: QuestionType.TRUE_FALSE, count: '1' },
+    ]);
+    const s = await service.topicSummary(undefined, ['instructor-1']);
+    expect(qb.getRawMany).toHaveBeenCalledTimes(1);
+    expect(s.topics).toEqual([
+      { id: 't-arrays', name: 'Arrays', courseId: null, total: 5, byType: { MCQ_SINGLE: 3, CODING: 2 } },
+      { id: 't-dp', name: 'DP', courseId: 'course-1', total: 4, byType: { CODING: 4 } },
+      { id: 't-empty', name: 'Graphs', courseId: null, total: 0, byType: {} },
+    ]);
+    expect(s.uncategorised).toEqual({ total: 1, byType: { TRUE_FALSE: 1 } });
+    expect(s.all).toEqual({ total: 10, byType: { MCQ_SINGLE: 3, CODING: 6, TRUE_FALSE: 1 } });
+  });
+
+  it("limits counts to a course, and lists the course's topics plus topics without a course", async () => {
+    const { service, where, topicRepo } = summaryWith([]);
+    await service.topicSummary('course-1', ['instructor-1']);
+    expect(where).toEqual([
+      ['q.owner_id IN (:...ownerIds)', { ownerIds: ['instructor-1'] }],
+      ['q.course_id = :courseId', { courseId: 'course-1' }],
+    ]);
+    expect(topicRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: [
+          { ownerId: expect.anything(), courseId: 'course-1' },
+          { ownerId: expect.anything(), courseId: expect.anything() },
+        ],
+      }),
+    );
+  });
+
+  it('counts nothing and lists no topics for a caller without banks', async () => {
+    const { service, where, topicRepo } = summaryWith([]);
+    const s = await service.topicSummary(undefined, []);
+    expect(where).toEqual([['FALSE', { ownerIds: [] }]]);
+    expect(topicRepo.find).not.toHaveBeenCalled();
+    expect(s.all).toEqual({ total: 0, byType: {} });
+  });
+});
+
+describe('CodingProblemInputDto languages (#16)', () => {
+  const base = { statementMd: 'S', tests: [{ input: '', expectedOutput: '', isSample: true }] };
+  const errors = async (plain: Record<string, unknown>) =>
+    (await validate(plainToInstance(CodingProblemInputDto, { ...base, ...plain }))).map((e) => e.property);
+
+  it('accepts any set of known languages and a reference language', async () => {
+    expect(await errors({ allowedLanguages: [CodeLanguage.C, CodeLanguage.CPP, CodeLanguage.JAVA], referenceLanguage: CodeLanguage.PYTHON })).toEqual([]);
+    expect(await errors({})).toEqual([]);
+  });
+
+  it('rejects an empty list, duplicates and unknown languages', async () => {
+    expect(await errors({ allowedLanguages: [] })).toEqual(['allowedLanguages']);
+    expect(await errors({ allowedLanguages: [CodeLanguage.C, CodeLanguage.C] })).toEqual(['allowedLanguages']);
+    expect(await errors({ allowedLanguages: ['rust'] })).toEqual(['allowedLanguages']);
+    expect(await errors({ referenceLanguage: 'rust' })).toEqual(['referenceLanguage']);
   });
 });
