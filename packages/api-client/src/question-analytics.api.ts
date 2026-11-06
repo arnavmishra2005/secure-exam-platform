@@ -1,5 +1,5 @@
 /**
- * Owner: Person B. Question-wise results (admin).
+ * Owner: Person B. Question-wise results (staff).
  */
 import { apiClient } from './client';
 import type {

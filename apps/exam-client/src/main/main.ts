@@ -84,7 +84,7 @@ app.on('will-quit', (event) => {
 app.whenReady().then(() => {
   installAppProtocol();
 
-  // Tell the API this is the exam app, so it refuses administrator sign-ins and
+  // Tell the API this is the exam app, so it refuses instructor and TA sign-ins and
   // lets the exam be started and answered only from here.
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${new URL(API_URL).origin}/*`] }, (details, done) => {
     done({ requestHeaders: { ...details.requestHeaders, [CLIENT_TYPE_HEADER]: 'DESKTOP' } });

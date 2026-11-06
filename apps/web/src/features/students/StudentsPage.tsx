@@ -1,6 +1,10 @@
 // Owner: Person A — student register (restyled port of the Phase 1 screen).
+// Lists the students enrolled in courses where you may manage students. New
+// students are always enrolled in one of those courses.
 
 import { bulkImportStudents, createStudent, listStudents, updateStudent, type BulkImportResponse } from '@secure-exam/api-client';
+import { Permission } from '@secure-exam/types';
+import type { MyCourseAccess } from '@secure-exam/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Upload, UserPlus, Users } from 'lucide-react';
 import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -17,6 +21,7 @@ import { Select } from '@/components/ui/select';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/toast';
+import { useAccess } from '@/auth/useAccess';
 import { getErrorMessage } from '@/lib/errors';
 import { parseStudentsCsv } from './parseStudentsCsv';
 
@@ -30,8 +35,12 @@ export default function StudentsPage() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const { data, isPending, error, refetch } = useQuery({ queryKey: ['students'], queryFn: listStudents });
+  const courses = useAccess().coursesWith(Permission.STUDENTS_MANAGE);
 
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['students'] });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['students'] });
+    void queryClient.invalidateQueries({ queryKey: ['courses'] });
+  };
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -64,13 +73,13 @@ export default function StudentsPage() {
     <>
       <PageHeader
         title="Students"
-        description="Deactivated students can't sign in."
+        description="Students enrolled in your courses. Deactivated students can't sign in."
         actions={
           <>
-            <Button variant="outline" onClick={() => setImporting(true)}>
+            <Button variant="outline" onClick={() => setImporting(true)} disabled={courses.length === 0}>
               <Upload /> Import CSV
             </Button>
-            <Button onClick={() => setAdding(true)}>
+            <Button onClick={() => setAdding(true)} disabled={courses.length === 0}>
               <UserPlus /> Add student
             </Button>
           </>
@@ -82,7 +91,15 @@ export default function StudentsPage() {
       ) : isPending ? (
         <TableSkeleton columns={4} />
       ) : data.length === 0 ? (
-        <EmptyState icon={Users} title="No students yet" description="Add students one by one or import a CSV." />
+        <EmptyState
+          icon={Users}
+          title="No students yet"
+          description={
+            courses.length === 0
+              ? 'Students are added to a course. Create a course first (Courses), then add or import its students here.'
+              : 'Add students one by one or import a CSV. Each one is enrolled in the course you choose.'
+          }
+        />
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
@@ -134,14 +151,37 @@ export default function StudentsPage() {
         </div>
       )}
 
-      <AddStudentDialog open={adding} onOpenChange={setAdding} onCreated={refresh} />
-      <ImportStudentsDialog open={importing} onOpenChange={setImporting} onImported={refresh} />
+      <AddStudentDialog open={adding} onOpenChange={setAdding} onCreated={refresh} courses={courses} />
+      <ImportStudentsDialog open={importing} onOpenChange={setImporting} onImported={refresh} courses={courses} />
     </>
   );
 }
 
-function AddStudentDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: () => void }) {
+interface StudentDialogProps {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  courses: MyCourseAccess[];
+}
+
+/** Which course new students go into. */
+function CourseSelect({ courses, value, onChange }: { courses: MyCourseAccess[]; value: string; onChange: (id: string) => void }) {
+  return (
+    <Field label="Course" hint="Students are enrolled in this course, and registered for its exams.">
+      <Select value={value} onChange={(e) => onChange(e.target.value)} required>
+        {courses.map((c) => (
+          <option key={c.courseId} value={c.courseId}>
+            {c.code} — {c.name}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+function AddStudentDialog({ open, onOpenChange, onCreated, courses }: StudentDialogProps & { onCreated: () => void }) {
   const [form, setForm] = useState({ collegeId: '', fullName: '', email: '', password: '' });
+  const [courseId, setCourseId] = useState('');
+  const course = courseId || courses[0]?.courseId || '';
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const set = (key: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -151,13 +191,13 @@ function AddStudentDialog({ open, onOpenChange, onCreated }: { open: boolean; on
     setSaving(true);
     setError(null);
     try {
-      await createStudent({
+      await createStudent(course, {
         collegeId: form.collegeId.trim(),
         fullName: form.fullName.trim(),
         email: form.email.trim(),
         password: form.password || undefined,
       });
-      toast.success(`${form.fullName.trim()} added`);
+      toast.success(`${form.fullName.trim()} added to ${courses.find((c) => c.courseId === course)?.code ?? 'the course'}`);
       setForm({ collegeId: '', fullName: '', email: '', password: '' });
       onCreated();
       onOpenChange(false);
@@ -176,6 +216,7 @@ function AddStudentDialog({ open, onOpenChange, onCreated }: { open: boolean; on
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <Alert variant="destructive">{error}</Alert>}
+          <CourseSelect courses={courses} value={course} onChange={setCourseId} />
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="College ID">
               <Input value={form.collegeId} onChange={set('collegeId')} required autoFocus />
@@ -194,7 +235,7 @@ function AddStudentDialog({ open, onOpenChange, onCreated }: { open: boolean; on
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" loading={saving} disabled={!form.collegeId.trim() || !form.fullName.trim() || !form.email.trim()}>
+            <Button type="submit" loading={saving} disabled={!course || !form.collegeId.trim() || !form.fullName.trim() || !form.email.trim()}>
               Add student
             </Button>
           </DialogFooter>
@@ -204,8 +245,10 @@ function AddStudentDialog({ open, onOpenChange, onCreated }: { open: boolean; on
   );
 }
 
-function ImportStudentsDialog({ open, onOpenChange, onImported }: { open: boolean; onOpenChange: (o: boolean) => void; onImported: () => void }) {
+function ImportStudentsDialog({ open, onOpenChange, onImported, courses }: StudentDialogProps & { onImported: () => void }) {
   const [text, setText] = useState('');
+  const [courseId, setCourseId] = useState('');
+  const course = courseId || courses[0]?.courseId || '';
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkImportResponse | null>(null);
   const [saving, setSaving] = useState(false);
@@ -227,9 +270,11 @@ function ImportStudentsDialog({ open, onOpenChange, onImported }: { open: boolea
     }
     setSaving(true);
     try {
-      const response = await bulkImportStudents(rows);
+      const response = await bulkImportStudents(course, rows);
       setResult(response);
-      if (response.createdCount) toast.success(`Imported ${response.createdCount} student(s)`);
+      if (response.enrolledCount) {
+        toast.success(`Enrolled ${response.enrolledCount} student(s), ${response.createdCount} of them new`);
+      }
       onImported();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -255,9 +300,11 @@ function ImportStudentsDialog({ open, onOpenChange, onImported }: { open: boolea
           <DialogTitle>Import students</DialogTitle>
           <DialogDescription>
             CSV with a header row: <code className="font-mono">collegeId,fullName,email</code> and optionally{' '}
-            <code className="font-mono">password</code>. Existing college IDs and emails are skipped.
+            <code className="font-mono">password</code>. A college ID that already exists enrols that student; a
+            new one creates the account.
           </DialogDescription>
         </DialogHeader>
+        <CourseSelect courses={courses} value={course} onChange={setCourseId} />
         <input type="file" accept=".csv,text/csv" onChange={handleFile} className="text-sm" aria-label="CSV file" />
         <Textarea
           rows={8}
@@ -269,7 +316,10 @@ function ImportStudentsDialog({ open, onOpenChange, onImported }: { open: boolea
         />
         {error && <Alert variant="destructive">{error}</Alert>}
         {result && (
-          <Alert variant={result.skipped.length ? 'warning' : 'success'} title={`${result.createdCount} created, ${result.skipped.length} skipped`}>
+          <Alert
+            variant={result.skipped.length ? 'warning' : 'success'}
+            title={`${result.enrolledCount} enrolled (${result.createdCount} new), ${result.skipped.length} skipped`}
+          >
             {result.skipped.length > 0 && (
               <ul className="max-h-32 list-disc overflow-y-auto pl-4 text-xs">
                 {result.skipped.map((s) => (
@@ -285,7 +335,7 @@ function ImportStudentsDialog({ open, onOpenChange, onImported }: { open: boolea
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          <Button onClick={handleImport} loading={saving} disabled={!text.trim()}>
+          <Button onClick={handleImport} loading={saving} disabled={!course || !text.trim()}>
             Import
           </Button>
         </DialogFooter>

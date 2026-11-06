@@ -1,5 +1,5 @@
 // Owner: Person A
-// The single sign-in page for admins and students. Where you land depends on
+// The single sign-in page for instructors, TAs and students. Where you land depends on
 // the role in your account, not on which page you used.
 
 import { GraduationCap } from 'lucide-react';

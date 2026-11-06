@@ -316,7 +316,7 @@ export function QuestionForm({
               fixedCount={locked}
             />
           </div>
-          <Field label="Explanation (optional)" hint="Admin-only for now">
+          <Field label="Explanation (optional)" hint="Not shown to students yet">
             {(id) => (
               <Textarea
                 id={id}

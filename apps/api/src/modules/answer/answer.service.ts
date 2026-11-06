@@ -92,7 +92,7 @@ export class AnswerService {
     return toAnswerDto(saved);
   }
 
-  /** Read-only: used by the exam UI's question palette and by admin monitoring detail views. */
+  /** Read-only: used by the exam UI's question palette and by staff monitoring detail views. */
   async listForAttempt(attemptId: string, user: JwtPayload): Promise<Answer[]> {
     await this.attemptService.findOwnedAttemptOrThrow(attemptId, user);
     const answers = await this.answerRepository.find({ where: { attemptId } });

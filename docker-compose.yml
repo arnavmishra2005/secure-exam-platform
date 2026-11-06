@@ -33,17 +33,5 @@ services:
     ports:
       - "3000:3000"
 
-  admin-web:
-    build:
-      context: .
-      dockerfile: apps/admin-web/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: http://localhost:3000
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "3001:3001"
-
 volumes:
   pgdata:

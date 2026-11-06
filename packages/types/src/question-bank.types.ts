@@ -1,6 +1,6 @@
 /**
  * Owner: Person B (question bank)
- * Plain type/interface declarations only — no logic. All admin-only.
+ * Plain type/interface declarations only — no logic. All staff-only.
  */
 
 import type {

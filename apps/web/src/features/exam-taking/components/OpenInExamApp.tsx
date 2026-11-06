@@ -1,6 +1,6 @@
 // Owner: Person C (Electron, Kiosk & Security)
 // Shown in a normal browser where an exam would start. The dashboard, results and
-// the admin portal work in the browser; the exam itself is sat in the exam app.
+// the staff portal work in the browser; the exam itself is sat in the exam app.
 //
 // "Start" asks the API for a one-time launch token and opens the app with it
 // (secure-exam://launch/<token>). The app signs the student in with that token, so

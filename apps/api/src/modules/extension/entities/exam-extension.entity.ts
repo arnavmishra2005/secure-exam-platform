@@ -31,7 +31,7 @@ export class ExamExtensionEntity {
   @Column({ type: 'varchar', length: 500, nullable: true })
   reason: string | null;
 
-  /** users.id of the admin who granted it. */
+  /** users.id of the instructor or TA who granted it. */
   @Column({ type: 'uuid' })
   createdBy: string;
 

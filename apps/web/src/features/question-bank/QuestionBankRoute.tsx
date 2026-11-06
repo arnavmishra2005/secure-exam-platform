@@ -10,7 +10,7 @@ export default function QuestionBankRoute() {
   return (
     <div className="space-y-6">
       <PageHeader title="Question bank" description="Reusable questions, including coding problems with hidden tests." />
-      <QuestionBankPage onCreate={() => navigate('/admin/questions/new')} onEdit={(id) => navigate(`/admin/questions/${id}`)} courses={courses} />
+      <QuestionBankPage onCreate={() => navigate('/instructor/questions/new')} onEdit={(id) => navigate(`/instructor/questions/${id}`)} courses={courses} />
     </div>
   );
 }

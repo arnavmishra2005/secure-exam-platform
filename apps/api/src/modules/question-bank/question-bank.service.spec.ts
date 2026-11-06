@@ -48,15 +48,15 @@ const coding: SaveBankQuestionDto = {
 describe('QuestionBankService.validateContent', () => {
   it('accepts a valid MCQ and a valid coding question', async () => {
     const { service } = setup();
-    await expect(service.validateContent(mcq)).resolves.toBeUndefined();
-    await expect(service.validateContent(coding)).resolves.toBeUndefined();
+    await expect(service.validateContent(mcq, 'owner-1')).resolves.toBeUndefined();
+    await expect(service.validateContent(coding, 'owner-1')).resolves.toBeUndefined();
   });
 
   it('rejects mixed shapes', async () => {
     const { service } = setup();
-    await expect(service.validateContent({ ...coding, options: mcq.options })).rejects.toThrow('has no options');
-    await expect(service.validateContent({ ...coding, coding: undefined })).rejects.toThrow('needs a coding problem');
-    await expect(service.validateContent({ ...mcq, coding: coding.coding })).rejects.toThrow(
+    await expect(service.validateContent({ ...coding, options: mcq.options }, 'owner-1')).rejects.toThrow('has no options');
+    await expect(service.validateContent({ ...coding, coding: undefined }, 'owner-1')).rejects.toThrow('needs a coding problem');
+    await expect(service.validateContent({ ...mcq, coding: coding.coding }, 'owner-1')).rejects.toThrow(
       'Only coding questions',
     );
   });
@@ -64,23 +64,29 @@ describe('QuestionBankService.validateContent', () => {
   it('applies the option rules to MCQs', async () => {
     const { service } = setup();
     const twoCorrect = { ...mcq, options: mcq.options!.map((o) => ({ ...o, isCorrect: true })) };
-    await expect(service.validateContent(twoCorrect)).rejects.toThrow('exactly one correct');
+    await expect(service.validateContent(twoCorrect, 'owner-1')).rejects.toThrow('exactly one correct');
   });
 
   it('rejects starter code for an unknown language', async () => {
     const { service } = setup();
     const dto = { ...coding, coding: { ...coding.coding!, starterCode: { cobol: 'x' } as never } };
-    await expect(service.validateContent(dto)).rejects.toThrow('Unsupported starter code language');
+    await expect(service.validateContent(dto, 'owner-1')).rejects.toThrow('Unsupported starter code language');
   });
 
   it('checks the topic exists and matches the course', async () => {
     const { service, topicRepo } = setup();
     topicRepo.findOne.mockResolvedValueOnce(null);
-    await expect(service.validateContent({ ...mcq, topicId: 't-1' })).rejects.toThrow('Topic not found');
-    topicRepo.findOne.mockResolvedValueOnce({ id: 't-1', courseId: 'course-A' });
-    await expect(service.validateContent({ ...mcq, topicId: 't-1', courseId: 'course-B' })).rejects.toBeInstanceOf(
+    await expect(service.validateContent({ ...mcq, topicId: 't-1' }, 'owner-1')).rejects.toThrow('Topic not found');
+    topicRepo.findOne.mockResolvedValueOnce({ id: 't-1', courseId: 'course-A', ownerId: 'owner-1' });
+    await expect(service.validateContent({ ...mcq, topicId: 't-1', courseId: 'course-B' }, 'owner-1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it("rejects a topic from another instructor's bank", async () => {
+    const { service, topicRepo } = setup();
+    topicRepo.findOne.mockResolvedValueOnce({ id: 't-1', courseId: null, ownerId: 'someone-else' });
+    await expect(service.validateContent({ ...mcq, topicId: 't-1' }, 'owner-1')).rejects.toThrow('Topic not found');
   });
 });
 
@@ -100,9 +106,9 @@ describe('QuestionBankService.replace on a question students have answered', () 
     questionRepo.findOne.mockResolvedValue(answered);
     (lockService as unknown as { isLocked: jest.Mock }).isLocked = jest.fn().mockResolvedValue(true);
 
-    await expect(service.replace('q-1', { ...mcq, type: QuestionType.MCQ_MULTI }, 'admin')).rejects.toThrow("type can't change");
+    await expect(service.replace('q-1', { ...mcq, type: QuestionType.MCQ_MULTI }, 'instructor')).rejects.toThrow("type can't change");
     const threeOptions = { ...mcq, options: [...mcq.options!, { text: 'c', isCorrect: false, order: 2 }] };
-    await expect(service.replace('q-1', threeOptions, 'admin')).rejects.toThrow("can't be added or removed");
+    await expect(service.replace('q-1', threeOptions, 'instructor')).rejects.toThrow("can't be added or removed");
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -125,7 +131,7 @@ describe('QuestionBankService.replace on a question students have answered', () 
     jest.spyOn(service, 'get').mockResolvedValue({} as never);
 
     // Fix the answer key: the second option is the correct one.
-    await service.replace('q-1', { ...mcq, options: [{ text: 'a', isCorrect: false, order: 0 }, { text: 'b', isCorrect: true, order: 1 }] }, 'admin');
+    await service.replace('q-1', { ...mcq, options: [{ text: 'a', isCorrect: false, order: 0 }, { text: 'b', isCorrect: true, order: 1 }] }, 'instructor');
 
     expect(optionRepo.update).toHaveBeenCalledWith({ id: 'opt-a' }, { text: 'a', isCorrect: false, order: 0 });
     expect(optionRepo.update).toHaveBeenCalledWith({ id: 'opt-b' }, { text: 'b', isCorrect: true, order: 1 });
@@ -139,7 +145,7 @@ describe('QuestionBankService.remove', () => {
     const { service, questionRepo, examQuestionRepo } = setup();
     questionRepo.findOne.mockResolvedValue({ id: 'q-1' });
     examQuestionRepo.exist.mockResolvedValue(true);
-    await expect(service.remove('q-1', 'admin-1')).rejects.toThrow('attached to one or more exams');
+    await expect(service.remove('q-1', 'instructor-1')).rejects.toThrow('attached to one or more exams');
     expect(questionRepo.delete).not.toHaveBeenCalled();
   });
 
@@ -148,7 +154,7 @@ describe('QuestionBankService.remove', () => {
     questionRepo.findOne.mockResolvedValue({ id: 'q-1' });
     examQuestionRepo.exist.mockResolvedValue(false);
     questionRepo.delete.mockRejectedValue(Object.assign(new Error('fk'), { code: '23503' }));
-    await expect(service.remove('q-1', 'admin-1')).rejects.toThrow('can only be archived');
+    await expect(service.remove('q-1', 'instructor-1')).rejects.toThrow('can only be archived');
   });
 });
 
@@ -168,7 +174,8 @@ describe('QuestionBankService.bulkAddToExam', () => {
     const res = await service.bulkAddToExam(
       'exam-1',
       ['ready', 'draft', 'in-exam', 'missing', 'code-ok', 'code-bare', 'ready'],
-      'admin-1',
+      'instructor-1',
+      ['instructor-1'],
     );
 
     expect(res.added).toEqual(['ready', 'code-ok']);
@@ -182,7 +189,19 @@ describe('QuestionBankService.bulkAddToExam', () => {
   it('refuses when the exam is live', async () => {
     const { service, lockService, examQuestionRepo } = setup();
     lockService.assertExamComposable.mockRejectedValue(new ConflictException('ACTIVE'));
-    await expect(service.bulkAddToExam('exam-1', ['q'], 'a')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.bulkAddToExam('exam-1', ['q'], 'a', ['a'])).rejects.toBeInstanceOf(ConflictException);
     expect(examQuestionRepo.insert).not.toHaveBeenCalled();
+  });
+
+  it("reports questions from banks the caller can't see as not found", async () => {
+    const { service, questionRepo, examQuestionRepo, problemRepo } = setup();
+    examQuestionRepo.find.mockResolvedValue([]);
+    problemRepo.find.mockResolvedValue([]);
+
+    const res = await service.bulkAddToExam('exam-1', ['q-1'], 'ta-1', []);
+
+    expect(questionRepo.find).not.toHaveBeenCalled();
+    expect(res.added).toEqual([]);
+    expect(res.skipped).toEqual([{ questionId: 'q-1', reason: 'Question not found' }]);
   });
 });

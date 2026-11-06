@@ -100,7 +100,7 @@ async function pingBackend(): Promise<boolean> {
   const attemptId = syncEngine?.getStatus().attemptId;
   if (!attemptId) return true; // nothing to ping without an attempt; navigator.onLine decides
   try {
-    await sendHeartbeat(attemptId); // also keeps admin monitoring's lastSeenAt fresh
+    await sendHeartbeat(attemptId); // also keeps staff monitoring's lastSeenAt fresh
     return true;
   } catch (err) {
     return (err as { response?: unknown } | undefined)?.response !== undefined;

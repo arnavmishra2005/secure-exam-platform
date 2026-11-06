@@ -46,3 +46,16 @@ export function formatRelative(iso: string, now = Date.now()): string {
   const phrase = formatDuration(Math.abs(diffSeconds));
   return diffSeconds >= 0 ? `in ${phrase}` : `${phrase} ago`;
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  instructor: 'Instructor',
+  ta: 'Teaching Assistant',
+  student: 'Student',
+  INSTRUCTOR: 'Instructor',
+  TA: 'Teaching Assistant',
+};
+
+/** "Instructor", "Teaching Assistant" or "Student", for an account role or a course role. */
+export function roleLabel(role: string | null | undefined): string {
+  return (role && ROLE_LABELS[role]) ?? '';
+}

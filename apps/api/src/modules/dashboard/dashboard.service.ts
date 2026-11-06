@@ -3,7 +3,7 @@
  *
  * Read-only aggregator behind the student dashboard. A student only ever
  * sees exams they are registered for that have been published, and only
- * results an admin has published. Everything is keyed off the JWT sub.
+ * results their instructor has published. Everything is keyed off the JWT sub.
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -119,7 +119,7 @@ export class DashboardService {
           score: Math.round(r.score * 100) / 100,
           maxScore: r.maxScore,
           percentage,
-          passed: percentage >= exam.passPercentage,
+          passed: exam.passMarkEnabled ? percentage >= exam.passPercentage : null,
           publishedAt: (r.publishedAt ?? r.updatedAt).toISOString(),
         };
       });
@@ -139,6 +139,9 @@ function toStudentExamView(
     durationMinutes: exam.durationMinutes,
     startTime: exam.startTime.toISOString(),
     endTime: exam.endTime.toISOString(),
+    originalStartTime: exam.originalStartTime ? exam.originalStartTime.toISOString() : null,
+    rescheduled: !!exam.originalStartTime && exam.originalStartTime.getTime() !== exam.startTime.getTime(),
+    scheduleNote: exam.scheduleNote ?? null,
     publishedAt: exam.publishedAt!.toISOString(),
     state: classifyStudentExam(exam, attempt?.status ?? null, now),
     attemptId: attempt?.id ?? null,

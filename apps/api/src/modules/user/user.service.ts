@@ -1,6 +1,7 @@
 // Owner: Person A (Identity/Auth/Security)
 
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -69,8 +70,48 @@ export class UserService {
     return user?.refreshTokenHash ?? null;
   }
 
-  async listStudents(): Promise<StudentEntity[]> {
-    return this.studentRepository.find({ relations: ['user'] });
+  /** Students enrolled in at least one of `courseIds` (staff see only their own courses' students). */
+  async listStudentsInCourses(courseIds: string[]): Promise<StudentEntity[]> {
+    if (courseIds.length === 0) return [];
+    return this.studentRepository
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.user', 'user')
+      .where(
+        's.id IN (SELECT e."studentId" FROM "course_enrollments" e WHERE e."courseId" = ANY(:courseIds::uuid[]))',
+        { courseIds },
+      )
+      .getMany();
+  }
+
+  /** Case-insensitive, since people type emails in any case. */
+  findByEmail(email: string): Promise<UserEntity | null> {
+    return this.userRepository
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = LOWER(:email)', { email: email.trim() })
+      .getOne();
+  }
+
+  /**
+   * An instructor or TA account. Instructors come from the seed script (no
+   * one in the app can create them); TAs are created by an instructor when
+   * added to a course.
+   */
+  async createStaffUser(input: {
+    email: string;
+    fullName: string;
+    password: string;
+    role: Role.INSTRUCTOR | Role.TA;
+  }): Promise<UserEntity> {
+    if (input.password.length < 8) throw new BadRequestException('The password must be at least 8 characters');
+    if (await this.findByEmail(input.email)) throw new ConflictException('Email already registered');
+    return this.userRepository.save(
+      this.userRepository.create({
+        email: input.email.trim(),
+        fullName: input.fullName.trim(),
+        role: input.role,
+        passwordHash: await bcrypt.hash(input.password, BCRYPT_ROUNDS),
+      }),
+    );
   }
 
   async findStudentById(id: string): Promise<StudentEntity | null> {
@@ -79,7 +120,7 @@ export class UserService {
 
   /**
    * Resolves a mixed list of students.id, users.id or college IDs to Student
-   * records, so admin screens can accept whichever the operator has to hand.
+   * records, so staff screens can accept whichever the operator has to hand.
    */
   async resolveStudents(identifiers: string[]): Promise<ResolvedStudents> {
     const unique = [...new Set(identifiers.map((i) => i.trim()).filter(Boolean))];

@@ -1,5 +1,5 @@
 /**
- * Owner: Person B. Question-wise results for an exam (admin only):
+ * Owner: Person B. Question-wise results for an exam (staff only):
  * the students × questions matrix with per-question stats, and a
  * per-attempt drill-down including submitted code and test results.
  */

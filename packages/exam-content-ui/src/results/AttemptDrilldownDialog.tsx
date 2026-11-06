@@ -1,4 +1,4 @@
-/** Owner: Person B. One student's attempt, question by question (admin). */
+/** Owner: Person B. One student's attempt, question by question (staff). */
 import { lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { QuestionType, type DrilldownQuestion } from '@secure-exam/types';

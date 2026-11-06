@@ -4,9 +4,12 @@
  * global ValidationPipe, which Person A configures in main.ts).
  */
 import {
+  IsBoolean,
   IsDateString,
   IsInt,
+  IsUUID,
   Max,
+  MaxLength,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -30,6 +33,10 @@ class IsBeforeEndTimeConstraint implements ValidatorConstraintInterface {
 }
 
 export class CreateExamDto {
+  /** Person A: the owning course. Its instructors and TAs manage the exam. */
+  @IsUUID('4')
+  courseId!: string;
+
   @IsString()
   @IsNotEmpty()
   title!: string;
@@ -55,6 +62,11 @@ export class CreateExamDto {
   @Min(0)
   @Max(100)
   passPercentage?: number;
+
+  /** Person A: false = no pass mark, so no pass/fail and no pass rate. */
+  @IsOptional()
+  @IsBoolean()
+  passMarkEnabled?: boolean;
 }
 
 export class UpdateExamDto {
@@ -85,6 +97,34 @@ export class UpdateExamDto {
   @Min(0)
   @Max(100)
   passPercentage?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  passMarkEnabled?: boolean;
+}
+
+/**
+ * Person A: POST /exams/:id/reschedule. The service decides which fields may
+ * change in the exam's current state.
+ */
+export class RescheduleExamDto {
+  @IsOptional()
+  @IsDateString()
+  startTime?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endTime?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  durationMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 export class AssignStudentDto {

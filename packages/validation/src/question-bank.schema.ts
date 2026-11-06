@@ -1,5 +1,5 @@
 /**
- * Owner: Person B (question bank). Admin-only request bodies and queries.
+ * Owner: Person B (question bank). Staff-only request bodies and queries.
  */
 import { Transform, Type } from 'class-transformer';
 import {

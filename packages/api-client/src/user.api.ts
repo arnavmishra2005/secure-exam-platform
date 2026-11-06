@@ -1,7 +1,6 @@
 // Owner: Person A (Identity/Auth/Security)
-// Not explicitly enumerated in the file-structure doc's api-client list, but
-// added following the same one-file-per-domain pattern since Person A owns
-// student management on both backend and admin portal.
+// Student management. Every new student is enrolled in one of the caller's
+// courses, because staff only see students enrolled in their own courses.
 
 import type { Student, StudentLookupResponse } from '@secure-exam/types';
 import { apiClient } from './client';
@@ -19,6 +18,8 @@ export interface StudentWithUser extends Student {
 
 export interface BulkImportResponse {
   createdCount: number;
+  /** Students enrolled in the course, new and already existing ones. */
+  enrolledCount: number;
   skipped: Array<{ collegeId: string; reason: string }>;
 }
 
@@ -27,15 +28,18 @@ export async function listStudents(): Promise<StudentWithUser[]> {
   return data;
 }
 
-export async function createStudent(payload: CreateStudentPayload): Promise<StudentWithUser> {
-  const { data } = await apiClient.post<StudentWithUser>('/students', payload);
+/** Creates the account and enrols it in the course. */
+export async function createStudent(courseId: string, payload: CreateStudentPayload): Promise<StudentWithUser> {
+  const { data } = await apiClient.post<StudentWithUser>(`/courses/${courseId}/students/create`, payload);
   return data;
 }
 
+/** Creates the new accounts and enrols every listed student (new or existing college ID) in the course. */
 export async function bulkImportStudents(
+  courseId: string,
   students: CreateStudentPayload[],
 ): Promise<BulkImportResponse> {
-  const { data } = await apiClient.post<BulkImportResponse>('/students/bulk-import', {
+  const { data } = await apiClient.post<BulkImportResponse>(`/courses/${courseId}/students/import`, {
     students,
   });
   return data;

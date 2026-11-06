@@ -2,10 +2,14 @@
  * Owner: Person A (Platform, Courses, Publish, Results)
  */
 
+import { CourseStaffRole, Permission } from '@secure-exam/types';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
+  IsEmail,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -15,6 +19,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export class CreateCourseDto {
@@ -68,6 +73,45 @@ export class EnrollStudentsDto {
 export class AssignExamToCourseDto {
   @IsUUID('4')
   courseId!: string;
+}
+
+/** POST /courses/:id/staff — add an instructor or TA to a course (instructors only). */
+export class AddCourseStaffDto {
+  @IsEmail()
+  @MaxLength(255)
+  email!: string;
+
+  /** Required when the email has no account yet (a new TA is created). */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  fullName?: string;
+
+  /** Required when the email has no account yet. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password?: string;
+
+  @IsEnum(CourseStaffRole)
+  role!: CourseStaffRole;
+
+  /** TAs only. Defaults to DEFAULT_TA_PERMISSIONS. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(Permission, { each: true })
+  permissions?: Permission[];
+}
+
+/** PATCH /courses/:id/staff/:userId — change a TA's permissions (instructors only). */
+export class UpdateCourseStaffDto {
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(Permission, { each: true })
+  permissions!: Permission[];
 }
 
 export class PublishExamDto {

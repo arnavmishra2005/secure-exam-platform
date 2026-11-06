@@ -55,7 +55,7 @@ export class SubmitAttemptDto {
   clientSubmittedAt?: string;
 }
 
-/** Admin-only submissions list filter (GET /submissions). */
+/** Staff-only submissions list filter (GET /submissions). */
 export class ListSubmissionsQueryDto {
   @IsOptional()
   @IsUUID('4')
@@ -81,7 +81,7 @@ export class ListSubmissionsQueryDto {
 }
 
 /**
- * Admin manual score override (PATCH /submissions/:attemptId/result).
+ * Staff manual score override (PATCH /submissions/:attemptId/result).
  *
  * Decimal scores are valid (partial-credit marking schemes are common),
  * capped at 2 decimal places. The `score <= result.maxScore` check
@@ -98,7 +98,7 @@ export class OverrideResultScoreDto {
   note?: string;
 }
 
-/** Admin publish toggle (POST /submissions/:attemptId/result/publish). */
+/** Staff publish toggle (POST /submissions/:attemptId/result/publish). */
 export class PublishResultDto {
   @IsOptional()
   @IsBoolean()

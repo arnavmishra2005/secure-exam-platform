@@ -17,7 +17,7 @@ export const EXAM_EXTENDED = 'exam.extended';
 export interface ExamPublishedEvent {
   examId: string;
   publishedAt: Date;
-  /** users.id of the admin who published. */
+  /** users.id of the instructor or TA who published. */
   actorId: string;
 }
 

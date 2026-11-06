@@ -1,22 +1,34 @@
 // Owner: Person A (Platform, Courses, Publish, Results)
 
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { AuditEventType } from '@secure-exam/types';
+import { ALL_PERMISSIONS, AuditEventType, CourseStaffRole } from '@secure-exam/types';
 import type {
   Course,
   CourseEnrollmentWithStudent,
   CourseWithCounts,
   EnrollStudentsResponse,
+  JwtPayload,
 } from '@secure-exam/types';
-import { CreateCourseDto, UpdateCourseDto } from '@secure-exam/validation';
-import { Repository } from 'typeorm';
+import { CreateCourseDto, CreateStudentDto, UpdateCourseDto } from '@secure-exam/validation';
+import { In, Repository } from 'typeorm';
+import { AccessService } from '../../common/access/access.service';
 import { AuditService } from '../audit/audit.service';
+import { ExamEntity } from '../exam/entities/exam.entity';
+import { StudentEntity } from '../user/entities/student.entity';
 import { toStudentSummary, UserService } from '../user/user.service';
+import { CourseStaffEntity } from './entities/course-staff.entity';
 import { CourseEnrollmentEntity } from './entities/course-enrollment.entity';
 import { CourseEntity } from './entities/course.entity';
 import { ExamCourseEntity } from './entities/exam-course.entity';
 import { RegistrationService } from './registration.service';
+
+export interface ImportStudentsToCourseResult {
+  createdCount: number;
+  /** Students newly enrolled, whether their account is new or already existed. */
+  enrolledCount: number;
+  skipped: Array<{ collegeId: string; reason: string }>;
+}
 
 @Injectable()
 export class CourseService {
@@ -27,27 +39,48 @@ export class CourseService {
     private readonly enrollmentRepo: Repository<CourseEnrollmentEntity>,
     @InjectRepository(ExamCourseEntity)
     private readonly examCourseRepo: Repository<ExamCourseEntity>,
+    @InjectRepository(CourseStaffEntity)
+    private readonly staffRepo: Repository<CourseStaffEntity>,
+    @InjectRepository(ExamEntity)
+    private readonly examRepo: Repository<ExamEntity>,
     private readonly registrationService: RegistrationService,
     private readonly userService: UserService,
     private readonly auditService: AuditService,
+    private readonly access: AccessService,
   ) {}
 
-  async list(): Promise<CourseWithCounts[]> {
-    const courses = await this.courseRepo.find({ order: { code: 'ASC' } });
-    return this.withCounts(courses);
+  /** The courses the caller teaches or assists on. */
+  async list(user: JwtPayload): Promise<CourseWithCounts[]> {
+    const ids = await this.access.courseIdsFor(user);
+    if (ids.length === 0) return [];
+    const courses = await this.courseRepo.find({ where: { id: In(ids) }, order: { code: 'ASC' } });
+    return this.withCounts(courses, user);
   }
 
-  async findOne(id: string): Promise<CourseWithCounts> {
-    const [course] = await this.withCounts([await this.getOrThrow(id)]);
+  async findOne(id: string, user: JwtPayload): Promise<CourseWithCounts> {
+    const [course] = await this.withCounts([await this.getOrThrow(id)], user);
     return course;
   }
 
+  /** The creator becomes the course's first instructor. */
   async create(dto: CreateCourseDto, actorId: string): Promise<Course> {
     const code = dto.code.trim().toUpperCase();
     await this.assertCodeFree(code);
-    const saved = await this.courseRepo.save(
-      this.courseRepo.create({ code, name: dto.name.trim(), description: dto.description?.trim() || null }),
-    );
+    const saved = await this.courseRepo.manager.transaction(async (manager) => {
+      const course = await manager.getRepository(CourseEntity).save(
+        manager
+          .getRepository(CourseEntity)
+          .create({ code, name: dto.name.trim(), description: dto.description?.trim() || null }),
+      );
+      await manager.getRepository(CourseStaffEntity).insert({
+        courseId: course.id,
+        userId: actorId,
+        role: CourseStaffRole.INSTRUCTOR,
+        permissions: [],
+        addedBy: null,
+      });
+      return course;
+    });
     await this.auditService.logEvent(AuditEventType.COURSE_CREATED, { courseId: saved.id, code }, actorId);
     return toCourseDto(saved);
   }
@@ -67,9 +100,18 @@ export class CourseService {
     return toCourseDto(saved);
   }
 
-  /** Deleting a course unassigns it from its exams first (registrations follow). */
+  /**
+   * Deleting a course unassigns it from its exams first (registrations follow).
+   * A course that owns exams can't be deleted: they would have no staff.
+   */
   async remove(id: string, actorId: string): Promise<void> {
     const course = await this.getOrThrow(id);
+    const owned = await this.examRepo.count({ where: { courseId: id } });
+    if (owned > 0) {
+      throw new BadRequestException(
+        `This course owns ${owned} exam${owned === 1 ? '' : 's'}. Delete ${owned === 1 ? 'it' : 'them'} first.`,
+      );
+    }
     const registrationsRemoved = await this.registrationService.releaseCourse(id);
     await this.enrollmentRepo.delete({ courseId: id });
     await this.courseRepo.remove(course);
@@ -159,26 +201,76 @@ export class CourseService {
     return { registrationsRemoved };
   }
 
+  /** A new student account, enrolled straight into the course. */
+  async createStudent(courseId: string, dto: CreateStudentDto, actorId: string): Promise<StudentEntity> {
+    await this.getOrThrow(courseId);
+    const student = await this.userService.createStudent(dto, actorId);
+    await this.enroll(courseId, [student.id], actorId);
+    return (await this.userService.findStudentById(student.id))!;
+  }
+
+  /**
+   * Creates the accounts that don't exist yet, then enrols every listed
+   * student in the course. A row whose college ID already exists enrols that
+   * student; a row that can't be created (e.g. its email is taken) is skipped.
+   */
+  async importStudents(courseId: string, rows: CreateStudentDto[], actorId: string): Promise<ImportStudentsToCourseResult> {
+    await this.getOrThrow(courseId);
+    const studentIds: string[] = [];
+    const skipped: ImportStudentsToCourseResult['skipped'] = [];
+    let createdCount = 0;
+
+    for (const row of rows) {
+      const existing = await this.userService.findByCollegeId(row.collegeId);
+      if (existing) {
+        studentIds.push(existing.id);
+        continue;
+      }
+      try {
+        studentIds.push((await this.userService.createStudent(row, actorId)).id);
+        createdCount++;
+      } catch (err) {
+        skipped.push({ collegeId: row.collegeId, reason: err instanceof Error ? err.message : 'Unknown error' });
+      }
+    }
+
+    const enrolled = studentIds.length ? await this.enroll(courseId, studentIds, actorId) : { enrolledCount: 0 };
+    await this.auditService.logEvent(
+      AuditEventType.STUDENT_BULK_IMPORTED,
+      { courseId, attempted: rows.length, createdCount, enrolledCount: enrolled.enrolledCount, skippedCount: skipped.length },
+      actorId,
+    );
+    return { createdCount, enrolledCount: enrolled.enrolledCount, skipped };
+  }
+
   // ---------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------
 
-  private async withCounts(courses: CourseEntity[]): Promise<CourseWithCounts[]> {
+  private async withCounts(courses: CourseEntity[], user: JwtPayload): Promise<CourseWithCounts[]> {
     if (courses.length === 0) return [];
     const ids = courses.map((c) => c.id);
-    const [enrolled, exams] = await Promise.all([
+    const [enrolled, exams, staff, access] = await Promise.all([
       this.countBy(this.enrollmentRepo, ids),
       this.countBy(this.examCourseRepo, ids),
+      this.countBy(this.staffRepo, ids),
+      this.access.forUser(user),
     ]);
-    return courses.map((c) => ({
-      ...toCourseDto(c),
-      enrolledCount: enrolled.get(c.id) ?? 0,
-      examCount: exams.get(c.id) ?? 0,
-    }));
+    return courses.map((c) => {
+      const grant = access.courses.get(c.id);
+      return {
+        ...toCourseDto(c),
+        enrolledCount: enrolled.get(c.id) ?? 0,
+        examCount: exams.get(c.id) ?? 0,
+        staffCount: staff.get(c.id) ?? 0,
+        myRole: grant?.role ?? CourseStaffRole.TA,
+        myPermissions: grant ? ALL_PERMISSIONS.filter((p) => grant.permissions.has(p)) : [],
+      };
+    });
   }
 
   private async countBy(
-    repo: Repository<CourseEnrollmentEntity> | Repository<ExamCourseEntity>,
+    repo: Repository<CourseEnrollmentEntity> | Repository<ExamCourseEntity> | Repository<CourseStaffEntity>,
     courseIds: string[],
   ): Promise<Map<string, number>> {
     const rows: { courseId: string; count: string }[] = await (repo as Repository<CourseEnrollmentEntity>)

@@ -3,7 +3,7 @@
  *
  * Submitted page — shown after successful submission.
  * Displays a confirmation message and optionally the result if
- * the admin has published it (via Phase 1's Result.isPublished flag).
+ * the instructor has published it (via Phase 1's Result.isPublished flag).
  *
  * This page is intentionally minimal for Phase 2/3; result display
  * can be enriched once Phase 1's result publishing flow is complete.

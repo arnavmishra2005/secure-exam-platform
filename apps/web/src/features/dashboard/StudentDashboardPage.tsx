@@ -99,10 +99,19 @@ export default function StudentDashboardPage() {
                           {exam.title}
                         </Link>
                         <p className="text-xs text-muted-foreground">
+                          {exam.rescheduled && exam.originalStartTime && (
+                            <>
+                              <s>{formatDateTime(exam.originalStartTime)}</s>{' '}
+                            </>
+                          )}
                           {formatDateTime(exam.startTime)} · {exam.durationMinutes} min · {exam.questionCount} questions
                         </p>
+                        <ScheduleNote exam={exam} />
                       </div>
-                      <Badge variant="info">Opens {formatRelative(exam.startTime)}</Badge>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        {exam.rescheduled && <RescheduledBadge exam={exam} />}
+                        <Badge variant="info">Opens {formatRelative(exam.startTime)}</Badge>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -192,7 +201,11 @@ function LiveExamCard({ exam }: { exam: StudentExamView }) {
     <Card className="border-success/40">
       <CardContent className="flex h-full flex-col justify-between gap-4 pt-5">
         <div>
-          <p className="font-serif text-lg font-semibold">{exam.title}</p>
+          <p className="flex flex-wrap items-center gap-2 font-serif text-lg font-semibold">
+            {exam.title}
+            {exam.rescheduled && <RescheduledBadge exam={exam} />}
+          </p>
+          <ScheduleNote exam={exam} />
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" /> {exam.durationMinutes} min
@@ -225,8 +238,39 @@ function ResultRow({ result: r }: { result: DashboardResultItem }) {
           </p>
           <p className="text-xs text-muted-foreground tabular-nums">{formatPercent(r.percentage)}</p>
         </div>
-        {r.passed ? <Badge variant="success">Pass</Badge> : <Badge variant="destructive">Fail</Badge>}
+        {r.passed === null ? null : r.passed ? (
+          <Badge variant="success">Pass</Badge>
+        ) : (
+          <Badge variant="destructive">Fail</Badge>
+        )}
       </div>
     </li>
   );
+}
+
+/** "Delayed by 30 min" / "Moved earlier by 1h" when the instructor moved a published exam. */
+function RescheduledBadge({ exam }: { exam: StudentExamView }) {
+  if (!exam.originalStartTime) return null;
+  const shiftSeconds = Math.round((new Date(exam.startTime).getTime() - new Date(exam.originalStartTime).getTime()) / 1000);
+  if (shiftSeconds === 0) return <Badge variant="warning">Rescheduled</Badge>;
+  const label = shiftSeconds > 0 ? `Delayed by ${shiftText(shiftSeconds)}` : `Moved earlier by ${shiftText(-shiftSeconds)}`;
+  return <Badge variant="warning">{label}</Badge>;
+}
+
+/** "30 min", "2h", "1h 15m", "3 days". */
+function shiftText(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes >= 24 * 60) {
+    const days = Math.round(minutes / (24 * 60));
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+function ScheduleNote({ exam }: { exam: StudentExamView }) {
+  if (!exam.scheduleNote) return null;
+  return <p className="mt-1 text-xs text-[hsl(38_60%_30%)] dark:text-[hsl(var(--warning))]">Note from your instructor: {exam.scheduleNote}</p>;
 }

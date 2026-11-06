@@ -83,7 +83,7 @@ export interface SecurityEventInput {
   occurredAt: string;
 }
 
-/** One recorded event, as the admin sees it: GET /attempts/:attemptId/events. */
+/** One recorded event, as staff see it: GET /attempts/:attemptId/events. */
 export interface SecurityEventView {
   id: string;
   attemptId: string;

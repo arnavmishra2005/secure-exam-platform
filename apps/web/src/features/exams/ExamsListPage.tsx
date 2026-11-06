@@ -1,11 +1,12 @@
 // Owner: Person A
 
 import { getExams } from '@secure-exam/api-client';
-import { ExamStatus } from '@secure-exam/types';
+import { ExamStatus, Permission } from '@secure-exam/types';
 import { useQuery } from '@tanstack/react-query';
 import { ClipboardList, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAccess } from '@/auth/useAccess';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
@@ -24,32 +25,44 @@ export default function ExamsListPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('ALL');
   const { data, isPending, error, refetch } = useQuery({ queryKey: ['exams'], queryFn: getExams });
   const exams = (data ?? []).filter((e) => filter === 'ALL' || e.status === filter);
+  const { can, courses } = useAccess();
+  const canCreate = can(Permission.EXAM_EDIT);
+  const courseCode = (id: string | null) => courses.find((c) => c.courseId === id)?.code ?? '—';
 
   return (
     <>
       <PageHeader
         title="Exams"
+        description="Exams of the courses you teach or assist on."
         actions={
-          <Button asChild>
-            <Link to="/admin/exams/new">
-              <Plus /> New exam
-            </Link>
-          </Button>
+          canCreate && (
+            <Button asChild>
+              <Link to="/instructor/exams/new">
+                <Plus /> New exam
+              </Link>
+            </Button>
+          )
         }
       />
       {error ? (
         <ErrorState message={getErrorMessage(error)} onRetry={() => refetch()} />
       ) : isPending ? (
-        <TableSkeleton columns={5} />
+        <TableSkeleton columns={6} />
       ) : data.length === 0 ? (
         <EmptyState
           icon={ClipboardList}
           title="No exams yet"
-          description="Create a draft, add questions, register students and publish it."
+          description={
+            canCreate
+              ? 'Create a draft in one of your courses, add questions, and publish it.'
+              : 'Exams appear here once you teach or assist on a course that has some.'
+          }
           action={
-            <Button asChild>
-              <Link to="/admin/exams/new">Create an exam</Link>
-            </Button>
+            canCreate && (
+              <Button asChild>
+                <Link to="/instructor/exams/new">Create an exam</Link>
+              </Button>
+            )
           }
         />
       ) : (
@@ -70,6 +83,7 @@ export default function ExamsListPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
+                <TableHead>Course</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Opens</TableHead>
                 <TableHead>Closes</TableHead>
@@ -78,12 +92,13 @@ export default function ExamsListPage() {
             </TableHeader>
             <TableBody>
               {exams.map((exam) => (
-                <TableRow key={exam.id} className="cursor-pointer" onClick={() => navigate(`/admin/exams/${exam.id}`)}>
+                <TableRow key={exam.id} className="cursor-pointer" onClick={() => navigate(`/instructor/exams/${exam.id}`)}>
                   <TableCell>
-                    <Link to={`/admin/exams/${exam.id}`} className="font-medium hover:underline">
+                    <Link to={`/instructor/exams/${exam.id}`} className="font-medium hover:underline">
                       {exam.title}
                     </Link>
                   </TableCell>
+                  <TableCell className="font-mono text-xs">{courseCode(exam.courseId)}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1.5">
                       <ExamStatusBadge status={exam.status} />
@@ -97,7 +112,7 @@ export default function ExamsListPage() {
               ))}
               {exams.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                     No exams with this status.
                   </TableCell>
                 </TableRow>

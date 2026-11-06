@@ -1,6 +1,6 @@
 // Owner: Person A (Identity/Auth/Security)
 // Base axios instance shared by every *.api.ts wrapper. Attaches the access
-// token automatically; admin-web's auth-context is responsible for keeping
+// token automatically; the web app's AuthContext is responsible for keeping
 // the token in sync (via setAccessToken()).
 
 import axios, { AxiosInstance } from 'axios';

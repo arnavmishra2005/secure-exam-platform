@@ -1,5 +1,5 @@
 /**
- * Owner: Person C — "Time extensions" tab on the admin exam page.
+ * Owner: Person C — "Time extensions" tab on the staff exam page.
  */
 
 import { listExamExtensions, listExamRegistrations } from '@secure-exam/api-client';
@@ -33,7 +33,7 @@ export function ExtensionsTab({ exam, onChanged }: ExamTabProps) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           To extend one student, use{' '}
-          <Link to={`/admin/monitoring?examId=${exam.id}`} className="text-primary hover:underline">
+          <Link to={`/instructor/monitoring?examId=${exam.id}`} className="text-primary hover:underline">
             live monitoring
           </Link>
           .

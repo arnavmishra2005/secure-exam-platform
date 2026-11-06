@@ -16,7 +16,7 @@ export default function ExamCreatePage() {
     <>
       <PageHeader
         eyebrow={
-          <Link to="/admin/exams" className="inline-flex items-center gap-1 hover:text-foreground">
+          <Link to="/instructor/exams" className="inline-flex items-center gap-1 hover:text-foreground">
             <ArrowLeft className="h-3.5 w-3.5" /> Exams
           </Link>
         }
@@ -27,12 +27,12 @@ export default function ExamCreatePage() {
         <CardContent className="pt-5">
           <ExamForm
             submitLabel="Create draft"
-            onCancel={() => navigate('/admin/exams')}
+            onCancel={() => navigate('/instructor/exams')}
             onSubmit={async (data) => {
               const exam = await createExam(data);
               toast.success('Draft created');
               void queryClient.invalidateQueries({ queryKey: ['exams'] });
-              navigate(`/admin/exams/${exam.id}`);
+              navigate(`/instructor/exams/${exam.id}`);
             }}
           />
         </CardContent>

@@ -4,7 +4,7 @@ import { AnswerEntity } from './entities/answer.entity';
 import { SubmissionEntity } from './entities/submission.entity';
 import { ResultEntity } from './entities/result.entity';
 import { AnswerController, AttemptQuestionController } from './answer.controller';
-import { SubmissionAdminController, SubmissionController } from './submission.controller';
+import { SubmissionStaffController, SubmissionController } from './submission.controller';
 import { AnswerService } from './answer.service';
 import { SubmissionService } from './submission.service';
 import { AttemptExpirySweepService } from './attempt-expiry-sweep.service';
@@ -24,7 +24,7 @@ import { QuestionModule } from '../question/question.module';
     QuestionModule,
     CodingContentModule, // Person B: coding problems in the student question list
   ],
-  controllers: [AnswerController, AttemptQuestionController, SubmissionController, SubmissionAdminController],
+  controllers: [AnswerController, AttemptQuestionController, SubmissionController, SubmissionStaffController],
   providers: [
     AnswerService,
     SubmissionService,

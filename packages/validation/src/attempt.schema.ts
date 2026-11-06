@@ -14,7 +14,7 @@ export class StartAttemptDto {
   examId!: string;
 }
 
-/** Admin-only monitoring list filter (GET /attempts). */
+/** Staff-only monitoring list filter (GET /attempts). */
 export class ListAttemptsQueryDto {
   @IsOptional()
   @IsUUID('4')

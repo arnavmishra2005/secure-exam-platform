@@ -1,7 +1,7 @@
 // Owner: Person C (Electron, Kiosk & Security)
 //
 // While an exam is on screen in the exam app, send every recorded violation to
-// the API, so the admin sees it. A no-op in a browser.
+// the API, so staff see it. A no-op in a browser.
 
 import { reportSecurityEvents } from '@secure-exam/api-client';
 import { useEffect } from 'react';

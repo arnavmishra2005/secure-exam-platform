@@ -60,7 +60,7 @@ export enum CodeSubmissionStatus {
   SUPERSEDED = 'SUPERSEDED',
 }
 
-// ---- Authoring (admin only) ----
+// ---- Authoring (staff only) ----
 
 /** Starter code per language, e.g. `{ python: "def solve():\n    ..." }`. */
 export type StarterCode = Partial<Record<CodeLanguage, string>>;
@@ -183,7 +183,7 @@ export interface CodeSubmitResponse {
   };
 }
 
-/** Full per-test detail stored on a submission; admin-only. */
+/** Full per-test detail stored on a submission; staff-only. */
 export interface StoredTestResult {
   testCaseId: string;
   verdict: TestCaseVerdict;

@@ -106,9 +106,9 @@ describe('ExamLaunchService', () => {
       expect(auth.startSessionForUser).not.toHaveBeenCalled();
     });
 
-    it('refuses an administrator', async () => {
+    it.each(['instructor', 'ta'])('refuses a %s', async (role) => {
       qb.execute.mockResolvedValue(live);
-      users.findById.mockResolvedValue({ id: 'user-1', role: 'admin', isActive: true });
+      users.findById.mockResolvedValue({ id: 'user-1', role, isActive: true });
       await expect(service.redeem(TOKEN, null)).rejects.toBeInstanceOf(ForbiddenException);
       expect(auth.startSessionForUser).not.toHaveBeenCalled();
     });

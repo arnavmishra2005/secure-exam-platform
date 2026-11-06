@@ -44,7 +44,8 @@ machine is telling the operating system *which program opens `secure-exam://` li
 installed app does this itself; when you run from source, the command **`npm run exam:register`**
 does it (Part A step 8, Part B step 8). Do it once per computer.
 
-Admins use the website in a normal browser. Admins are refused inside the exam app, by design.
+Instructors and teaching assistants use the website in a normal browser. They are refused inside the exam app, by design.
+There is no admin account: each instructor sees only their own courses and chooses their own TAs.
 
 The API refuses to start, serve, save or submit an exam unless the request comes from the exam
 app, so an exam can only be taken in it.
@@ -253,7 +254,7 @@ Now take an exam:
 
 Inside the app in development, the invigilator PIN to leave an exam early is `1234`.
 
-Admin: http://localhost:3003 in the browser, `admin@secure-exam.dev` / `Admin@1234`.
+Instructor: http://localhost:3003 in the browser, `instructor@secure-exam.dev` / `Instructor@1234`.
 
 If the exam app does not open when you press the button, see
 [C5 "The exam app does not open"](#the-exam-app-does-not-open-when-i-press-start-exam-in-exam-app).
@@ -494,7 +495,7 @@ Now take an exam:
 
 Inside the app in development, the invigilator PIN to leave an exam early is `1234`.
 
-Admin: http://localhost:3003 in the browser, `admin@secure-exam.dev` / `Admin@1234`.
+Instructor: http://localhost:3003 in the browser, `instructor@secure-exam.dev` / `Instructor@1234`.
 
 If the exam app does not open when you press the button, see
 [C5 "The exam app does not open"](#the-exam-app-does-not-open-when-i-press-start-exam-in-exam-app).
@@ -514,20 +515,27 @@ You do not need them for development.
 
 | Account | Email | Password |
 |---|---|---|
-| Admin (browser only) | `admin@secure-exam.dev` | `Admin@1234` |
+| Instructor (browser only; owns CS201 and the sample exam) | `instructor@secure-exam.dev` | `Instructor@1234` |
+| Instructor (owns CS301 only, to check isolation) | `instructor2@secure-exam.dev` | `Instructor@1234` |
+| Instructor (no courses yet) | `instructor3@secure-exam.dev` | `Instructor@1234` |
+| Teaching assistant on CS201 (view exams, monitor, view results) | `ta@secure-exam.dev` | `Assistant@1234` |
 | Student | `alice@secure-exam.dev` | `Student@1234` |
 | Student | `bob@secure-exam.dev` | `Student@1234` |
 | Student | `carol@secure-exam.dev` | `Student@1234` |
 
 Login is limited to 5 attempts per minute per IP. If you see "Too many requests", wait a minute.
 
+Nobody in the app can create an instructor. `npm run db:seed` creates the ones above; for real accounts run
+`npm run db:seed-instructors -- instructors.json` with a JSON array of `{ "email", "fullName", "password" }`.
+Instructors then create courses and add their TAs (Courses → a course → Staff), choosing what each TA may do.
+
 | What | Where | Port |
 |---|---|---|
 | PostgreSQL 16 (Docker) | `docker-compose.yml` | 5432 |
 | API (NestJS) | `apps/api`; Swagger UI at http://localhost:3000/api/docs | 3000 |
-| Website for admins and students (Vite) | `apps/web` | 3003 |
+| Website for instructors, TAs and students (Vite) | `apps/web` | 3003 |
 | Exam app (Electron) | `apps/exam-client/src` | none |
-| Legacy admin portal / legacy student UI | `apps/admin-web` / `apps/exam-client/renderer` | 3001 / 3002 (not needed) |
+| Legacy student UI | `apps/exam-client/renderer` | 3002 (not needed) |
 
 ## C2. Environment variables
 
@@ -544,7 +552,8 @@ Login is limited to 5 attempts per minute per IP. If you see "Too many requests"
 | `CODING_GRADING_MODE` | `DEFERRED` | `DEFERRED` grades code after the attempt ends; `LIVE` grades on submit. |
 | `RUNNER_DOCKER_BIN`, `RUNNER_PYTHON_IMAGE` | `docker`, `python:3.12-slim` | The server runs student code in this Docker image. |
 | `THROTTLE_LIMIT` | `1000` | Global rate limit (login has its own 5 per minute). |
-| `ALLOW_ADMIN_ON_DESKTOP` | unset | `true` lets an administrator sign in inside the exam app (testing only). |
+| `ALLOW_STAFF_ON_DESKTOP` | unset | `true` lets an instructor or TA sign in inside the exam app (testing only). |
+| `MIGRATION_DEFAULT_INSTRUCTOR_EMAIL` | unset | Phase 5 migration only: the instructor who gets existing courses, exams and questions. Unset: every former admin. |
 
 If a value is invalid the API stops at start-up and names it (`Config validation error: ...`).
 Restart the API after editing.
@@ -681,7 +690,7 @@ commands from A4 / B5, in that order). If a build itself says it cannot find `@s
 | Ubuntu: `Missing X server or $DISPLAY` | There is no graphical session (SSH or server install). Run it on the desktop. |
 | "Cannot run code on this computer: the sandbox (bubblewrap) is not installed." | Ubuntu: `sudo apt install bubblewrap`. macOS: the launcher sets `EXAM_UNSANDBOXED_RUNNER=1`; if you start the app by hand add it yourself. |
 | Readiness check fails about the API | The API is not running at `EXAM_API_URL`, or `CORS_ORIGIN` lacks `app://exam`. |
-| Admin login fails inside the exam app | By design. `ALLOW_ADMIN_ON_DESKTOP=true` in `apps/api/.env` for testing. |
+| Instructor or TA login fails inside the exam app | By design. `ALLOW_STAFF_ON_DESKTOP=true` in `apps/api/.env` for testing. |
 | macOS says the app is unverified | Electron 44.9.3 is unsigned by design; expected in development. |
 
 ### Database and API
@@ -723,10 +732,9 @@ local code runner needs `bwrap` and POSIX paths.
 
 ```
 apps/api                    NestJS API
-apps/web                    website for admins and students (Vite, port 3003)
+apps/web                    website for instructors, TAs and students (Vite, port 3003)
 apps/exam-client/src        Electron main + preload code (the exam app)
 apps/exam-client/renderer   legacy student UI (port 3002)
-apps/admin-web              legacy Next.js admin portal (port 3001)
 packages/types              shared types          (needs build: npm run typecheck)
 packages/validation         shared DTOs           (needs build)
 packages/api-client         axios API wrappers    (needs build)

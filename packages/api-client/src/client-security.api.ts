@@ -1,6 +1,6 @@
 /**
  * Owner: Person C (Electron, Kiosk & Security)
- * Violations reported by the exam app, and the admin's view of them.
+ * Violations reported by the exam app, and staff's view of them.
  */
 
 import type {
@@ -17,7 +17,7 @@ export function reportSecurityEvents(attemptId: string, events: SecurityEventInp
   return apiClient.post<{ recorded: number }>(`/attempts/${attemptId}/events`, { events }).then((res) => res.data);
 }
 
-/** Admin: every violation recorded for an attempt, oldest first. */
+/** Staff: every violation recorded for an attempt, oldest first. */
 export function getAttemptSecurityEvents(attemptId: string): Promise<SecurityEventView[]> {
   return apiClient.get<SecurityEventView[]>(`/attempts/${attemptId}/events`).then((res) => res.data);
 }

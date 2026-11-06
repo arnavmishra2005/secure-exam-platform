@@ -38,7 +38,7 @@ contextBridge.exposeInMainWorld('desktop', {
   setSecurityMode: (active: boolean): void =>
     ipcRenderer.send(IPC.SET_SECURITY_MODE, active),
 
-  /** Open external URL (e.g. Admin portal) in host system default browser. */
+  /** Open external URL (e.g. Staff portal) in host system default browser. */
   openExternal: (url: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.OPEN_EXTERNAL, url),
 

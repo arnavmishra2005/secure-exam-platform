@@ -1,6 +1,8 @@
 // Owner: Person A — tab host for one exam's results.
 
 import { getExam, publishExamResults, recomputeExamResults } from '@secure-exam/api-client';
+import { Permission } from '@secure-exam/types';
+import { useAccess } from '@/auth/useAccess';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, RefreshCw, Send } from 'lucide-react';
 import { useState } from 'react';
@@ -24,6 +26,8 @@ export default function ResultsExamDetailPage() {
   const [confirm, setConfirm] = useState<'publish' | 'recompute' | null>(null);
   const exam = useQuery({ queryKey: ['exams', examId], queryFn: () => getExam(examId) });
   const tab = searchParams.get('tab') ?? resultsTabs[0].id;
+  const { can } = useAccess();
+  const courseId = exam.data?.courseId;
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['results'] });
 
@@ -33,7 +37,7 @@ export default function ResultsExamDetailPage() {
     <>
       <PageHeader
         eyebrow={
-          <Link to="/admin/results" className="inline-flex items-center gap-1 hover:text-foreground">
+          <Link to="/instructor/results" className="inline-flex items-center gap-1 hover:text-foreground">
             <ArrowLeft className="h-3.5 w-3.5" /> Results
           </Link>
         }
@@ -42,18 +46,23 @@ export default function ResultsExamDetailPage() {
           exam.data && (
             <span className="flex flex-wrap items-center gap-2">
               <ExamStatusBadge status={exam.data.status} />
-              {formatDateTime(exam.data.startTime)} – {formatDateTime(exam.data.endTime)} · pass mark {exam.data.passPercentage}%
+              {formatDateTime(exam.data.startTime)} – {formatDateTime(exam.data.endTime)} ·{' '}
+              {exam.data.passMarkEnabled ? `pass mark ${exam.data.passPercentage}%` : 'no pass mark'}
             </span>
           )
         }
         actions={
           <>
-            <Button variant="outline" onClick={() => setConfirm('recompute')}>
-              <RefreshCw /> Re-grade
-            </Button>
-            <Button onClick={() => setConfirm('publish')}>
-              <Send /> Publish results
-            </Button>
+            {can(Permission.MARKS_ADJUST, courseId) && (
+              <Button variant="outline" onClick={() => setConfirm('recompute')}>
+                <RefreshCw /> Re-grade
+              </Button>
+            )}
+            {can(Permission.RESULTS_PUBLISH, courseId) && (
+              <Button onClick={() => setConfirm('publish')}>
+                <Send /> Publish results
+              </Button>
+            )}
           </>
         }
       />

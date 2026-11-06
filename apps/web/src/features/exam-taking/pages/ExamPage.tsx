@@ -31,7 +31,7 @@ export default function ExamPage() {
   const { attempt, isLoading: isAttemptLoading } = useAttempt();
   const attemptId = attempt?.id || '';
 
-  // Exam app only: send violations (blocked shortcuts, focus loss...) to the API for the admin.
+  // Exam app only: send violations (blocked shortcuts, focus loss...) to the API for staff.
   useSecurityReporter(attemptId || null);
 
   const {

@@ -1,4 +1,4 @@
-// [SHARED] Tabs on the admin exam detail page. One line per tab; owners
+// [SHARED] Tabs on the staff exam detail page. One line per tab; owners
 // append, never reorder. Person B adds a richer question-bank tab here.
 
 import type { Exam } from '@secure-exam/types';

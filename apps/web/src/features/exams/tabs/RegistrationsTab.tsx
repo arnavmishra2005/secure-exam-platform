@@ -92,7 +92,7 @@ export function RegistrationsTab({ exam }: ExamTabProps) {
               {examCourses.data.map((link) => (
                 <li key={link.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
                   <div className="min-w-0">
-                    <Link to={`/admin/courses/${link.courseId}`} className="font-medium hover:underline">
+                    <Link to={`/instructor/courses/${link.courseId}`} className="font-medium hover:underline">
                       <span className="font-mono text-xs">{link.course.code}</span> {link.course.name}
                     </Link>
                     <p className="text-xs text-muted-foreground">{link.enrolledCount} enrolled</p>
@@ -128,7 +128,7 @@ export function RegistrationsTab({ exam }: ExamTabProps) {
           </div>
           {courses.data?.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              No courses exist yet. <Link to="/admin/courses" className="text-primary hover:underline">Create one</Link>.
+              No courses exist yet. <Link to="/instructor/courses" className="text-primary hover:underline">Create one</Link>.
             </p>
           )}
         </CardContent>

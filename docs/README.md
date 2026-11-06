@@ -1,5 +1,10 @@
 # How to Run the Project
 
+> **Phase 5:** there is no admin. Instructors (created by `npm run db:seed` or
+> `npm run db:seed-instructors`) own their courses and add their own TAs.
+> `apps/admin-web` was removed; the sections about it below are out of date.
+> The root [README.md](../README.md) is the current setup guide.
+
 > **Phase 4:** `apps/web` is the new single app for admins and students (one
 > sign-in, role-based landing). `apps/admin-web` and `apps/exam-client` still
 > run but are legacy until the Day 7 merge. What changed and the shared
@@ -114,7 +119,7 @@ npm run migration:run
 
 Run migrations before starting the API: in development TypeORM's `synchronize` creates new tables, but only the migrations copy Phase 1 exam assignments into exam registrations. Without them, students can't start exams (registration is now required).
 
-Optionally, seed development data: an admin (`admin@secure-exam.dev` / `Admin@1234`), three students (`alice@`, `bob@`, `carol@secure-exam.dev` / `Student@1234`), a course `CS201` they are enrolled in, and an active, published exam, ID `11111111-1111-4111-8111-111111111111`, with five questions, registered to that course. The seed is idempotent; re-running it also moves the exam's time window forward. Never run it in production.
+Optionally, seed development data: instructors (`instructor@secure-exam.dev` / `Instructor@1234`, and `instructor2@`, `instructor3@`), a TA (`ta@secure-exam.dev` / `Assistant@1234`), three students (`alice@`, `bob@`, `carol@secure-exam.dev` / `Student@1234`), a course `CS201` they are enrolled in, and an active, published exam, ID `11111111-1111-4111-8111-111111111111`, with five questions, registered to that course. The seed is idempotent; re-running it also moves the exam's time window forward. Never run it in production.
 ```bash
 npm run db:seed
 ```

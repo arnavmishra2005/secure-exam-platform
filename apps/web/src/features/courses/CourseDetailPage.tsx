@@ -1,6 +1,7 @@
 // Owner: Person A
 
 import { deleteCourse, enrollStudents, getCourse, listCourseStudents, unenrollStudent } from '@secure-exam/api-client';
+import { CourseStaffRole, Permission } from '@secure-exam/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Pencil, Trash2, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -16,8 +17,9 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/toast';
 import { getErrorMessage } from '@/lib/errors';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, roleLabel } from '@/lib/format';
 import { CourseFormDialog } from './CourseFormDialog';
+import { CourseStaffSection } from './CourseStaffSection';
 import { StudentPickerDialog } from './StudentPickerDialog';
 
 export default function CourseDetailPage() {
@@ -32,6 +34,8 @@ export default function CourseDetailPage() {
   const course = useQuery({ queryKey: ['courses', courseId], queryFn: () => getCourse(courseId) });
   const students = useQuery({ queryKey: ['courses', courseId, 'students'], queryFn: () => listCourseStudents(courseId) });
   const enrolledIds = useMemo(() => new Set((students.data ?? []).map((e) => e.studentId)), [students.data]);
+  const isInstructor = course.data?.myRole === CourseStaffRole.INSTRUCTOR;
+  const canManageStudents = !!course.data?.myPermissions.includes(Permission.STUDENTS_MANAGE);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['courses'] });
@@ -44,7 +48,7 @@ export default function CourseDetailPage() {
     <>
       <PageHeader
         eyebrow={
-          <Link to="/admin/courses" className="inline-flex items-center gap-1 hover:text-foreground">
+          <Link to="/instructor/courses" className="inline-flex items-center gap-1 hover:text-foreground">
             <ArrowLeft className="h-3.5 w-3.5" /> Courses
           </Link>
         }
@@ -55,6 +59,7 @@ export default function CourseDetailPage() {
               <Badge variant="outline" className="font-mono">
                 {course.data.code}
               </Badge>
+              <Badge variant="secondary">You: {roleLabel(course.data.myRole)}</Badge>
             </span>
           ) : (
             <Skeleton className="h-8 w-64" />
@@ -62,27 +67,34 @@ export default function CourseDetailPage() {
         }
         description={course.data?.description ?? undefined}
         actions={
-          <>
-            <Button variant="outline" onClick={() => setEditing(true)} disabled={!course.data}>
-              <Pencil /> Edit
-            </Button>
-            <Button variant="outline" onClick={() => setDeleting(true)} disabled={!course.data}>
-              <Trash2 /> Delete
-            </Button>
-          </>
+          isInstructor && (
+            <>
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                <Pencil /> Edit
+              </Button>
+              <Button variant="outline" onClick={() => setDeleting(true)}>
+                <Trash2 /> Delete
+              </Button>
+            </>
+          )
         }
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Enrolled students" value={course.data?.enrolledCount ?? '—'} />
         <StatCard label="Assigned to exams" value={course.data?.examCount ?? '—'} hint="Enrolled students are registered for these exams." />
+        <StatCard label="Staff" value={course.data?.staffCount ?? '—'} hint="Instructors and teaching assistants." />
       </div>
+
+      <CourseStaffSection courseId={courseId} canManage={isInstructor} />
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-serif text-lg font-semibold">Students</h2>
-        <Button onClick={() => setEnrolling(true)}>
-          <UserPlus /> Enrol students
-        </Button>
+        {canManageStudents && (
+          <Button onClick={() => setEnrolling(true)}>
+            <UserPlus /> Enrol students
+          </Button>
+        )}
       </div>
 
       {students.error ? (
@@ -99,7 +111,7 @@ export default function CourseDetailPage() {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Enrolled</TableHead>
-              <TableHead className="w-16" />
+              {canManageStudents && <TableHead className="w-16" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -116,16 +128,18 @@ export default function CourseDetailPage() {
                 </TableCell>
                 <TableCell className="text-muted-foreground">{e.student.email}</TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(e.enrolledAt)}</TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove ${e.student.fullName}`}
-                    onClick={() => setRemoving({ id: e.studentId, name: e.student.fullName })}
-                  >
-                    <UserMinus />
-                  </Button>
-                </TableCell>
+                {canManageStudents && (
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove ${e.student.fullName}`}
+                      onClick={() => setRemoving({ id: e.studentId, name: e.student.fullName })}
+                    >
+                      <UserMinus />
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -183,7 +197,7 @@ export default function CourseDetailPage() {
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete ${course.data?.code ?? 'course'}?`}
-        description="The course is unassigned from its exams and its enrolments are removed. Registrations it created are dropped unless another course or a manual registration covers the student."
+        description="Only a course that owns no exams can be deleted. It is unassigned from other exams and its enrolments and staff are removed. Registrations it created are dropped unless another course or a manual registration covers the student."
         confirmLabel="Delete course"
         destructive
         onConfirm={async () => {
@@ -191,7 +205,7 @@ export default function CourseDetailPage() {
             await deleteCourse(courseId);
             toast.success('Course deleted');
             refresh();
-            navigate('/admin/courses', { replace: true });
+            navigate('/instructor/courses', { replace: true });
           } catch (err) {
             toast.error(getErrorMessage(err));
           }

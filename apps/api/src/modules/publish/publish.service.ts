@@ -111,6 +111,10 @@ export function toExamDto(entity: ExamEntity): Exam {
     status: entity.status,
     publishedAt: entity.publishedAt ? entity.publishedAt.toISOString() : null,
     passPercentage: entity.passPercentage,
+    passMarkEnabled: entity.passMarkEnabled,
+    courseId: entity.courseId,
+    originalStartTime: entity.originalStartTime ? entity.originalStartTime.toISOString() : null,
+    scheduleNote: entity.scheduleNote,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
   };

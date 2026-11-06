@@ -78,7 +78,7 @@ describe('ExtensionService', () => {
   });
 
   it('extends the whole exam: moves the end time, pushes running attempts, notifies registered students', async () => {
-    const result = await service.extend('exam-1', { minutes: 10, reason: 'Power cut' }, 'admin-1');
+    const result = await service.extend('exam-1', { minutes: 10, reason: 'Power cut' }, 'instructor-1');
 
     expect(examService.extendEndTime).toHaveBeenCalledWith('exam-1', 10, expect.anything());
     expect(updateQb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('studentId'), expect.anything());
@@ -93,7 +93,7 @@ describe('ExtensionService', () => {
   it('extends one student without touching the exam end time', async () => {
     updateQb.execute.mockResolvedValue({ raw: [{ id: 'a1' }] });
 
-    const result = await service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'admin-1');
+    const result = await service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'instructor-1');
 
     expect(examService.extendEndTime).not.toHaveBeenCalled();
     expect(updateQb.andWhere).toHaveBeenCalledWith('"studentId" = :studentId', { studentId: 'u1' });
@@ -104,7 +104,7 @@ describe('ExtensionService', () => {
   it('records a pending extension for a registered student who has not started', async () => {
     updateQb.execute.mockResolvedValue({ raw: [] });
 
-    const result = await service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'admin-1');
+    const result = await service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'instructor-1');
 
     expect(result.affectedAttempts).toBe(0);
     expect(managerExtensionRepo.save).toHaveBeenCalled();
@@ -114,7 +114,7 @@ describe('ExtensionService', () => {
     updateQb.execute.mockResolvedValue({ raw: [] });
     managerAttemptRepo.findOne.mockResolvedValue({ id: 'a1', status: 'SUBMITTED' });
 
-    await expect(service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'admin-1')).rejects.toThrow(
+    await expect(service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'instructor-1')).rejects.toThrow(
       ConflictException,
     );
     expect(managerExtensionRepo.save).not.toHaveBeenCalled();
@@ -123,14 +123,14 @@ describe('ExtensionService', () => {
   it('refuses a student who is neither registered nor attempting', async () => {
     registrationService.isUserRegistered.mockResolvedValue(false);
 
-    await expect(service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'admin-1')).rejects.toThrow(
+    await expect(service.extend('exam-1', { minutes: 5, studentId: 'student-row' }, 'instructor-1')).rejects.toThrow(
       BadRequestException,
     );
   });
 
   it('refuses to extend a closed exam', async () => {
     exam.status = ExamStatus.CLOSED;
-    await expect(service.extend('exam-1', { minutes: 5 }, 'admin-1')).rejects.toThrow(BadRequestException);
+    await expect(service.extend('exam-1', { minutes: 5 }, 'instructor-1')).rejects.toThrow(BadRequestException);
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 });

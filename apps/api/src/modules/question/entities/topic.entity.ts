@@ -11,6 +11,11 @@ export class TopicEntity {
   @Index()
   courseId: string | null;
 
+  /** Person A: users.id of the instructor whose question bank the topic is in. */
+  @Column({ name: 'owner_id', type: 'uuid', nullable: true })
+  @Index()
+  ownerId: string | null;
+
   @Column({ length: 100 })
   name: string;
 
