@@ -20,6 +20,10 @@ export interface PaletteItem {
 
 export interface PaletteSummary {
   total: number;
+  mcqTotal?: number;
+  mcqAnswered?: number;
+  codingSubmitted?: number;
+  codingUnsubmitted?: number[];
   answered: number;
   visited: number;
   notVisited: number;

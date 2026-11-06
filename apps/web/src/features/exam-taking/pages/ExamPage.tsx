@@ -10,11 +10,19 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AttemptStatus } from '@secure-exam/types';
+import { AttemptStatus, QuestionType } from '@secure-exam/types';
+import { getLatestCodeSubmissions, sendHeartbeat } from '@secure-exam/api-client';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { ErrorState } from '@/components/ui/error-state';
+import { isSessionMoved, onSessionEvent } from '@/auth/session';
+import { getErrorMessage } from '@/lib/errors';
 import { useAttempt } from '../contexts/AttemptContext';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import { useExamQuestions } from '../hooks/useExamQuestions';
 import { useExamStore } from '../store/examStore';
+import { useQuestionNavigation } from '../hooks/useQuestionNavigation';
 import { useAnswer } from '../hooks/useAnswer';
 import { Header } from '../components/Header';
 import { questionRenderers } from '../questionRenderers.registry';
@@ -28,7 +36,7 @@ import { useSecurityReporter } from '../security/useSecurityReporter';
 
 export default function ExamPage() {
   const navigate = useNavigate();
-  const { attempt, isLoading: isAttemptLoading } = useAttempt();
+  const { attempt, exam, isLoading: isAttemptLoading, error: attemptError, refetch: retryAttempt } = useAttempt();
   const attemptId = attempt?.id || '';
 
   // Exam app only: send violations (blocked shortcuts, focus loss...) to the API for staff.
@@ -43,14 +51,13 @@ export default function ExamPage() {
 
   const {
     currentIndex,
+    localPending,
     questionIds,
     answers,
     questionStates,
     markedForReview,
     initExam,
     setCurrentIndex,
-    goToNext,
-    goToPrevious,
     selectOption,
     setTextResponse,
     getSummary,
@@ -58,6 +65,11 @@ export default function ExamPage() {
 
   const { saveAnswer, clearAnswer, toggleReview, restoreAnswersFromStore, isSaving } = useAnswer(attemptId);
 
+  const [restoring, setRestoring] = useState(true);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreRetry, setRestoreRetry] = useState(0);
+  const [sessionMoved, setSessionMoved] = useState(isSessionMoved);
+  useEffect(() => onSessionEvent(event => { if (event === 'moved') setSessionMoved(true); }), []);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPaletteOpenMobile, setIsPaletteOpenMobile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,14 +92,14 @@ export default function ExamPage() {
 
   // No attempt to take, or it is already finished: leave the exam screen.
   useEffect(() => {
-    if (isAttemptLoading) return;
+    if (isAttemptLoading || attemptError || sessionMoved) return;
     if (!attempt) {
       desktop.setSecurityMode(false);
       navigate('/student/dashboard', { replace: true });
     } else if (attempt.status !== AttemptStatus.IN_PROGRESS) {
       navigate('/student/exam/submitted', { replace: true });
     }
-  }, [isAttemptLoading, attempt, navigate]);
+  }, [isAttemptLoading, attempt, attemptError, sessionMoved, navigate]);
 
   // A submission queued while offline finishes in the background; follow it.
   useEffect(() => {
@@ -100,27 +112,42 @@ export default function ExamPage() {
   useEffect(() => {
     if (questions && questions.length > 0) {
       const qIds = questions.map((q) => q.id);
-      initExam(qIds);
-      restoreAnswersFromStore();
+      initExam(qIds, Object.fromEntries(questions.map(q => [q.id, q.type])));
+      setRestoring(true); setRestoreError(null);
+      let cancelled = false;
+      void (async () => {
+        try {
+          await restoreAnswersFromStore();
+          const rows = questions.some(q => q.type === QuestionType.CODING) && !isFixtureAttempt(attemptId) ? await getLatestCodeSubmissions(attemptId) : [];
+          if (cancelled) return;
+          useExamStore.getState().loadCodeSubmissions(rows);
+          const position = qIds.indexOf(attempt?.lastQuestionId ?? '');
+          if (position >= 0) setCurrentIndex(position);
+          setRestoring(false);
+        } catch (error) { if (!cancelled) { setRestoreError(getErrorMessage(error)); setRestoring(false); } }
+      })();
+      return () => { cancelled = true; };
     }
-  }, [questionsCount, attemptId, initExam, restoreAnswersFromStore]);
+  }, [questionsCount, attemptId, initExam, restoreAnswersFromStore, restoreRetry]);
 
   // Handle timer expiry (auto-submit). The server finalizes an expired attempt on
   // its own; requestSubmit() pushes what it can and confirms it, or stays queued if
   // offline. SubmittedPage shows which.
   const handleTimerExpired = useCallback(async () => {
+    if (isSessionMoved()) return;
     setIsSubmitting(true);
     try {
       if (attemptId && !isFixtureAttempt(attemptId)) {
+        for (const id of useExamStore.getState().questionIds) await saveAnswer(id);
         await requestSubmit(attemptId);
       }
     } catch (err) {
       console.error('Auto-submit error:', err);
     } finally {
       setIsSubmitting(false);
-      navigate('/student/exam/submitted', { replace: true });
+      if (!isSessionMoved()) navigate('/student/exam/submitted', { replace: true });
     }
-  }, [attemptId, navigate]);
+  }, [attemptId, navigate, saveAnswer]);
 
   const currentQuestion = questions[currentIndex];
   const CurrentRenderer = currentQuestion ? questionRenderers[currentQuestion.type] : undefined;
@@ -139,13 +166,19 @@ export default function ExamPage() {
 
   const summary = getSummary();
 
-  // Navigation handlers
-  const handleSaveAndNext = async () => {
-    await saveAnswer(currentQId, { advance: canGoNext });
-  };
+  const navigation = useQuestionNavigation(attemptId, questions, saveAnswer,
+    isSubmitting || isSubmitPending || sessionMoved);
+  const handleSaveAndNext = () => navigation.requestNavigation(Math.min(currentIndex + 1, questions.length - 1), true);
+  useEffect(() => {
+    if (restoring || restoreError || !attemptId || !currentQId || sessionMoved || isFixtureAttempt(attemptId)) return;
+    void sendHeartbeat(attemptId, currentQId).catch(() => {});
+  }, [attemptId, currentQId, restoring, restoreError, sessionMoved]);
 
   const handleMarkForReviewAndNext = async () => {
-    await toggleReview(currentQId, { advance: canGoNext });
+    try {
+      await toggleReview(currentQId, { advance: false });
+      await navigation.requestNavigation(Math.min(currentIndex + 1, questions.length - 1), true);
+    } catch (error) { setSubmitError(getErrorMessage(error)); }
   };
 
   const handleClearResponse = async () => {
@@ -164,6 +197,7 @@ export default function ExamPage() {
     try {
       // Pushes every unsynced answer first, then submits. 'submitted' navigates via the
       // effect above; 'pending' keeps the modal open until the connection returns.
+      await Promise.all(useExamStore.getState().questionIds.map(id => saveAnswer(id)));
       const status = await requestSubmit(attemptId);
       if (status === 'failed') {
         setSubmitError('The server did not accept the submission. Please contact your invigilator.');
@@ -176,17 +210,21 @@ export default function ExamPage() {
     }
   };
 
+  const unsavedIds = new Set([...Object.entries(answerSyncStatus).filter(([,s]) => s !== 'synced').map(([id]) => id), ...Object.keys(localPending).filter(id => localPending[id])]);
   const currentSyncStatus = isSyncedAttempt ? answerSyncStatus[currentQId] : undefined;
-  const isLocked = isSubmitting || isSubmitPending;
+  const isLocked = isSubmitting || isSubmitPending || sessionMoved || navigation.submitting || navigation.busy || navigation.warningOpen;
+  if (sessionMoved) return <div className="flex min-h-screen items-center justify-center p-6"><Alert variant="warning" title="This exam was opened on another device">This computer can no longer change or submit the exam. Tell your invigilator. The timer continues on the approved device.</Alert></div>;
+  if (attemptError) return <ErrorState message={getErrorMessage(attemptError)} onRetry={retryAttempt} />;
+  if (restoreError) return <ErrorState message={`Could not restore your submission status: ${restoreError}`} onRetry={() => setRestoreRetry(n => n + 1)} />;
 
   if (questionsError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen bg-background flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-8 max-w-md text-center shadow-sm">
-            <p className="text-base text-gray-800 font-semibold mb-1">Unable to load the exam</p>
-            <p className="text-sm text-gray-500 mb-4">{questionsError}</p>
+          <div className="bg-card border border-border rounded-xl p-8 max-w-md text-center shadow-sm">
+            <p className="text-base text-foreground font-semibold mb-1">Unable to load the exam</p>
+            <p className="text-sm text-muted-foreground mb-4">{questionsError}</p>
             <button
               type="button"
               onClick={retryQuestions}
@@ -200,33 +238,42 @@ export default function ExamPage() {
     );
   }
 
-  if (isQuestionsLoading || !questions || questions.length === 0) {
+  if (isAttemptLoading || isQuestionsLoading || (restoring && questions.length > 0)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen bg-background flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-8 max-w-md text-center shadow-sm">
+          <div className="bg-card border border-border rounded-xl p-8 max-w-md text-center shadow-sm">
             <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-base text-gray-800 font-semibold mb-1">Loading Exam Questions...</p>
-            <p className="text-sm text-gray-500">Please wait while the test environment initializes.</p>
+            <p className="text-base text-foreground font-semibold mb-1">Loading Exam Questions...</p>
+            <p className="text-sm text-muted-foreground">Please wait while the test environment initializes.</p>
           </div>
         </div>
       </div>
     );
   }
 
+  if (questions.length === 0) return <ErrorState message="No questions are available for this exam. Please contact your invigilator." onRetry={retryQuestions} />;
   return (
     <div className="min-h-screen bg-paper flex flex-col font-sans">
+      <a href="#exam-question" className="sr-only focus:not-sr-only focus:p-3">Skip to current question</a>
       {/* Person A's Header Bar with Timer, Title, Student Info, Network status & Finish Exam */}
       <Header
         onTimerExpired={handleTimerExpired}
         onFinish={() => setIsSubmitModalOpen(true)}
       />
 
+      <div className="mx-auto w-full max-w-7xl px-4 pt-3" role="status" aria-live="polite">
+        {unsavedIds.size > 0
+          ? <Alert variant="warning">{unsavedIds.size} unsaved answer(s). Keep this device open until all changes reach the server.</Alert>
+          : <p className="text-sm text-muted-foreground">All changes saved to the server.</p>}
+        {submitError && !isSubmitModalOpen && <Alert variant="destructive">{submitError}</Alert>}
+        {navigation.error && !navigation.warningOpen && <Alert variant="destructive">{navigation.error}</Alert>}
+      </div>
       {/* Main Layout Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* Left Side: Question Viewer & Navigation Controls */}
-        <div className="md:col-span-8 lg:col-span-9 flex flex-col justify-between">
+        <div id="exam-question" tabIndex={-1} className="md:col-span-8 lg:col-span-9 flex flex-col justify-between">
           <div>
             {CurrentRenderer && currentQuestion ? (
               <CurrentRenderer
@@ -236,7 +283,7 @@ export default function ExamPage() {
                 totalQuestions={questions.length}
                 selectedOptionIds={currentDraft.selectedOptionIds}
                 textResponse={currentDraft.textResponse}
-                onSelectOption={(optId, isMulti) => selectOption(currentQId, optId, isMulti)}
+                onSelectOption={(optId, isMulti) => { selectOption(currentQId, optId, isMulti); void saveAnswer(currentQId).catch(error => setSubmitError(getErrorMessage(error))); }}
                 onTextResponseChange={(text) => setTextResponse(currentQId, text)}
                 disabled={isLocked}
               />
@@ -255,7 +302,7 @@ export default function ExamPage() {
             isMarkedForReview={isMarked}
             hasResponse={hasResponse}
             isSaving={isSaving}
-            onPrevious={goToPrevious}
+            onPrevious={() => void navigation.requestNavigation(currentIndex - 1)}
             onSaveAndNext={handleSaveAndNext}
             onMarkForReviewAndNext={handleMarkForReviewAndNext}
             onClearResponse={handleClearResponse}
@@ -293,7 +340,7 @@ export default function ExamPage() {
               currentIndex={currentIndex}
               questionStates={questionStates}
               onSelectQuestion={(idx) => {
-                setCurrentIndex(idx);
+                if (!isLocked) void navigation.requestNavigation(idx);
                 setIsPaletteOpenMobile(false);
               }}
               summary={summary}
@@ -314,6 +361,19 @@ export default function ExamPage() {
         </button>
       </div>
 
+      <Dialog open={navigation.warningOpen} onOpenChange={open => { if (!open) navigation.cancelNavigation(); }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogTitle className="pr-6">Your latest code is not submitted</DialogTitle>
+          <DialogDescription>{exam?.gradeUnsubmittedCode
+            ? 'Submit to confirm this version. A saved draft is graded only if you never submitted a version.'
+            : 'Your progress is saved, but unsubmitted code is not graded. If you submitted earlier, that version still counts.'}</DialogDescription>
+          {navigation.error && <Alert variant="destructive">{navigation.error}</Alert>}
+          <DialogFooter>
+            <Button className="h-auto whitespace-normal text-center" variant="outline" disabled={navigation.submitting} onClick={navigation.continueWithoutSubmitting}>Continue without submitting</Button>
+            <Button loading={navigation.submitting} onClick={() => void navigation.submitAndContinue()}>Submit now</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* Submit Confirmation Modal */}
       <SubmitConfirmationModal
         isOpen={isSubmitModalOpen || isSubmitPending}
@@ -323,6 +383,8 @@ export default function ExamPage() {
         }}
         onConfirm={handleConfirmSubmit}
         summary={summary}
+        gradeUnsubmittedCode={exam?.gradeUnsubmittedCode}
+        onSelectQuestion={index => { setIsSubmitModalOpen(false); void navigation.requestNavigation(index); }}
         isSubmitting={isSubmitting}
         isSubmitPending={isSubmitPending}
         error={submitError}

@@ -11,6 +11,7 @@ export * from './code-languages';
 export * from './question-bank.types';
 export * from './question-analytics.types';
 export * from './attempt.types';
+export * from './student-review.types';
 export * from './answer.types';
 
 // Phase 4 (9-day plan) — one file per feature, agreed in the Day 1 contract session.

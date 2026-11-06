@@ -3,7 +3,7 @@
  *
  * Whole exam (scope ALL): the exam's end time moves (ExamService.extendEndTime,
  * Person A) and every running attempt's expiry moves with it, in one
- * transaction. Students who haven't started get the later end time.
+ * transaction. Students who haven't started get the later end time and added duration.
  *
  * One student (scope STUDENT): only their running attempt's expiry moves —
  * it may run past the exam's end time, which is the point. If they haven't

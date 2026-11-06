@@ -47,6 +47,9 @@ export class AnswerEntity {
   @Column({ type: 'timestamptz', nullable: true })
   answeredAt: Date | null;
 
+  @Column({ name: 'marked_for_review', default: false })
+  markedForReview: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

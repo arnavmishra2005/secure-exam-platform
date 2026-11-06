@@ -4,6 +4,7 @@ import {
   CODE_LANGUAGES,
   CodeLanguage,
   CodeRunKind,
+  CodeSubmissionStatus,
   CodingGradingMode,
   encodeCodeDraft,
   ExecutionStatus,
@@ -26,11 +27,11 @@ function setup(
   const base = publicCodingQuestion(state);
   const question = allowedLanguages ? { ...base, coding: { ...base.coding!, allowedLanguages } } : base;
   const onSaveDraft = vi.fn();
-  renderWithApi(
+  const rendered = renderWithApi(
     <CodingQuestionView attemptId="att-1" question={question} onSaveDraft={onSaveDraft} draftDelayMs={10} {...props} />,
     api,
   );
-  return { api, question, onSaveDraft };
+  return { api, question, onSaveDraft, ...rendered };
 }
 
 const editor = () => screen.getByLabelText('Code editor') as HTMLTextAreaElement;
@@ -196,6 +197,21 @@ describe('CodingQuestionView', () => {
       expect(screen.getByText(/^Submitted /)).toBeTruthy();
     });
 
+    it('confirms the submitted snapshot even after navigating away while Submit is in flight', async () => {
+      const onSubmitted = vi.fn();
+      const { api, unmount } = setup({ onSubmitted });
+      let resolve!: (value: any) => void;
+      vi.spyOn(api, 'submitCode').mockImplementation(() => new Promise(done => { resolve = done; }));
+      fireEvent.change(editor(), { target: { value: SUM } });
+      fireEvent.click(button('Submit'));
+      await waitFor(() => expect(resolve).toBeTypeOf('function'));
+      fireEvent.change(editor(), { target: { value: 'new draft' } });
+      unmount();
+      const result = { submissionId: 'saved', savedAt: new Date().toISOString(), status: CodeSubmissionStatus.PENDING };
+      await act(async () => resolve(result));
+      expect(onSubmitted).toHaveBeenCalledWith(SUM, result, CodeLanguage.PYTHON);
+    });
+
     it('shows the score when the server grades live', async () => {
       setup({}, { gradingMode: CodingGradingMode.LIVE });
       fireEvent.change(editor(), { target: { value: SUM } });
@@ -248,7 +264,7 @@ describe('desktopLocalRunner', () => {
     const { desktopLocalRunner } = await import('../coding/localRunner');
     expect(desktopLocalRunner()).toBeUndefined();
     const run = vi.fn().mockResolvedValue([]);
-    window.desktop = { runCode: run as LocalRunner['run'] };
+    window.desktop = { isDesktop: () => true, runCode: run as LocalRunner['run'] };
     await desktopLocalRunner()!.run({ language: 'python' as never, code: 'x', inputs: [], timeLimitMs: 1, memoryLimitMb: 1, outputLimitBytes: 1 });
     expect(run).toHaveBeenCalled();
     delete window.desktop;

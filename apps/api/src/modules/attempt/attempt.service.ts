@@ -1,7 +1,9 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, FindOptionsWhere, In, IsNull, LessThan, Repository } from 'typeorm';
+import { ExamQuestionEntity } from '../question/entities/exam-question.entity';
+import { assertAttemptSession } from './attempt-session';
 import { AttemptEntity } from './entities/attempt.entity';
 import { ExamSessionEntity } from './entities/exam-session.entity';
 import { TimerService } from './timer.service';
@@ -52,6 +54,7 @@ export class AttemptService {
    */
   async startAttempt(user: JwtPayload, dto: StartAttemptDto): Promise<Attempt> {
     const studentId = user.sub;
+    if (user.examId && user.examId !== dto.examId) throw new ForbiddenException('This session belongs to another exam');
     const exam = await this.examLookup.getExamById(dto.examId);
 
     if (!exam) {
@@ -101,12 +104,15 @@ export class AttemptService {
       where: { examId: dto.examId, studentId },
     });
     if (existing) {
+      assertAttemptSession(existing, user);
       throw new ConflictException('You have already attempted this exam');
     }
 
-    // Per-student extra time granted before the student started (Phase 4).
-    const extraMinutes = await this.pendingStudentExtensionMinutes(dto.examId, studentId);
-    const expiresAt = this.timerService.computeExpiresAt(now, exam.durationMinutes, examEnd, extraMinutes);
+    // Whole-exam extensions already moved examEnd, and must also increase the
+    // duration for students who start later. Student accommodations apply after the cap.
+    const { studentMinutes, examMinutes } = await this.pendingExtensionMinutes(dto.examId, studentId);
+    const extraMinutes = studentMinutes + examMinutes;
+    const expiresAt = this.timerService.computeExpiresAt(now, exam.durationMinutes + examMinutes, examEnd, studentMinutes);
 
     const attempt = this.attemptRepository.create({
       examId: dto.examId,
@@ -115,6 +121,7 @@ export class AttemptService {
       startedAt: now,
       expiresAt,
       submittedAt: null,
+      activeSessionId: user.examSessionId ?? null,
     });
 
     let saved: AttemptEntity;
@@ -151,13 +158,17 @@ export class AttemptService {
     return toAttemptDto(saved);
   }
 
-  /** Sum of STUDENT-scope extensions for this student. All of them predate the attempt, which is unique per exam+student. */
-  private async pendingStudentExtensionMinutes(examId: string, studentId: string): Promise<number> {
+  /** Extensions already granted before this student's unique attempt starts. */
+  private async pendingExtensionMinutes(examId: string, studentId: string): Promise<{ studentMinutes: number; examMinutes: number }> {
     const rows = await this.extensionRepository.find({
-      where: { examId, studentId, scope: ExtensionScope.STUDENT },
-      select: ['minutes'],
+      where: [{ examId, studentId, scope: ExtensionScope.STUDENT }, { examId, scope: ExtensionScope.ALL }],
+      select: ['minutes', 'scope'],
     });
-    return rows.reduce((sum, row) => sum + row.minutes, 0);
+    return rows.reduce((sum, row) => {
+      if (row.scope === ExtensionScope.ALL) sum.examMinutes += row.minutes;
+      else sum.studentMinutes += row.minutes;
+      return sum;
+    }, { studentMinutes: 0, examMinutes: 0 });
   }
 
   /**
@@ -186,6 +197,7 @@ export class AttemptService {
       );
       throw new ForbiddenException('You do not have access to this attempt');
     }
+    assertAttemptSession(attempt, user);
     return attempt;
   }
 
@@ -199,11 +211,25 @@ export class AttemptService {
     if (!attempt) {
       throw new NotFoundException('You have not started this exam');
     }
+    assertAttemptSession(attempt, user);
     return toAttemptDto(attempt);
+  }
+
+  async approveDeviceChange(attemptId: string, actorId: string): Promise<{ approved: boolean }> {
+    const attempt = await this.attemptRepository.findOne({ where: { id: attemptId } });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    if (attempt.status !== AttemptStatus.IN_PROGRESS || !attempt.deviceChangeRequestedAt || attempt.expiresAt.getTime() <= Date.now() ||
+      attempt.deviceChangeRequestedAt.getTime() + 600_000 <= Date.now()) throw new ConflictException('No pending device change for a running attempt');
+    const result = await this.attemptRepository.update({ id: attemptId, status: AttemptStatus.IN_PROGRESS,
+      deviceChangeRequestedAt: attempt.deviceChangeRequestedAt }, { deviceChangeApprovedAt: new Date() });
+    if (!result.affected) throw new ConflictException('The request changed. Refresh monitoring and try again.');
+    await logAuditSafely(this.logger, this.auditService, 'DEVICE_CHANGE_APPROVED', { attemptId, examId: attempt.examId }, actorId);
+    return { approved: true };
   }
 
   async getAttemptById(attemptId: string, user: JwtPayload): Promise<Attempt> {
     const attempt = await this.findOwnedAttemptOrThrow(attemptId, user);
+    assertAttemptSession(attempt, user);
     return toAttemptDto(attempt);
   }
 
@@ -301,11 +327,13 @@ export class AttemptService {
   async heartbeat(
     attemptId: string,
     user: JwtPayload,
-    meta: { ipAddress?: string; userAgent?: string },
+    meta: { ipAddress?: string; userAgent?: string; lastQuestionId?: string },
   ): Promise<HeartbeatResponse> {
     const attempt = await this.findOwnedAttemptOrThrow(attemptId, user);
     const now = new Date();
+    const extensions = await this.extensionRepository.find({ where: { examId: attempt.examId } });
     const response: HeartbeatResponse = {
+      extendedMinutes: extendedMinutesFor(attempt, extensions),
       serverTime: now.toISOString(),
       expiresAt: attempt.expiresAt.toISOString(),
       remainingSeconds:
@@ -316,6 +344,12 @@ export class AttemptService {
       return response; // nothing to track once finalized
     }
 
+    if (meta.lastQuestionId) {
+      const belongs = await this.attemptRepository.manager.getRepository(ExamQuestionEntity).findOne({ where: { examId: attempt.examId, questionId: meta.lastQuestionId } });
+      if (!belongs) throw new BadRequestException('Question is not in this exam');
+      const updated = await this.attemptRepository.update({ id: attemptId, activeSessionId: attempt.activeSessionId ?? IsNull() }, { lastQuestionId: meta.lastQuestionId });
+      if (updated.affected === 0) throw new ConflictException({ code: 'SESSION_MOVED', message: 'This exam was opened on another device.' });
+    }
     const latest = await this.examSessionRepository.findOne({
       where: { attemptId, endedAt: IsNull() },
       order: { lastSeenAt: 'DESC' },
@@ -397,7 +431,7 @@ export class AttemptService {
 
 /**
  * Minutes of extra time an attempt has received: whole-exam extensions
- * granted while it was running, plus every extension for this student.
+ * (including those granted before starting), plus extensions for this student.
  */
 function extendedMinutesFor(attempt: AttemptEntity, extensions: ExamExtensionEntity[]): number {
   return extensions
@@ -405,7 +439,7 @@ function extendedMinutesFor(attempt: AttemptEntity, extensions: ExamExtensionEnt
     .filter((e) =>
       e.scope === ExtensionScope.STUDENT
         ? e.studentId === attempt.studentId
-        : e.createdAt.getTime() > attempt.startedAt.getTime(),
+        : e.scope === ExtensionScope.ALL,
     )
     .reduce((sum, e) => sum + e.minutes, 0);
 }
@@ -416,6 +450,9 @@ export function toAttemptDto(entity: AttemptEntity): Attempt {
     examId: entity.examId,
     studentId: entity.studentId,
     status: entity.status,
+    lastQuestionId: entity.lastQuestionId ?? null,
+    deviceChangeRequestedAt: entity.deviceChangeRequestedAt?.toISOString() ?? null,
+    deviceChangeApproved: !!entity.deviceChangeApprovedAt,
     startedAt: entity.startedAt.toISOString(),
     expiresAt: entity.expiresAt.toISOString(),
     submittedAt: entity.submittedAt ? entity.submittedAt.toISOString() : null,

@@ -19,6 +19,7 @@ import { ExamService } from '../exam/exam.service';
 import { NotificationService } from '../notification/notification.service';
 import { ExamQuestionEntity } from '../question/entities/exam-question.entity';
 import { UserService } from '../user/user.service';
+import { ExamExtensionEntity } from '../extension/entities/exam-extension.entity';
 import { classifyStudentExam } from './student-exam-state';
 
 @Injectable()
@@ -34,6 +35,7 @@ export class DashboardService {
     private readonly registrationService: RegistrationService,
     private readonly userService: UserService,
     private readonly notificationService: NotificationService,
+    @InjectRepository(ExamExtensionEntity) private readonly extensions: Repository<ExamExtensionEntity>,
   ) {}
 
   async getDashboard(userId: string): Promise<StudentDashboard> {
@@ -82,7 +84,7 @@ export class DashboardService {
     if (exams.length === 0) return [];
     const ids = exams.map((e) => e.id);
 
-    const [attempts, questionCounts] = await Promise.all([
+    const [attempts, questionCounts, extensions] = await Promise.all([
       this.attemptRepo.find({ where: { examId: In(ids), studentId: userId } }),
       this.examQuestionRepo
         .createQueryBuilder('eq')
@@ -91,11 +93,18 @@ export class DashboardService {
         .where('eq.examId IN (:...ids)', { ids })
         .groupBy('eq.examId')
         .getRawMany<{ examId: string; count: string }>(),
+      this.extensions.find({ where: { examId: In(ids) } }),
     ]);
     const attemptBy = new Map(attempts.map((a) => [a.examId, a]));
     const countBy = new Map(questionCounts.map((c) => [c.examId, Number(c.count)]));
 
-    return exams.map((exam) => toStudentExamView(exam, attemptBy.get(exam.id) ?? null, countBy.get(exam.id) ?? 0, now));
+    return exams.map((exam) => {
+      const attempt = attemptBy.get(exam.id) ?? null;
+      const extendedMinutes = extensions.filter(e => e.examId === exam.id &&
+        (e.studentId === userId || e.scope === 'ALL'))
+        .reduce((sum, e) => sum + e.minutes, 0);
+      return { ...toStudentExamView(exam, attempt, countBy.get(exam.id) ?? 0, now), extendedMinutes, gradeUnsubmittedCode: exam.gradeUnsubmittedCode };
+    });
   }
 
   private async publishedResults(userId: string): Promise<DashboardResultItem[]> {

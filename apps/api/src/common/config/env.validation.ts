@@ -3,6 +3,7 @@
 // instead of surfacing as a confusing runtime error later.
 
 import * as Joi from 'joi';
+import { labNetworkAllows } from '../guards/lab-network';
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
@@ -16,6 +17,8 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
 
   CORS_ORIGIN: Joi.string().required(),
+  TRUST_PROXY_HOPS: Joi.number().integer().min(0).max(5).default(0),
+  EXAM_ALLOWED_CIDRS: Joi.string().allow('').custom((value) => { labNetworkAllows('127.0.0.1', value); return value; }),
 
   THROTTLE_TTL: Joi.number().default(60),
   THROTTLE_LIMIT: Joi.number().default(1000),

@@ -91,6 +91,8 @@ export function CodeEditor({
         loading={<Spinner />}
         options={{
           readOnly,
+          domReadOnly: readOnly,
+          stickyScroll: { enabled: false },
           ariaLabel,
           minimap: { enabled: false },
           fontSize: 14,

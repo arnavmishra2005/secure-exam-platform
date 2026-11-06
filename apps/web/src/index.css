@@ -38,6 +38,25 @@
     --chart-3: 5 54% 47%;
   }
 
+  .dark {
+    color-scheme: dark;
+    --background: 222 25% 10%; --foreground: 45 20% 94%;
+    --card: 222 23% 14%; --card-foreground: 45 20% 94%;
+    --popover: 222 23% 14%; --popover-foreground: 45 20% 94%;
+    --primary: 171 45% 65%; --primary-foreground: 222 29% 10%;
+    --secondary: 222 20% 22%; --secondary-foreground: 45 20% 94%;
+    --muted: 222 20% 22%; --muted-foreground: 43 12% 72%;
+    --accent: 171 25% 22%; --accent-foreground: 171 45% 80%;
+    --destructive: 5 65% 66%; --destructive-foreground: 222 29% 10%;
+    --success: 152 45% 66%; --success-foreground: 222 29% 10%;
+    --warning: 38 70% 68%; --warning-foreground: 222 29% 10%;
+    --border: 222 15% 32%; --input: 222 15% 32%; --ring: 171 45% 65%;
+  }
+  :where(button, a, input, select, textarea, summary):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+  }
+
   * {
     @apply border-border;
   }

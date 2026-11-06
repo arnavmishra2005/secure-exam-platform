@@ -33,6 +33,8 @@ export interface JwtPayload {
   sub: string; // user id
   email: string;
   role: Role;
+  examSessionId?: string;
+  examId?: string;
   iat?: number;
   exp?: number;
 }

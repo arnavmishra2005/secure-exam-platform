@@ -214,3 +214,26 @@ it.each([
 ])('classifies "%s" as %s', (err, kind) => {
   expect(classifyFailure(err)).toBe(kind);
 });
+
+describe('device displacement', () => {
+  it('keeps pending answers and never treats SESSION_MOVED as a successful submit', async () => {
+    await store.saveAnswer(ATTEMPT, 'q1', { textResponse: 'my draft' });
+    await store.saveSubmitIntent(ATTEMPT);
+    api.saveAnswer.mockRejectedValue({ response: { status: 409, data: { code: 'SESSION_MOVED' } } });
+    await engine.syncNow(ATTEMPT);
+    expect(engine.getStatus().sessionMoved).toBe(true);
+    expect(engine.getStatus().submit).not.toBe('submitted');
+    expect(api.submitAttempt).not.toHaveBeenCalled();
+    expect((await store.getAnswer(ATTEMPT, 'q1'))?.status).toBe('pending');
+    await engine.syncNow(ATTEMPT);
+    expect(api.saveAnswer).toHaveBeenCalledTimes(1);
+  });
+});
+
+it('does not send an old queued submit after the engine is stopped during an answer save', async () => {
+  await store.saveAnswer(ATTEMPT, 'q1', { textResponse: 'draft' });
+  await store.saveSubmitIntent(ATTEMPT);
+  api.saveAnswer.mockImplementationOnce(async () => { engine.stop(); return {}; });
+  await engine.syncNow(ATTEMPT);
+  expect(api.submitAttempt).not.toHaveBeenCalled();
+});

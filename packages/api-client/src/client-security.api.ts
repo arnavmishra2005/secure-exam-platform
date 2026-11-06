@@ -25,8 +25,8 @@ export function getAttemptSecurityEvents(attemptId: string): Promise<SecurityEve
 // ---- Opening an exam in the exam app ----
 
 /** Browser (signed-in student): a one-time token for opening this exam in the exam app. */
-export function createExamLaunch(examId: string): Promise<ExamLaunchCreated> {
-  return apiClient.post<ExamLaunchCreated>('/auth/exam-launch', { examId }).then((res) => res.data);
+export function createExamLaunch(examId: string, captcha: { captchaId: string; captchaAnswer: string }): Promise<ExamLaunchCreated> {
+  return apiClient.post<ExamLaunchCreated>('/auth/exam-launch', { examId, ...captcha }).then((res) => res.data);
 }
 
 /** Exam app: whose launch token is this? Does not use it up. */
@@ -35,6 +35,10 @@ export function previewExamLaunch(token: string): Promise<ExamLaunchPreview> {
 }
 
 /** Exam app: the student clicked Login. Uses the token up and returns a normal session. */
-export function redeemExamLaunch(token: string): Promise<LoginResponse & { examId: string }> {
-  return apiClient.post<LoginResponse & { examId: string }>('/auth/exam-launch/redeem', { token }).then((res) => res.data);
+export function redeemExamLaunch(token: string): Promise<LoginResponse & { examId: string; examSessionId?: string }> {
+  return apiClient.post<LoginResponse & { examId: string; examSessionId?: string }>('/auth/exam-launch/redeem', { token }).then((res) => res.data);
+}
+
+export function createCaptcha(): Promise<import('@secure-exam/types').CaptchaChallenge> {
+  return apiClient.post('/auth/captcha').then(res => res.data);
 }

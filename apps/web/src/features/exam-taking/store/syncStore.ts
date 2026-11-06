@@ -23,9 +23,14 @@ export function createSyncStore(
 }
 
 let syncStore: StoreApi<SyncStoreState> | undefined;
+let subscribedEngine: SyncEngine | undefined;
 
 /** The app-wide store, connected to the persistence layer on first use. */
 export function getSyncStore(): StoreApi<SyncStoreState> {
-  syncStore ??= createSyncStore(getSyncEngine(), getNetworkMonitor());
+  const engine = getSyncEngine();
+  if (!syncStore || subscribedEngine !== engine) {
+    subscribedEngine = engine;
+    syncStore = createSyncStore(engine, getNetworkMonitor());
+  }
   return syncStore;
 }

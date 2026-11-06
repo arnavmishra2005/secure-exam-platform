@@ -27,6 +27,7 @@ interface ExamFormProps {
 export function ExamForm({ initial, submitLabel, timingLocked = false, readOnly = false, onSubmit, onCancel }: ExamFormProps) {
   const courses = useAccess().coursesWith(Permission.EXAM_EDIT);
   const [courseId, setCourseId] = useState('');
+  const [gradeUnsubmittedCode, setGradeUnsubmittedCode] = useState(initial?.gradeUnsubmittedCode ?? false);
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [durationMinutes, setDurationMinutes] = useState(String(initial?.durationMinutes ?? 60));
@@ -62,6 +63,7 @@ export function ExamForm({ initial, submitLabel, timingLocked = false, readOnly 
         description: description.trim() || undefined,
         passMarkEnabled,
         ...(passMarkEnabled ? { passPercentage: pass } : {}),
+        gradeUnsubmittedCode,
         ...(timingLocked
           ? {}
           : {
@@ -147,6 +149,16 @@ export function ExamForm({ initial, submitLabel, timingLocked = false, readOnly 
             </p>
           </div>
         </div>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]"
+            checked={gradeUnsubmittedCode}
+            disabled={initial?.status === 'ACTIVE' || initial?.status === 'CLOSED'}
+            onChange={(e) => setGradeUnsubmittedCode(e.target.checked)}
+          />
+          Grade saved coding drafts when a student never presses Submit. By default, an explicit Submit is required.
+        </label>
       </fieldset>
       {!readOnly && (
         <div className="flex gap-2">

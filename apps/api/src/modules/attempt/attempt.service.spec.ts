@@ -97,6 +97,36 @@ describe('AttemptService', () => {
     service = module.get(AttemptService);
   });
 
+  describe('device approval and saved position', () => {
+    const running = () => ({ id: 'attempt-1', examId: 'exam-1', studentId: 'student-1', status: AttemptStatus.IN_PROGRESS,
+      activeSessionId: 'current', startedAt: new Date(), expiresAt: new Date(Date.now() + 600000), deviceChangeRequestedAt: new Date() });
+    it('approves only the current pending request and records an audit event', async () => {
+      const attempt = running();
+      attemptRepo.findOne.mockResolvedValue(attempt);
+      await expect(service.approveDeviceChange('attempt-1', 'staff')).resolves.toEqual({ approved: true });
+      expect(attemptRepo.update).toHaveBeenCalledWith(expect.objectContaining({ deviceChangeRequestedAt: attempt.deviceChangeRequestedAt, status: AttemptStatus.IN_PROGRESS }), { deviceChangeApprovedAt: expect.any(Date) });
+      expect(auditService.logEvent).toHaveBeenCalledWith('DEVICE_CHANGE_APPROVED', expect.objectContaining({ examId: 'exam-1' }), 'staff');
+    });
+    it('rejects missing, stale and finalized requests', async () => {
+      for (const overrides of [{ deviceChangeRequestedAt: null }, { deviceChangeRequestedAt: new Date(0) }, { status: AttemptStatus.SUBMITTED }]) {
+        attemptRepo.findOne.mockResolvedValue({ ...running(), ...overrides });
+        await expect(service.approveDeviceChange('attempt-1', 'staff')).rejects.toBeInstanceOf(ConflictException);
+      }
+      expect(attemptRepo.update).not.toHaveBeenCalled();
+    });
+    it('rejects a position outside the exam and prevents a displaced heartbeat', async () => {
+      attemptRepo.findOne.mockResolvedValue(running());
+      const questions = { findOne: jest.fn().mockResolvedValue(null) };
+      Object.assign(attemptRepo, { manager: { getRepository: () => questions } });
+      const user = { ...student, examSessionId: 'current' };
+      await expect(service.heartbeat('attempt-1', user, { lastQuestionId: 'foreign' })).rejects.toThrow('Question is not in this exam');
+      questions.findOne.mockResolvedValue({});
+      await service.heartbeat('attempt-1', user, { lastQuestionId: 'q1' });
+      expect(attemptRepo.update).toHaveBeenCalledWith({ id: 'attempt-1', activeSessionId: 'current' }, { lastQuestionId: 'q1' });
+      await expect(service.heartbeat('attempt-1', { ...student, examSessionId: 'old' }, {})).rejects.toMatchObject({ response: { code: 'SESSION_MOVED' } });
+    });
+  });
+
   describe('startAttempt', () => {
     it('creates an attempt when the student is eligible', async () => {
       examLookup.getExamById.mockResolvedValue(activeExam);
@@ -144,9 +174,35 @@ describe('AttemptService', () => {
       expect(Math.abs(new Date(result.expiresAt).getTime() - expectedMs)).toBeLessThan(5_000);
       expect(extensionRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { examId: activeExam.id, studentId: student.sub, scope: ExtensionScope.STUDENT },
+          where: [{ examId: activeExam.id, studentId: student.sub, scope: ExtensionScope.STUDENT }, { examId: activeExam.id, scope: ExtensionScope.ALL }],
         }),
       );
+    });
+
+    it('includes repeated whole-exam extensions before start plus personal time, capped only once', async () => {
+      const now = Date.now();
+      // Original exam ends in 20 minutes; two whole-exam grants moved it to 35.
+      examLookup.getExamById.mockResolvedValue({ ...activeExam, endTime: new Date(now + 35 * 60_000).toISOString() });
+      examLookup.isStudentAssignedToExam.mockResolvedValue(true);
+      attemptRepo.findOne.mockResolvedValue(null);
+      extensionRepo.find.mockResolvedValue([
+        { scope: ExtensionScope.ALL, minutes: 10 },
+        { scope: ExtensionScope.ALL, minutes: 5 },
+        { scope: ExtensionScope.STUDENT, minutes: 7 },
+      ]);
+      const result = await service.startAttempt(student, { examId: activeExam.id });
+      // min(30-minute duration + 15, extended end at 35) + personal 7 = 42.
+      expect(Math.abs(new Date(result.expiresAt).getTime() - (now + 42 * 60_000))).toBeLessThan(5_000);
+    });
+
+    it('gives a later starter the full added duration when the exam window has room', async () => {
+      examLookup.getExamById.mockResolvedValue(activeExam);
+      examLookup.isStudentAssignedToExam.mockResolvedValue(true);
+      attemptRepo.findOne.mockResolvedValue(null);
+      extensionRepo.find.mockResolvedValue([{ scope: ExtensionScope.ALL, minutes: 10 }, { scope: ExtensionScope.ALL, minutes: 5 }]);
+      const now = Date.now();
+      const result = await service.startAttempt(student, { examId: activeExam.id });
+      expect(Math.abs(new Date(result.expiresAt).getTime() - (now + 45 * 60_000))).toBeLessThan(5_000);
     });
 
     it('rejects when the exam does not exist', async () => {
@@ -499,7 +555,7 @@ describe('AttemptService', () => {
         { userId: 'user-9', collegeId: 'CS009', user: { fullName: 'Grace Hopper' } },
       ]);
       extensionRepo.find.mockResolvedValue([
-        // Before the attempt started: the exam end moved, not this attempt.
+        // Before the attempt started: applies to the duration as well.
         { examId: 'exam-1', scope: ExtensionScope.ALL, studentId: null, minutes: 15, createdAt: new Date(startedAt.getTime() - 60_000) },
         // While it was running: applies.
         { examId: 'exam-1', scope: ExtensionScope.ALL, studentId: null, minutes: 10, createdAt: new Date() },
@@ -516,7 +572,7 @@ describe('AttemptService', () => {
         collegeId: 'CS009',
         examTitle: 'Algorithms Midterm',
         isDisconnected: true, // no heartbeat at all
-        extendedMinutes: 15,
+        extendedMinutes: 30,
         violationCount: 0,
         isFlagged: false,
       });

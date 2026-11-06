@@ -44,6 +44,7 @@ export class ExamService {
       passPercentage: dto.passPercentage ?? 40,
       passMarkEnabled: dto.passMarkEnabled ?? true,
       courseId: dto.courseId,
+      gradeUnsubmittedCode: dto.gradeUnsubmittedCode ?? false,
       publishedAt: null,
     });
     const saved = await this.examRepo.save(exam);
@@ -83,6 +84,9 @@ export class ExamService {
       );
     }
 
+    if ([ExamStatus.ACTIVE, ExamStatus.CLOSED].includes(exam.status) && dto.gradeUnsubmittedCode !== undefined && dto.gradeUnsubmittedCode !== exam.gradeUnsubmittedCode) {
+      throw new BadRequestException('Coding submission policy cannot change after an exam starts');
+    }
     const nextStart = dto.startTime ? new Date(dto.startTime) : exam.startTime;
     const nextEnd = dto.endTime ? new Date(dto.endTime) : exam.endTime;
     this.assertValidWindow(nextStart.toISOString(), nextEnd.toISOString());
@@ -95,6 +99,7 @@ export class ExamService {
       endTime: nextEnd,
       passPercentage: dto.passPercentage ?? exam.passPercentage,
       passMarkEnabled: dto.passMarkEnabled ?? exam.passMarkEnabled,
+      gradeUnsubmittedCode: dto.gradeUnsubmittedCode ?? exam.gradeUnsubmittedCode,
     });
     const saved = await this.examRepo.save(exam);
 

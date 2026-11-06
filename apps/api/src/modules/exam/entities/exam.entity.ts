@@ -67,6 +67,8 @@ export class ExamEntity {
   /** Person A: the instructor's note about the latest reschedule. */
   @Column({ name: 'schedule_note', type: 'text', nullable: true })
   scheduleNote: string | null;
+  @Column({ name: 'grade_unsubmitted_code', default: false })
+  gradeUnsubmittedCode: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

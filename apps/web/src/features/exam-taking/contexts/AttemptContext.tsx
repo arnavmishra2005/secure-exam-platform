@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useServerClock } from '../hooks/useServerClock';
 import { startSync } from '../persistence';
 
-export type AttemptExam = Pick<StudentExamView, 'examId' | 'title' | 'description' | 'durationMinutes'>;
+export type AttemptExam = Pick<StudentExamView, 'examId' | 'title' | 'description' | 'durationMinutes' | 'extendedMinutes' | 'gradeUnsubmittedCode'>;
 
 export interface AttemptContextValue {
   attempt: Attempt | null;
@@ -109,6 +109,8 @@ export function AttemptProvider({ children }: { children: ReactNode }) {
           title: examQuery.data.title,
           description: examQuery.data.description,
           durationMinutes: examQuery.data.durationMinutes,
+          gradeUnsubmittedCode: examQuery.data.gradeUnsubmittedCode,
+          extendedMinutes: clock?.extendedMinutes ?? examQuery.data.extendedMinutes,
         }
       : null;
     return {

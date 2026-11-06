@@ -3,7 +3,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createExamLaunch = vi.fn();
-vi.mock('@secure-exam/api-client', () => ({ createExamLaunch: (...a: unknown[]) => createExamLaunch(...a) }));
+const createCaptcha = vi.fn();
+const challenge = { captchaId: 'captcha-1', svg: '<svg/>' };
+vi.mock('@secure-exam/api-client', () => ({ createExamLaunch: (...a: unknown[]) => createExamLaunch(...a), createCaptcha: () => createCaptcha() }));
 
 import { DesktopOnly } from './DesktopOnly';
 import { OpenInExamApp } from './OpenInExamApp';
@@ -14,6 +16,7 @@ const realLocation = window.location;
 
 beforeEach(() => {
   createExamLaunch.mockReset();
+  createCaptcha.mockReset().mockResolvedValue(challenge);
   Object.defineProperty(window, 'location', { configurable: true, value: { href: 'http://localhost/' } });
 });
 afterEach(() => {
@@ -21,13 +24,20 @@ afterEach(() => {
   delete (window as { desktop?: unknown }).desktop;
 });
 
+async function enterCaptcha() {
+  await screen.findByRole('img');
+  fireEvent.change(screen.getByLabelText('Enter the characters in the image'), { target: { value: 'abc23' } });
+}
+
 describe('OpenInExamApp', () => {
-  it('cannot start until the student accepts the instructions', () => {
+  it('requires both instructions consent and captcha', async () => {
     render(<OpenInExamApp examId={ID} resuming={false} />);
     const start = screen.getByRole('button', { name: /start exam in exam app/i });
     expect((start as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByRole('checkbox'));
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+    await enterCaptcha();
     expect((start as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -36,10 +46,22 @@ describe('OpenInExamApp', () => {
     render(<OpenInExamApp examId={ID} resuming={false} />);
 
     fireEvent.click(screen.getByRole('checkbox'));
+    await enterCaptcha();
     fireEvent.click(screen.getByRole('button', { name: /start exam in exam app/i }));
 
     await waitFor(() => expect(window.location.href).toBe(`secure-exam://launch/${TOKEN}`));
-    expect(createExamLaunch).toHaveBeenCalledWith(ID);
+    expect(createExamLaunch).toHaveBeenCalledWith(ID, { captchaId: 'captcha-1', captchaAnswer: 'abc23' });
+  });
+
+  it('uses the replacement challenge after a wrong answer and requires fresh input', async () => {
+    createExamLaunch.mockRejectedValue({ response: { status: 400, data: { message: 'Try again', captcha: { captchaId: 'replacement', svg: '<svg>new</svg>' } } } });
+    render(<OpenInExamApp examId={ID} resuming />);
+    await enterCaptcha();
+    fireEvent.click(screen.getByRole('button', { name: /resume in exam app/i }));
+    await screen.findByText('Try again');
+    expect((screen.getByLabelText('Enter the characters in the image') as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('button', { name: /resume in exam app/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(createCaptcha).toHaveBeenCalledTimes(1);
   });
 
   it('resuming needs no checkbox', async () => {
@@ -47,6 +69,7 @@ describe('OpenInExamApp', () => {
     render(<OpenInExamApp examId={ID} resuming />);
 
     expect(screen.queryByRole('checkbox')).toBeNull();
+    await enterCaptcha();
     fireEvent.click(screen.getByRole('button', { name: /resume in exam app/i }));
     await waitFor(() => expect(window.location.href).toContain('secure-exam://launch/'));
   });
@@ -55,6 +78,7 @@ describe('OpenInExamApp', () => {
     createExamLaunch.mockRejectedValue({ response: { status: 500, data: { message: 'Server error' } } });
     render(<OpenInExamApp examId={ID} resuming />);
 
+    await enterCaptcha();
     fireEvent.click(screen.getByRole('button', { name: /resume in exam app/i }));
     await waitFor(() => expect(screen.getByText('Server error')).toBeTruthy());
     expect(window.location.href).toBe('http://localhost/');

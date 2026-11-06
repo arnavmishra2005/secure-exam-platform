@@ -27,6 +27,10 @@ export interface Attempt {
   /** Person A's Student.id — referenced by ID only. */
   studentId: string;
   status: AttemptStatus;
+  lastQuestionId?: string | null;
+  extendedMinutes?: number;
+  deviceChangeRequestedAt?: string | null;
+  deviceChangeApproved?: boolean;
   /** ISO 8601 */
   startedAt: string;
   /** ISO 8601 — server-authoritative, never derived from client input. */

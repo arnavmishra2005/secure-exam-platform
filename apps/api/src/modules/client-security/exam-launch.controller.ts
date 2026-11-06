@@ -11,19 +11,21 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
+import { CaptchaService } from './captcha.service';
 import { ExamLaunchService } from './exam-launch.service';
 
 @ApiTags('exam-launch')
 @Controller('auth/exam-launch')
 export class ExamLaunchController {
-  constructor(private readonly service: ExamLaunchService) {}
+  constructor(private readonly service: ExamLaunchService, private readonly captcha: CaptchaService) {}
 
   /** Browser: the signed-in student asks to open an exam in the exam app. */
   @ApiBearerAuth()
   @Post()
   @Roles(Role.STUDENT)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  create(@Body() dto: CreateExamLaunchDto, @CurrentUser() user: JwtPayload) {
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async create(@Body() dto: CreateExamLaunchDto, @CurrentUser() user: JwtPayload) {
+    await this.captcha.consume(dto.captchaId, dto.captchaAnswer);
     return this.service.create(user, dto.examId);
   }
 

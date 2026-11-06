@@ -40,6 +40,8 @@ export interface StudentExamView {
   /** Current expiry of an in-progress attempt. */
   expiresAt: string | null;
   questionCount: number;
+  extendedMinutes?: number;
+  gradeUnsubmittedCode?: boolean;
 }
 
 export interface DashboardResultItem {

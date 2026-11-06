@@ -9,7 +9,7 @@ import { Permission, Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { AccessService } from '../../common/access/access.service';
 import { RequirePermission, StaffAccess } from '../../common/access/require-permission.decorator';
-import { ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
+import { HeartbeatDto, ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
 import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { AttemptService } from './attempt.service';
 
@@ -53,6 +53,16 @@ export class AttemptController {
   }
 
   /**
+   * Person C: lets a student continue an in-progress attempt on another device.
+   * Staff with MONITOR on the attempt's course (another course: 404).
+   */
+  @Post(':id/device-change/approve')
+  @RequirePermission(Permission.MONITOR, { attempt: 'id' })
+  approveDeviceChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.attemptService.approveDeviceChange(id, user.sub);
+  }
+
+  /**
    * Lightweight liveness ping the exam UI can call periodically so the
    * staff monitoring screen can tell an actively-connected attempt apart
    * from one that's gone quiet.
@@ -64,7 +74,8 @@ export class AttemptController {
     @CurrentUser() user: JwtPayload,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
+    @Body() dto: HeartbeatDto,
   ) {
-    return this.attemptService.heartbeat(id, user, { ipAddress: ip, userAgent });
+    return this.attemptService.heartbeat(id, user, { ipAddress: ip, userAgent, lastQuestionId: dto.lastQuestionId });
   }
 }

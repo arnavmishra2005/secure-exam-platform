@@ -45,6 +45,7 @@ export function useAnswer(attemptId: string) {
 
         // Update local UI state
         state.markAsSaved(questionId);
+        useExamStore.getState().markLocallySaved(questionId, draft, isMarked);
         setLastSavedAt(new Date());
 
         if (options.advance) {
@@ -52,6 +53,7 @@ export function useAnswer(attemptId: string) {
         }
       } catch (err) {
         console.error('Failed to save answer through offlineStore', err);
+        throw err;
       } finally {
         setIsSaving(false);
       }
@@ -77,6 +79,7 @@ export function useAnswer(attemptId: string) {
         });
 
         state.clearCurrentAnswer(questionId);
+        useExamStore.getState().markLocallySaved(questionId, { selectedOptionIds: [], textResponse: '' }, isMarked);
         setLastSavedAt(new Date());
       } catch (err) {
         console.error('Failed to clear answer', err);
@@ -110,6 +113,7 @@ export function useAnswer(attemptId: string) {
           markedForReview: newMarked,
         });
 
+        useExamStore.getState().markLocallySaved(questionId, draft, newMarked);
         setLastSavedAt(new Date());
 
         if (options.advance) {
@@ -132,21 +136,28 @@ export function useAnswer(attemptId: string) {
   const restoreAnswersFromStore = useCallback(async () => {
     if (!attemptId) return;
     try {
+      let serverError: unknown;
       const [serverAnswers, all] = await Promise.all([
         isFixtureAttempt(attemptId)
           ? []
           : listAnswers(attemptId).catch((err) => {
+              // Network failures can use this device's cached answers; HTTP failures must not silently present an empty exam.
+              if (err?.response) throw err;
+              serverError = err;
               console.warn('Could not load saved answers from the server; using this device only', err);
               return [];
             }),
         getOfflineStore().getAllAnswers(attemptId),
       ]);
+      if (serverError && all.length === 0) throw serverError;
       const mapped: Record<
         string,
         {
           selectedOptionIds: string[] | null;
           textResponse: string | null;
           state: QuestionState;
+          markedForReview?: boolean;
+          savedAt?: number;
         }
       > = {};
 
@@ -155,10 +166,13 @@ export function useAnswer(attemptId: string) {
           selectedOptionIds: answer.selectedOptionIds,
           textResponse: answer.textResponse,
           state: answer.state,
+          markedForReview: answer.markedForReview,
+          savedAt: answer.updatedAt ? Date.parse(answer.updatedAt) : Infinity,
         };
       }
 
       for (const item of all) {
+        if (item.status === 'synced' && mapped[item.questionId]) continue;
         // `payload` holds every local edit merged together, so it is the answer's current content.
         const { payload } = item;
         const selectedOptionIds = payload.clearResponse ? null : payload.selectedOptionIds ?? null;
@@ -179,12 +193,14 @@ export function useAnswer(attemptId: string) {
           selectedOptionIds,
           textResponse,
           state: qState,
+          savedAt: Infinity, // Preserve cached edits; never compare client and server clocks.
         };
       }
 
       useExamStore.getState().loadSavedAnswers(mapped);
     } catch (err) {
       console.error('Failed to restore answers from offline store', err);
+      throw err;
     }
   }, [attemptId]);
 

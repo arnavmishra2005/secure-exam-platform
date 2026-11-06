@@ -1,5 +1,6 @@
-import { BrowserWindow, Menu } from 'electron';
+import { BrowserWindow, Menu, screen } from 'electron';
 import * as path from 'path';
+import { isSecurityActive } from './examState';
 import { APP_ORIGIN, IS_DEV, WEB_DEV_URL } from './config';
 
 /** Where the web app is served from. */
@@ -14,7 +15,9 @@ export function appBaseUrl(): string {
  * running: see SET_SECURITY_MODE in ipc/channels.ts.
  */
 export function createKioskWindow(initialPath: string): BrowserWindow {
+  const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const win = new BrowserWindow({
+    ...workArea,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
@@ -47,8 +50,10 @@ export function createKioskWindow(initialPath: string): BrowserWindow {
   );
 
   win.once('ready-to-show', () => {
-    win.maximize();
+    // Show first: some Linux window managers ignore maximise requests for
+    // unmapped windows. Initial work-area bounds also avoid a small first frame.
     win.show();
+    if (!isSecurityActive()) win.maximize();
   });
 
   void win.loadURL(`${IS_DEV ? WEB_DEV_URL : APP_ORIGIN}${initialPath}`);

@@ -79,6 +79,7 @@ export class AnswerService {
         this.applyAnswerUpdate(answer, dto);
         return answerRepo.save(answer);
       },
+      user,
     );
 
     await logAuditSafely(
@@ -180,7 +181,8 @@ export class AnswerService {
   private applyAnswerUpdate(answer: AnswerEntity, dto: SaveAnswerDto): void {
     const wasMarkedForReview =
       answer.state === QuestionState.MARKED_REVIEW || answer.state === QuestionState.ANSWERED_AND_MARKED_REVIEW;
-    const isMarkedForReview = dto.markedForReview ?? wasMarkedForReview;
+    const isMarkedForReview = dto.markedForReview ?? answer.markedForReview ?? wasMarkedForReview;
+    answer.markedForReview = isMarkedForReview;
 
     if (dto.clearResponse) {
       answer.selectedOptionIds = null;
@@ -212,6 +214,7 @@ export function toAnswerDto(entity: AnswerEntity): Answer {
     selectedOptionIds: entity.selectedOptionIds,
     textResponse: entity.textResponse,
     state: entity.state,
+    markedForReview: entity.markedForReview,
     answeredAt: entity.answeredAt ? entity.answeredAt.toISOString() : null,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),

@@ -8,7 +8,7 @@ function contextWith(header?: string) {
   } as never;
 }
 const guardWith = (required: unknown) =>
-  new DesktopClientGuard({ get: jest.fn().mockReturnValue(required) } as unknown as ConfigService);
+  new DesktopClientGuard({ get: jest.fn((key: string) => key === 'REQUIRE_DESKTOP_CLIENT' ? required : undefined) } as unknown as ConfigService);
 
 describe('DesktopClientGuard', () => {
   it('lets the exam app through', () => {

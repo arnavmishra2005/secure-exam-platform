@@ -5,10 +5,10 @@
   "main": "dist/main/main.js",
   "scripts": {
     "desktop:dev": "npm run compile && concurrently -k \"npm run dev --workspace=@secure-exam/web\" \"wait-on http://localhost:3003 && env -u ELECTRON_RUN_AS_NODE electron .\"",
-    "desktop:build": "tsc -p tsconfig.json && npm run build --workspace=@secure-exam/web && electron-builder --linux",
+    "desktop:build": "npm run compile && npm run build --workspace=@secure-exam/web && electron-builder --linux",
     "desktop:start": "env -u ELECTRON_RUN_AS_NODE electron .",
-    "compile": "tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.json && node --test test/*.test.mjs"
+    "compile": "tsc -p tsconfig.json && node ../../scripts/copy-desktop-resources.mjs",
+    "test": "npm run compile && node --test --test-concurrency=1 test/*.test.mjs && python3 -B -m unittest discover -s test -p '*_test.py'"
   },
   "build": {
     "appId": "dev.secure-exam.client",
@@ -16,6 +16,7 @@
     "directories": {
       "output": "dist-electron"
     },
+    "asarUnpack": ["dist/main/platform/*.py"],
     "files": [
       "dist/main/**/*",
       "dist/preload/**/*"

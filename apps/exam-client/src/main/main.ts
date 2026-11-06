@@ -103,10 +103,10 @@ app.whenReady().then(() => {
   });
 
   installNavigationGuard(win);
-  installInputGuard(win);
+  const interruptExam = registerIpcHandlers(win);
+  installInputGuard(win, interruptExam);
   installFocusMonitor(win);
   installDisplayMonitor(win);
-  registerIpcHandlers(win);
 });
 
 // ponytail: in a real kiosk deployment the session manager relaunches the app on exit.

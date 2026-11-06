@@ -98,6 +98,10 @@ const FIXTURE_EXAM: Exam = {
   status: 'ACTIVE' as Exam['status'],
   publishedAt: new Date().toISOString(),
   passPercentage: 40,
+  passMarkEnabled: true,
+  courseId: null,
+  originalStartTime: null,
+  scheduleNote: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };

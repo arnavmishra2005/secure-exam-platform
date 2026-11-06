@@ -241,7 +241,7 @@ export interface CodeSubmitResponse {
   };
 }
 
-/** Full per-test detail stored on a submission; staff-only. */
+/** Stored grading details. Student access is mapped separately after result publication. */
 export interface StoredTestResult {
   testCaseId: string;
   verdict: TestCaseVerdict;

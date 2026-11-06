@@ -20,7 +20,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   AuditEventType,
   CodeSubmissionStatus,
@@ -29,6 +29,9 @@ import {
 } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { CodeSubmitDto } from '@secure-exam/validation';
+import { AttemptEntity } from '../attempt/entities/attempt.entity';
+import { assertAttemptSession } from '../attempt/attempt-session';
+import { AttemptStatus } from '@secure-exam/types';
 import { AuditService } from '../audit/audit.service';
 import { logAuditSafely } from '../attempt/audit-safe.util';
 import { EXECUTION_PROVIDER, ExecutionProvider } from '../execution/execution-provider.interface';
@@ -54,6 +57,27 @@ export class CodeSubmitService {
     private readonly config: ConfigService,
   ) {}
 
+  private async saveLocked(attemptId: string, user: JwtPayload, fields: Partial<CodeSubmissionEntity>): Promise<CodeSubmissionEntity> {
+    return this.submissionRepo.manager.transaction(async manager => {
+      const attempt = await manager.getRepository(AttemptEntity).findOne({ where: { id: attemptId }, lock: { mode: 'pessimistic_write' } });
+      if (!attempt || attempt.studentId !== user.sub) throw new ConflictException('Attempt not available');
+      assertAttemptSession(attempt, user);
+      if (attempt.status !== AttemptStatus.IN_PROGRESS || attempt.expiresAt.getTime() < Date.now()) throw new ConflictException('The attempt has ended');
+      const repo = manager.getRepository(CodeSubmissionEntity);
+      return repo.save(repo.create(fields));
+    });
+  }
+
+  async latest(attemptId: string, user: JwtPayload) {
+    await this.attempts.assertWritable(attemptId, user);
+    const rows = await this.submissionRepo.find({ where: { attemptId, studentId: user.sub, fromDraft: false,
+      status: In([CodeSubmissionStatus.PENDING, CodeSubmissionStatus.GRADED]) }, order: { createdAt: 'DESC', id: 'DESC' } });
+    const seen = new Set<string>();
+    return rows.filter(row => { if (seen.has(row.questionId)) return false; seen.add(row.questionId); return true; })
+      .map(row => ({ questionId: row.questionId, submissionId: row.id, code: row.code, language: row.language,
+        savedAt: row.createdAt.toISOString(), status: row.status }));
+  }
+
   async submit(attemptId: string, dto: CodeSubmitDto, user: JwtPayload): Promise<CodeSubmitResponse> {
     const attempt = await this.attempts.assertWritable(attemptId, user);
     const { question, problem } = await this.resolver.resolveInExam(attempt.examId, dto.questionId);
@@ -66,8 +90,7 @@ export class CodeSubmitService {
     let result: CodeSubmitResponse['result'];
 
     if (!live) {
-      saved = await this.submissionRepo.save(
-        this.submissionRepo.create({
+      saved = await this.saveLocked(attemptId, user, {
           attemptId: attempt.id,
           questionId: dto.questionId,
           studentId: user.sub,
@@ -77,8 +100,7 @@ export class CodeSubmitService {
           maxScore: question.marks,
           isFinal: false,
           fromDraft: false,
-        }),
-      );
+        });
     } else {
       const tests = await this.resolver.allTests(dto.questionId);
       if (tests.length === 0) {
@@ -105,11 +127,11 @@ export class CodeSubmitService {
       // the small gap between this check and the insert.
       try {
         await this.attempts.assertWritable(attemptId, user);
-      } catch {
+      } catch (error) {
+        if (error instanceof ConflictException && (error.getResponse() as { code?: string }).code === 'SESSION_MOVED') throw error;
         throw new ConflictException('The attempt ended before your submission finished, so it was not counted');
       }
-      saved = await this.submissionRepo.save(
-        this.submissionRepo.create({
+      saved = await this.saveLocked(attemptId, user, {
           attemptId: attempt.id,
           questionId: dto.questionId,
           studentId: user.sub,
@@ -123,8 +145,7 @@ export class CodeSubmitService {
           resultsJson: evaluation.results,
           isFinal: false,
           fromDraft: false,
-        }),
-      );
+        });
       result = {
         passed: evaluation.passed,
         total: evaluation.total,

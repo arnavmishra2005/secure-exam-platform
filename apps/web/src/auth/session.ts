@@ -9,7 +9,7 @@ import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 const REFRESH_TOKEN_KEY = 'secure-exam.web.refreshToken';
 
-export type SessionEvent = 'refreshed' | 'ended';
+export type SessionEvent = 'refreshed' | 'ended' | 'moved';
 type Listener = (event: SessionEvent) => void;
 
 const listeners = new Set<Listener>();
@@ -33,6 +33,7 @@ export function getStoredRefreshToken(): string | null {
 }
 
 export function storeTokens(accessToken: string, refreshToken: string): void {
+  moved = false;
   setAccessToken(accessToken);
   try {
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
@@ -67,7 +68,8 @@ export function refreshSession(): Promise<string | null> {
       emit('refreshed');
       return accessToken;
     })
-    .catch(() => {
+    .catch((error) => {
+      if (error?.response?.data?.code === 'SESSION_MOVED') { moved = true; emit('moved'); return null; }
       clearTokens();
       return null;
     })
@@ -77,6 +79,8 @@ export function refreshSession(): Promise<string | null> {
   return refreshInFlight;
 }
 
+let moved = false;
+export function isSessionMoved() { return moved; }
 let interceptorInstalled = false;
 
 /** Retries a request once after refreshing on a 401. Auth endpoints are never retried. */
@@ -85,6 +89,9 @@ export function installAuthInterceptor(): void {
   interceptorInstalled = true;
 
   apiClient.interceptors.response.use(undefined, async (error: AxiosError) => {
+    if ((error.response?.data as { code?: string })?.code === 'SESSION_MOVED') {
+      moved = true; emit('moved'); throw error;
+    }
     const config = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
     const isAuthCall = config?.url?.startsWith('/auth/');
     if (error.response?.status !== 401 || !config || config._retried || isAuthCall) {

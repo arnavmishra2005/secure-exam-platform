@@ -13,6 +13,8 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.use(helmet());
+  const proxyHops = configService.get<number>('TRUST_PROXY_HOPS') ?? 0;
+  if (proxyHops > 0) app.getHttpAdapter().getInstance().set('trust proxy', proxyHops);
 
   const corsOrigin = configService.get<string>('CORS_ORIGIN');
   const allowedOrigins = corsOrigin

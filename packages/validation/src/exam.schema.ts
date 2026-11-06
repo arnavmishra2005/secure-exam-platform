@@ -36,6 +36,9 @@ export class CreateExamDto {
   /** Person A: the owning course. Its instructors and TAs manage the exam. */
   @IsUUID('4')
   courseId!: string;
+  @IsOptional()
+  @IsBoolean()
+  gradeUnsubmittedCode?: boolean;
 
   @IsString()
   @IsNotEmpty()
@@ -70,6 +73,10 @@ export class CreateExamDto {
 }
 
 export class UpdateExamDto {
+  @IsOptional()
+  @IsBoolean()
+  gradeUnsubmittedCode?: boolean;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()

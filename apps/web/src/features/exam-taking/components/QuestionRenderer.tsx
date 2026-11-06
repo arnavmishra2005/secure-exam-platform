@@ -3,8 +3,9 @@
  * Renders the question header, text, marks metadata, and options list.
  */
 import React from 'react';
-import { PublicQuestion, QuestionType } from '@secure-exam/types';
+import { PublicQuestion, QuestionType, type StudentQuestionReview } from '@secure-exam/types';
 import { OptionList } from './OptionList';
+import { ReviewScore } from './ReviewScore';
 
 interface QuestionRendererProps {
   question: PublicQuestion;
@@ -15,6 +16,8 @@ interface QuestionRendererProps {
   onSelectOption: (optionId: string, isMulti: boolean) => void;
   onTextResponseChange: (text: string) => void;
   disabled?: boolean;
+  review?: boolean;
+  analysis?: StudentQuestionReview['analysis'];
 }
 
 export const QuestionRenderer: React.FC<QuestionRendererProps> = ({
@@ -26,13 +29,15 @@ export const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   onSelectOption,
   onTextResponseChange,
   disabled = false,
+  review = false,
+  analysis,
 }) => {
   const getTypeBadge = (type: QuestionType) => {
     switch (type) {
       case QuestionType.MCQ_SINGLE:
         return { label: 'Single Choice', classes: 'bg-verdigris-light/60 text-verdigris-dark border-verdigris/30' };
       case QuestionType.MCQ_MULTI:
-        return { label: 'Multiple Choice (Select all that apply)', classes: 'bg-gold-light/60 text-gold border-gold/40' };
+        return { label: 'Multiple Choice (Select all that apply)', classes: 'bg-warning/15 text-foreground border-warning/40' };
       case QuestionType.TRUE_FALSE:
         return { label: 'True / False', classes: 'bg-ash-light text-ash border-hairline' };
       default:
@@ -57,14 +62,14 @@ export const QuestionRenderer: React.FC<QuestionRendererProps> = ({
 
         {/* Marks indicators */}
         <div className="flex items-center gap-2 text-xs font-medium">
-          <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+          {analysis ? <ReviewScore analysis={analysis} /> : <><span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
             +{question.marks} {question.marks === 1 ? 'Mark' : 'Marks'}
           </span>
           {question.negativeMarks !== undefined && question.negativeMarks > 0 && (
             <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200">
               -{question.negativeMarks} Neg
             </span>
-          )}
+          )}</>}
         </div>
       </div>
 
@@ -82,8 +87,15 @@ export const QuestionRenderer: React.FC<QuestionRendererProps> = ({
           selectedOptionIds={selectedOptionIds}
           onSelectOption={onSelectOption}
           disabled={disabled}
+          review={review}
+          correctOptionIds={analysis?.correctOptionIds}
         />
       )}
+
+      {analysis && <div className="mt-4 space-y-2 text-sm">
+        <p>{analysis.reason}</p>
+        {analysis.explanation && <p className="whitespace-pre-wrap">{analysis.explanation}</p>}
+      </div>}
 
       {/* Free text response for Subjective questions */}
       {(!question.options || question.options.length === 0) && (
@@ -98,7 +110,7 @@ export const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             disabled={disabled}
             rows={6}
             placeholder="Type your answer here..."
-            className="w-full p-4 border border-hairline rounded bg-white font-sans text-sm text-ink focus:outline-none focus:border-verdigris focus:ring-1 focus:ring-verdigris disabled:opacity-60"
+            className="w-full p-4 border border-hairline rounded bg-background font-sans text-sm text-ink focus:outline-none focus:border-verdigris focus:ring-1 focus:ring-verdigris disabled:opacity-60"
           />
         </div>
       )}

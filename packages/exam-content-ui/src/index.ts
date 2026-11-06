@@ -21,6 +21,7 @@ export { CodingProblemEditor } from './coding/authoring/CodingProblemEditor';
 export { CodingQuestionView, type CodingQuestionViewProps } from './coding/CodingQuestionView';
 export { desktopLocalRunner } from './coding/localRunner';
 export { CodeEditor } from './coding/editor/CodeEditor';
+export { Markdown } from './coding/ProblemStatement';
 
 // Results (staff): Person A's results page adds this as the "Questions" tab
 export { QuestionsTab } from './results/QuestionsTab';
