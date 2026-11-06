@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role, type CodingClientConfig } from '@secure-exam/types';
+import { Role, STAFF_ROLES, type CodingClientConfig } from '@secure-exam/types';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { codingClientConfig } from './coding-config';
 
@@ -13,7 +13,7 @@ export class CodingConfigController {
   constructor(private readonly config: ConfigService) {}
 
   @Get('config')
-  @Roles(Role.STUDENT, Role.ADMIN)
+  @Roles(Role.STUDENT, ...STAFF_ROLES)
   get(): CodingClientConfig {
     return codingClientConfig(this.config);
   }

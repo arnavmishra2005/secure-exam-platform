@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   CodeLanguage,
   CodeSubmissionStatus,
+  encodeCodeDraft,
   ExecutionOutcome,
   ExecutionStatus,
   OutputComparisonMode,
@@ -13,7 +14,7 @@ const submittedAt = new Date('2026-10-17T10:00:00Z');
 const item = { attemptId: 'att-1', examId: 'exam-1', studentId: 'student-1', questionId: 'q-1', submittedAt };
 const ok = (stdout: string): ExecutionOutcome => ({ status: ExecutionStatus.OK, stdout, stderr: '', exitCode: 0, timeMs: 5 });
 
-function setup() {
+function setup(allowedLanguages: CodeLanguage[] = [CodeLanguage.PYTHON]) {
   const attempts = {
     findAwaitingCodeGrading: jest.fn().mockResolvedValue([item]),
     getDraftCode: jest.fn().mockResolvedValue(null),
@@ -32,7 +33,7 @@ function setup() {
   const problemRepo = {
     findOne: jest.fn().mockResolvedValue({
       questionId: 'q-1',
-      allowedLanguages: [CodeLanguage.PYTHON],
+      allowedLanguages,
       timeLimitMs: 1000,
       memoryLimitMb: 128,
       comparisonMode: OutputComparisonMode.TRIM,
@@ -110,6 +111,32 @@ describe('CodeGradingService.gradeOne', () => {
     await expect(service.gradeOne(item)).resolves.toBe('FROM_DRAFT');
     expect(txRepo.insert).toHaveBeenCalledWith(expect.objectContaining({ isFinal: true, fromDraft: true, score: 2 }));
     expect(scoreSink.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ score: 2 }));
+  });
+
+  it('grades a C++ draft in C++ and records the language (#16)', async () => {
+    const { service, attempts, executor, txRepo } = setup([CodeLanguage.PYTHON, CodeLanguage.CPP]);
+    attempts.getDraftCode.mockResolvedValue(encodeCodeDraft(CodeLanguage.CPP, 'int main(){}'));
+    executor.runBatch.mockResolvedValue([ok('1\n'), ok('4\n')]);
+
+    await expect(service.gradeOne(item)).resolves.toBe('FROM_DRAFT');
+    expect(executor.runBatch).toHaveBeenCalledWith(expect.objectContaining({ language: CodeLanguage.CPP, code: 'int main(){}' }));
+    expect(txRepo.insert).toHaveBeenCalledWith(expect.objectContaining({ language: CodeLanguage.CPP, code: 'int main(){}', score: 8 }));
+  });
+
+  it('grades a saved Submit in its own language', async () => {
+    const { service, submissionRepo, executor } = setup([CodeLanguage.JAVA, CodeLanguage.C]);
+    submissionRepo.findOne.mockResolvedValue({ id: 'sub-1', questionId: 'q-1', code: 'int main(){}', language: CodeLanguage.C, status: CodeSubmissionStatus.PENDING });
+    executor.runBatch.mockResolvedValue([ok('1\n'), ok('4\n')]);
+    await service.gradeOne(item);
+    expect(executor.runBatch).toHaveBeenCalledWith(expect.objectContaining({ language: CodeLanguage.C }));
+  });
+
+  it("runs code in a language the question doesn't allow as the question's default language", async () => {
+    const { service, attempts, executor } = setup([CodeLanguage.JAVA]);
+    attempts.getDraftCode.mockResolvedValue('print(1)'); // a plain draft is Python
+    executor.runBatch.mockResolvedValue([ok(''), ok('')]);
+    await service.gradeOne(item);
+    expect(executor.runBatch).toHaveBeenCalledWith(expect.objectContaining({ language: CodeLanguage.JAVA }));
   });
 
   it('records 0 without running anything when there is no code', async () => {

@@ -14,6 +14,7 @@ import {
   Min,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { CODE_DRAFT_MAX_LENGTH } from '@secure-exam/types';
 
 export class SaveAnswerDto {
   /** Selected option id(s) for objective (single/multiple choice) questions. */
@@ -25,7 +26,8 @@ export class SaveAnswerDto {
   /** Free-text response for descriptive questions. */
   @IsOptional()
   @IsString()
-  @MaxLength(10000)
+  // Person B (#16): a code draft is the code plus a one-line language header (encodeCodeDraft).
+  @MaxLength(CODE_DRAFT_MAX_LENGTH)
   textResponse?: string;
 
   /**
@@ -55,7 +57,7 @@ export class SubmitAttemptDto {
   clientSubmittedAt?: string;
 }
 
-/** Admin-only submissions list filter (GET /submissions). */
+/** Staff-only submissions list filter (GET /submissions). */
 export class ListSubmissionsQueryDto {
   @IsOptional()
   @IsUUID('4')
@@ -81,7 +83,7 @@ export class ListSubmissionsQueryDto {
 }
 
 /**
- * Admin manual score override (PATCH /submissions/:attemptId/result).
+ * Staff manual score override (PATCH /submissions/:attemptId/result).
  *
  * Decimal scores are valid (partial-credit marking schemes are common),
  * capped at 2 decimal places. The `score <= result.maxScore` check
@@ -98,7 +100,7 @@ export class OverrideResultScoreDto {
   note?: string;
 }
 
-/** Admin publish toggle (POST /submissions/:attemptId/result/publish). */
+/** Staff publish toggle (POST /submissions/:attemptId/result/publish). */
 export class PublishResultDto {
   @IsOptional()
   @IsBoolean()

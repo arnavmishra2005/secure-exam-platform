@@ -19,3 +19,6 @@ export * from './results.api';      // A
 export * from './extension.api';    // C
 export * from './dashboard.api';    // C
 export * from './client-security.api'; // C
+
+// Phase 5
+export * from './access.api';       // A — instructors, TAs, permissions

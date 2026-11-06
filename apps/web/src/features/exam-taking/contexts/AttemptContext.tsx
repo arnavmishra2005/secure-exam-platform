@@ -7,7 +7,7 @@
  *  1. The attemptId lives in sessionStorage so a reload resumes the attempt
  *     but another tab doesn't pick it up.
  *  2. `expiresAt` is always the server's. While the attempt runs, heartbeats
- *     (useServerClock) refresh it — so an admin's time extension shows up
+ *     (useServerClock) refresh it — so an instructor's time extension shows up
  *     within one heartbeat — and give the server-time offset the timer uses.
  */
 
@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useServerClock } from '../hooks/useServerClock';
 import { startSync } from '../persistence';
 
-export type AttemptExam = Pick<StudentExamView, 'examId' | 'title' | 'description' | 'durationMinutes'>;
+export type AttemptExam = Pick<StudentExamView, 'examId' | 'title' | 'description' | 'durationMinutes' | 'extendedMinutes' | 'gradeUnsubmittedCode'>;
 
 export interface AttemptContextValue {
   attempt: Attempt | null;
@@ -109,6 +109,8 @@ export function AttemptProvider({ children }: { children: ReactNode }) {
           title: examQuery.data.title,
           description: examQuery.data.description,
           durationMinutes: examQuery.data.durationMinutes,
+          gradeUnsubmittedCode: examQuery.data.gradeUnsubmittedCode,
+          extendedMinutes: clock?.extendedMinutes ?? examQuery.data.extendedMinutes,
         }
       : null;
     return {

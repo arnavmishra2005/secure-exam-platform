@@ -10,6 +10,7 @@
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import {
+  NO_TOPIC,
   QuestionDifficulty,
   QuestionStatus,
   QuestionType,
@@ -22,7 +23,7 @@ import { errorMessage, useExamContentApi } from '../api/ExamContentApi';
 import { CodingProblemEditor, EMPTY_PROBLEM } from '../coding/authoring/CodingProblemEditor';
 import { Alert, Button, Field, Input, Select, Spinner, Textarea } from '../ui';
 import { useBankMutations, useBankQuestion, useTopics } from './hooks';
-import { DIFFICULTY_LABEL, STATUS_LABEL, TYPE_LABEL, type CourseOption } from './labels';
+import { DIFFICULTY_LABEL, STATUS_LABEL, TYPE_LABEL, UNCATEGORISED, type CourseOption } from './labels';
 import { OptionEditor, defaultOptionsFor, optionsError } from './OptionEditor';
 import { TagInput } from './TagInput';
 
@@ -33,6 +34,7 @@ interface FormState {
   negativeMarks: string;
   explanation: string;
   courseId: string;
+  /** A topic id, NO_TOPIC for "Uncategorised", or '' while nothing is chosen (not allowed). */
   topicId: string;
   difficulty: QuestionDifficulty | '';
   status: QuestionStatus;
@@ -64,7 +66,7 @@ function fromDetail(q: BankQuestionDetail): FormState {
     negativeMarks: q.negativeMarks == null ? '' : String(q.negativeMarks),
     explanation: q.explanation ?? '',
     courseId: q.courseId ?? '',
-    topicId: q.topicId ?? '',
+    topicId: q.topicId ?? NO_TOPIC,
     difficulty: q.difficulty ?? '',
     status: q.status,
     tags: q.tags,
@@ -79,7 +81,9 @@ function fromDetail(q: BankQuestionDetail): FormState {
           timeLimitMs: q.coding.timeLimitMs,
           memoryLimitMb: q.coding.memoryLimitMb,
           comparisonMode: q.coding.comparisonMode,
+          allowedLanguages: q.coding.allowedLanguages,
           referenceSolution: q.coding.referenceSolution ?? '',
+          referenceLanguage: q.coding.referenceLanguage,
           tests: q.coding.tests.map((t) => ({
             input: t.input,
             expectedOutput: t.expectedOutput,
@@ -99,7 +103,7 @@ export function toRequest(f: FormState): SaveBankQuestionRequest {
     negativeMarks: f.negativeMarks === '' ? null : Number(f.negativeMarks),
     explanation: f.explanation.trim() || null,
     courseId: f.courseId || null,
-    topicId: f.topicId || null,
+    topicId: f.topicId && f.topicId !== NO_TOPIC ? f.topicId : null,
     difficulty: f.difficulty || null,
     status: f.status,
     tags: f.tags,
@@ -114,6 +118,7 @@ export function toRequest(f: FormState): SaveBankQuestionRequest {
 export function formError(f: FormState): string | null {
   if (!f.text.trim()) return 'Question text is required.';
   if (!Number.isFinite(f.marks) || f.marks < 0) return 'Marks must be 0 or more.';
+  if (!f.topicId) return `Choose a topic, or ${UNCATEGORISED}.`;
   if (f.negativeMarks !== '' && !(Number(f.negativeMarks) >= 0)) return 'Negative marks must be 0 or more.';
   if (f.type === QuestionType.CODING) {
     if (!f.coding.statementMd.trim()) return 'The coding problem needs a statement.';
@@ -316,7 +321,7 @@ export function QuestionForm({
               fixedCount={locked}
             />
           </div>
-          <Field label="Explanation (optional)" hint="Admin-only for now">
+          <Field label="Explanation (optional)" hint="Not shown to students yet">
             {(id) => (
               <Textarea
                 id={id}
@@ -350,12 +355,15 @@ export function QuestionForm({
           <Field label="Topic">
             {(id) => (
               <Select id={id} value={form.topicId} onChange={(e) => set({ topicId: e.target.value })}>
-                <option value="">No topic</option>
+                <option value="" disabled>
+                  Choose a topic…
+                </option>
                 {(topics.data ?? []).map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
                 ))}
+                <option value={NO_TOPIC}>{UNCATEGORISED}</option>
               </Select>
             )}
           </Field>

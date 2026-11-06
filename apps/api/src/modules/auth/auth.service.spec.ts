@@ -79,7 +79,7 @@ describe('AuthService', () => {
     const user = await authService.validateCredentials('a@example.com', 'correct-password', null);
     expect(user.id).toBe('user-1');
   });
-  describe('administrators in the exam app', () => {
+  describe('instructors and TAs in the exam app', () => {
     const userOf = async (role: string) => ({
       id: 'user-1',
       email: 'a@example.com',
@@ -89,8 +89,8 @@ describe('AuthService', () => {
       passwordHash: await bcrypt.hash('password123', 4),
     });
 
-    it('refuses an admin who signs in from the desktop client, before issuing tokens', async () => {
-      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('admin'));
+    it.each(['instructor', 'ta'])('refuses a %s who signs in from the desktop client, before issuing tokens', async (role) => {
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf(role));
 
       await expect(authService.login('a@example.com', 'password123', null, 'DESKTOP')).rejects.toBeInstanceOf(
         ForbiddenException,
@@ -99,18 +99,18 @@ describe('AuthService', () => {
     });
 
     it('matches the client type case-insensitively', async () => {
-      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('admin'));
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('instructor'));
 
       await expect(authService.login('a@example.com', 'password123', null, 'desktop')).rejects.toBeInstanceOf(
         ForbiddenException,
       );
     });
 
-    it('lets an admin sign in from a browser', async () => {
-      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('admin'));
+    it('lets an instructor sign in from a browser', async () => {
+      (userService.findByEmailWithPassword as jest.Mock).mockResolvedValue(await userOf('instructor'));
 
       await expect(authService.login('a@example.com', 'password123', null)).resolves.toMatchObject({
-        user: { role: 'admin' },
+        user: { role: 'instructor' },
       });
     });
 

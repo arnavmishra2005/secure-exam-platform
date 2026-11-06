@@ -5,7 +5,7 @@ import ExamCreatePage from './ExamCreatePage';
 import ExamDetailPage from './ExamDetailPage';
 import ExamsListPage from './ExamsListPage';
 
-export const adminExamRoutes: RouteObject[] = [
+export const examManagementRoutes: RouteObject[] = [
   { path: 'exams', element: <ExamsListPage /> },
   { path: 'exams/new', element: <ExamCreatePage /> },
   { path: 'exams/:examId', element: <ExamDetailPage /> },

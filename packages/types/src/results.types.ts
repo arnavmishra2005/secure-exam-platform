@@ -66,6 +66,8 @@ export interface ExamResultsOverview {
   title: string;
   maxScore: number;
   passPercentage: number;
+  /** When false, passRate is null and nobody passes or fails. */
+  passMarkEnabled: boolean;
   registeredCount: number;
   startedCount: number;
   submittedCount: number;
@@ -77,7 +79,7 @@ export interface ExamResultsOverview {
   min: number | null;
   max: number | null;
   standardDeviation: number | null;
-  /** 0-100, or null when there are no finalized attempts. */
+  /** 0-100, or null when there are no finalized attempts or the exam has no pass mark. */
   passRate: number | null;
   passedCount: number;
   /** Percentage-score distribution in 10-point buckets. */
@@ -119,6 +121,7 @@ export interface ExamStudentResults {
   examId: string;
   maxScore: number;
   passPercentage: number;
+  passMarkEnabled: boolean;
   items: StudentResultRow[];
 }
 

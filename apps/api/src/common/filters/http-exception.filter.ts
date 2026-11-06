@@ -47,6 +47,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
       timestamp: new Date().toISOString(),
       message,
+      ...(exceptionResponse && typeof exceptionResponse === 'object' && 'code' in exceptionResponse
+        ? { code: (exceptionResponse as { code: string }).code } : {}),
+      ...(exceptionResponse && typeof exceptionResponse === 'object' && 'captcha' in exceptionResponse
+        ? { captcha: (exceptionResponse as { captcha: unknown }).captcha } : {}),
     });
   }
 }

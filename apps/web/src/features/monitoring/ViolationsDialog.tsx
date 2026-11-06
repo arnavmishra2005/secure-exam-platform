@@ -18,6 +18,7 @@ import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const LABELS: Record<DesktopViolationType, string> = {
+  DEVICE_CHANGED: 'Device changed (approved)',
   FOCUS_LOST: 'Left the exam window',
   FOCUS_REGAINED: 'Came back to the exam window',
   DISPLAY_CHANGED: 'Display connected or removed',

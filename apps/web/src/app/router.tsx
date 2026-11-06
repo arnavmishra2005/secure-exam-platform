@@ -1,24 +1,30 @@
 // [SHARED] The route tree. Feature routes come from app/registry/routes.tsx.
 
-import { Role } from '@secure-exam/types';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { Role, STAFF_ROLES } from '@secure-exam/types';
+import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import { homePathFor, useAuth } from '@/auth/AuthContext';
 import { RequireRole } from '@/auth/RequireRole';
 import { FullPageSpinner } from '@/components/ui/spinner';
 import LoginPage from '@/features/auth/LoginPage';
 import NotFoundPage from '@/features/auth/NotFoundPage';
-import { AdminLayout } from '@/layouts/AdminLayout';
+import { StaffLayout } from '@/layouts/StaffLayout';
 import { ExamLayout } from '@/layouts/ExamLayout';
 import { StudentLayout } from '@/layouts/StudentLayout';
 import { AttemptProvider } from '@/features/exam-taking/contexts/AttemptContext';
 import LaunchPage from '@/features/exam-taking/pages/LaunchPage';
 import { DesktopLockRoot } from './DesktopLockRoot';
-import { adminRoutes, examRoutes, studentRoutes } from './registry/routes';
+import { examRoutes, staffRoutes, studentRoutes } from './registry/routes';
 
 function RootRedirect() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <FullPageSpinner label="Restoring your session" />;
   return <Navigate to={user ? homePathFor(user.role) : '/login'} replace />;
+}
+
+/** Old /admin/... links (bookmarks, notifications) still work. */
+function LegacyAdminRedirect() {
+  const { pathname, search } = useLocation();
+  return <Navigate to={pathname.replace(/^\/admin/, '/instructor') + search} replace />;
 }
 
 export const router = createBrowserRouter([
@@ -38,18 +44,19 @@ export const router = createBrowserRouter([
       },
       { path: '/login', element: <LoginPage /> },
       {
-        path: '/admin',
-        element: <RequireRole role={Role.ADMIN} />,
+        path: '/instructor',
+        element: <RequireRole roles={STAFF_ROLES} />,
         children: [
           {
-            element: <AdminLayout />,
-            children: [{ index: true, element: <Navigate to="exams" replace /> }, ...adminRoutes],
+            element: <StaffLayout />,
+            children: [{ index: true, element: <Navigate to="exams" replace /> }, ...staffRoutes],
           },
         ],
       },
+      { path: '/admin/*', element: <LegacyAdminRedirect /> },
       {
         path: '/student',
-        element: <RequireRole role={Role.STUDENT} />,
+        element: <RequireRole roles={[Role.STUDENT]} />,
         children: [
           {
             element: <StudentLayout />,

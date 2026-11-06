@@ -39,6 +39,14 @@ export class QuestionEntity {
   @Index()
   courseId: string | null;
 
+  /**
+   * Person A: users.id of the instructor whose question bank this is. Their
+   * TAs with question-bank permission see it too; other instructors don't.
+   */
+  @Column({ name: 'owner_id', type: 'uuid', nullable: true })
+  @Index()
+  ownerId: string | null;
+
   @Column({ name: 'topic_id', type: 'uuid', nullable: true })
   @Index()
   topicId: string | null;

@@ -13,6 +13,8 @@ import { ConfigModule } from './common/config/config.module';
 import { HealthController } from './common/health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { AccessModule } from './common/access/access.module';
+import { PermissionGuard } from './common/access/permission.guard';
 import { AuditLoggingInterceptor } from './common/interceptors/audit-logging.interceptor';
 import { AuditEventEntity } from './modules/audit/entities/audit-event.entity';
 import { AuditModule } from './modules/audit/audit.module';
@@ -71,6 +73,7 @@ import { ClientSecurityModule } from './modules/client-security/client-security.
     }),
 
     AuditModule,    // @Global — exports AuditService for all modules
+    AccessModule,   // @Global — exports AccessService (instructors, TAs, permissions)
     AuthModule,
     UserModule,
 
@@ -103,6 +106,8 @@ import { ClientSecurityModule } from './modules/client-security/client-security.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // Every controller enforces @Roles() where present.
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Staff routes: the course permission (@RequirePermission and friends).
+    { provide: APP_GUARD, useClass: PermissionGuard },
     // Auto-fires AuditService.logEvent() for handlers tagged @AuditLog(type).
     { provide: APP_INTERCEPTOR, useClass: AuditLoggingInterceptor },
   ],

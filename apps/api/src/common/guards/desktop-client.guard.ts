@@ -1,5 +1,5 @@
 // Exams are taken in the exam app only. The browser keeps the dashboard, the
-// results and the admin portal, but cannot start an attempt, fetch its
+// results and the staff portal, but cannot start an attempt, fetch its
 // questions, save answers or submit. The exam app tags every API request with
 // X-Client-Type: DESKTOP (see apps/exam-client/src/main/main.ts).
 //
@@ -9,6 +9,7 @@
 // REQUIRE_DESKTOP_CLIENT=false switches the rule off for development.
 
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { labNetworkAllows } from './lab-network';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -16,9 +17,12 @@ export class DesktopClientGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<{ ip?: string; header(name: string): string | undefined }>();
+    if (!labNetworkAllows(request.ip, this.config.get<string>('EXAM_ALLOWED_CIDRS'))) {
+      throw new ForbiddenException('This exam can only be accessed from an approved lab network.');
+    }
     const required = this.config.get<boolean | string>('REQUIRE_DESKTOP_CLIENT');
     if (required === false || required === 'false') return true;
-    const request = context.switchToHttp().getRequest<{ header(name: string): string | undefined }>();
     if (request.header('x-client-type')?.toUpperCase() === 'DESKTOP') return true;
     throw new ForbiddenException('This exam can only be taken in the Secure Exam app. Open it from your dashboard.');
   }

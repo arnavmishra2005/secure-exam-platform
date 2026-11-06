@@ -13,3 +13,7 @@ export function getMyDashboard(): Promise<StudentDashboard> {
 export function getMyExam(examId: string): Promise<StudentExamView> {
   return apiClient.get<StudentExamView>(`/me/exams/${examId}`).then((res) => res.data);
 }
+
+export function getMySubmission(examId: string): Promise<import('@secure-exam/types').StudentSubmissionReview> {
+  return apiClient.get(`/me/exams/${examId}/submission`).then(res => res.data);
+}

@@ -21,7 +21,7 @@ export interface ExamExtension {
   studentId: string | null;
   minutes: number;
   reason: string | null;
-  /** users.id of the admin who granted it. */
+  /** users.id of the instructor or TA who granted it. */
   createdBy: string;
   /** Running attempts whose expiry was pushed when this was granted. */
   affectedAttempts: number;
@@ -45,5 +45,6 @@ export interface HeartbeatResponse {
   /** Current server-authoritative expiry, including any extensions. */
   expiresAt: string;
   remainingSeconds: number;
+  extendedMinutes?: number;
   status: AttemptStatus;
 }

@@ -40,8 +40,8 @@ export interface Option {
   text: string;
   /**
    * NEVER return this field to a student-facing/attempt API.
-   * Safe for the admin question bank only. See question.controller.ts
-   * for the two serialization shapes (admin vs. exam-taking).
+   * Safe for the staff question bank only. See question.controller.ts
+   * for the two serialization shapes (staff vs. exam-taking).
    */
   isCorrect: boolean;
   order: number;

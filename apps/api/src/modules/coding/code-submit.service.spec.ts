@@ -1,6 +1,7 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AttemptStatus,
   CodeLanguage,
   CodeSubmissionStatus,
   ExecutionOutcome,
@@ -48,9 +49,13 @@ function setup(env: Record<string, unknown> = {}) {
     ]),
   };
   const submissionRepo = {
+    find: jest.fn().mockResolvedValue([]),
     create: jest.fn((x) => x),
     save: jest.fn(async (x) => ({ ...x, id: 'sub-1', createdAt: new Date('2026-10-18T10:42:00Z') })),
   };
+  const lockedAttempt = { id: ATTEMPT_ID, examId: 'exam-1', studentId: 'student-1', status: AttemptStatus.IN_PROGRESS, expiresAt: new Date(Date.now() + 60000), activeSessionId: null };
+  const lockedRepo = { findOne: jest.fn().mockResolvedValue(lockedAttempt) };
+  Object.assign(submissionRepo, { manager: { transaction: async (work: (manager: unknown) => unknown) => work({ getRepository: (entity: { name: string }) => entity.name === 'AttemptEntity' ? lockedRepo : submissionRepo }) } });
   const auditService = { logEvent: jest.fn().mockResolvedValue(undefined) };
   const service = new CodeSubmitService(
     attempts as never,
@@ -61,7 +66,7 @@ function setup(env: Record<string, unknown> = {}) {
     auditService as never,
     new ConfigService(env),
   );
-  return { service, attempts, executor, submissionRepo, resolver };
+  return { service, attempts, executor, submissionRepo, resolver, lockedAttempt };
 }
 
 const dto = { questionId: QUESTION_ID, language: CodeLanguage.PYTHON, code: 'print(1)' };
@@ -144,4 +149,26 @@ describe('CodeSubmitService.submit — LIVE grading (CODING_GRADING_MODE=LIVE)',
     await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toBeInstanceOf(ConflictException);
     expect(executor.runBatch).not.toHaveBeenCalled();
   });
+});
+
+it('rechecks device ownership under the same lock as the insert', async () => {
+  const { service, lockedAttempt, submissionRepo } = setup();
+  Object.assign(lockedAttempt, { activeSessionId: 'new-device' });
+  await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toMatchObject({ response: { code: 'SESSION_MOVED' } });
+  expect(submissionRepo.save).not.toHaveBeenCalled();
+});
+it('does not insert code when finalization wins the row lock', async () => {
+  const { service, lockedAttempt, submissionRepo } = setup();
+  lockedAttempt.status = AttemptStatus.SUBMITTED;
+  await expect(service.submit(ATTEMPT_ID, dto, student)).rejects.toThrow('ended');
+  expect(submissionRepo.save).not.toHaveBeenCalled();
+});
+
+it('returns the latest explicit submission for each question without grade or test data', async () => {
+  const { service, submissionRepo } = setup();
+  const latest = { id: 'new', questionId: QUESTION_ID, code: 'print(2)', language: CodeLanguage.PYTHON, createdAt: new Date(), status: CodeSubmissionStatus.PENDING, resultsJson: [{ input: 'SECRET' }], score: 9 };
+  submissionRepo.find.mockResolvedValue([latest, { ...latest, id: 'old', code: 'print(1)' }]);
+  const result = await service.latest(ATTEMPT_ID, student);
+  expect(result).toEqual([{ questionId: QUESTION_ID, submissionId: 'new', code: 'print(2)', language: CodeLanguage.PYTHON, savedAt: latest.createdAt.toISOString(), status: CodeSubmissionStatus.PENDING }]);
+  expect(submissionRepo.find).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ studentId: student.sub, attemptId: ATTEMPT_ID, fromDraft: false }) }));
 });

@@ -8,6 +8,7 @@ node_modules/
 
 # Build output
 **/dist/
+**/dist-electron/
 **/build/
 **/.next/
 **/out/
@@ -25,6 +26,13 @@ pnpm-debug.log*
 .nyc_output/
 .eslintcache
 .cache/
+__pycache__/
+*.py[cod]
+
+# Local assistant configuration and credentials
+/.codex/
+/.agents/
+/.aws/
 
 # IDE and OS files
 .vscode/
@@ -34,3 +42,9 @@ Thumbs.db
 
 # Local Docker overrides
 docker-compose.override.yml
+
+# Local intranet deployment material
+infra/intranet/tls/
+infra/intranet/backups/
+infra/intranet/attempts.json
+infra/intranet/compose.override.yml

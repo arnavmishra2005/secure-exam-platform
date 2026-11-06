@@ -3,9 +3,16 @@
  * Plain type/interface declarations only — no logic.
  */
 
-/** Languages a coding question can allow. Only Python for now. */
+/**
+ * Languages a coding question can allow (phase 5 #16). Display names, editor
+ * modes and starter code are in code-languages.ts; how each one compiles and
+ * runs is in the API's execution/language.registry.ts.
+ */
 export enum CodeLanguage {
   PYTHON = 'python',
+  C = 'c',
+  CPP = 'cpp',
+  JAVA = 'java',
 }
 
 /** How a program's stdout is compared with a test case's expected output. */
@@ -22,7 +29,9 @@ export enum OutputComparisonMode {
 export enum ExecutionStatus {
   /** Exited with code 0. */
   OK = 'OK',
-  /** Non-zero exit (uncaught exception, syntax error, sys.exit(1)...). */
+  /** The code didn't compile (Python: a syntax or indentation error), so no test ran. */
+  COMPILATION_ERROR = 'COMPILATION_ERROR',
+  /** Non-zero exit (uncaught exception, crash, sys.exit(1)...). */
   RUNTIME_ERROR = 'RUNTIME_ERROR',
   TIME_LIMIT_EXCEEDED = 'TIME_LIMIT_EXCEEDED',
   MEMORY_LIMIT_EXCEEDED = 'MEMORY_LIMIT_EXCEEDED',
@@ -35,11 +44,53 @@ export enum ExecutionStatus {
 export enum TestCaseVerdict {
   PASSED = 'PASSED',
   WRONG_ANSWER = 'WRONG_ANSWER',
+  COMPILATION_ERROR = 'COMPILATION_ERROR',
   RUNTIME_ERROR = 'RUNTIME_ERROR',
   TIME_LIMIT_EXCEEDED = 'TIME_LIMIT_EXCEEDED',
   MEMORY_LIMIT_EXCEEDED = 'MEMORY_LIMIT_EXCEEDED',
   OUTPUT_LIMIT_EXCEEDED = 'OUTPUT_LIMIT_EXCEEDED',
   INTERNAL_ERROR = 'INTERNAL_ERROR',
+}
+
+/** What kind of error a failed run hit. Filled in by `classifyOutcome` (error-classifier.ts). */
+export enum CodeErrorKind {
+  SYNTAX = 'SYNTAX',
+  INDENTATION = 'INDENTATION',
+  NAME = 'NAME',
+  TYPE = 'TYPE',
+  VALUE = 'VALUE',
+  INDEX = 'INDEX',
+  KEY = 'KEY',
+  ATTRIBUTE = 'ATTRIBUTE',
+  ZERO_DIVISION = 'ZERO_DIVISION',
+  /** Python EOFError: the program read more input than it was given. */
+  EOF = 'EOF',
+  IMPORT = 'IMPORT',
+  /** Python RecursionError. */
+  STACK_OVERFLOW = 'STACK_OVERFLOW',
+  /** Killed by signal 11. */
+  SEGFAULT = 'SEGFAULT',
+  /** Killed by signal 6 (abort, failed C assert). */
+  ABORT = 'ABORT',
+  /**
+   * Killed by signal 31 (SIGSYS): the sandbox's system-call filter stopped a
+   * call no solution needs (ptrace, mount, ...). Flagged on Monitoring.
+   */
+  BLOCKED_SYSCALL = 'BLOCKED_SYSCALL',
+  /** A C, C++ or Java compiler error (Python syntax errors stay SYNTAX / INDENTATION). */
+  COMPILE = 'COMPILE',
+  /** Java NullPointerException. */
+  NULL_POINTER = 'NULL_POINTER',
+  OTHER = 'OTHER',
+}
+
+/** A classified compile or runtime error. */
+export interface CodeErrorInfo {
+  kind: CodeErrorKind;
+  /** Line in the student's file, when the error names one. */
+  line: number | null;
+  /** One-line message, e.g. "NameError: name 'x' is not defined". */
+  message: string;
 }
 
 export enum CodeRunKind {
@@ -60,7 +111,7 @@ export enum CodeSubmissionStatus {
   SUPERSEDED = 'SUPERSEDED',
 }
 
-// ---- Authoring (admin only) ----
+// ---- Authoring (staff only) ----
 
 /** Starter code per language, e.g. `{ python: "def solve():\n    ..." }`. */
 export type StarterCode = Partial<Record<CodeLanguage, string>>;
@@ -77,6 +128,8 @@ export interface CodingProblem {
   comparisonMode: OutputComparisonMode;
   /** Author's solution, used to validate test cases. Never sent to students. */
   referenceSolution?: string | null;
+  /** Language of `referenceSolution` (default Python). */
+  referenceLanguage?: CodeLanguage;
 }
 
 export interface CodingTestCase {
@@ -128,6 +181,8 @@ export interface ExecutionOutcome {
   stderr: string;
   exitCode: number | null;
   timeMs: number;
+  /** Set when status is COMPILATION_ERROR or RUNTIME_ERROR. */
+  error?: CodeErrorInfo;
 }
 
 export interface SampleTestResult {
@@ -138,6 +193,7 @@ export interface SampleTestResult {
   stdout: string;
   stderr: string;
   timeMs: number;
+  error?: CodeErrorInfo;
 }
 
 export interface CodeRunResponse {
@@ -162,6 +218,8 @@ export interface HiddenTestResult {
   /** Lets the UI label tests "Sample 1" vs "Test 3". */
   isSample: boolean;
   verdict: TestCaseVerdict;
+  /** Kind only: no message or line, which could reveal something about the hidden input. */
+  errorKind?: CodeErrorKind;
   timeMs: number;
 }
 
@@ -183,7 +241,7 @@ export interface CodeSubmitResponse {
   };
 }
 
-/** Full per-test detail stored on a submission; admin-only. */
+/** Stored grading details. Student access is mapped separately after result publication. */
 export interface StoredTestResult {
   testCaseId: string;
   verdict: TestCaseVerdict;
@@ -191,12 +249,19 @@ export interface StoredTestResult {
   stdout: string;
   stderr: string;
   timeMs: number;
+  errorKind?: CodeErrorKind;
+  errorLine?: number | null;
 }
 
 // ---- Limits shared by the API and the editor UI ----
 
-/** Max characters of code per run/submit. Matches the answer draft limit (SaveAnswerDto.textResponse). */
+/** Max characters of code per run/submit. */
 export const CODE_MAX_LENGTH = 10_000;
+/**
+ * Max characters of a saved code draft (SaveAnswerDto.textResponse): the code
+ * plus the language header added by encodeCodeDraft (code-languages.ts).
+ */
+export const CODE_DRAFT_MAX_LENGTH = CODE_MAX_LENGTH + 32;
 /** Max characters of custom stdin per run. */
 export const CODE_STDIN_MAX_LENGTH = 65_536;
 

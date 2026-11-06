@@ -1,299 +1,144 @@
-/**
- * Owner: Person B
- * Zustand store for local exam navigation and in-memory question interaction.
- * Kept strictly decoupled from the persistence/sync layer (Person C).
- */
 import { create } from 'zustand';
-import { QuestionState } from '@secure-exam/types';
-import { AnswerDraft, PaletteSummary } from '../ui.types';
+import { CodeLanguage, QuestionState, QuestionType, encodeCodeDraft, type LatestCodeSubmission } from '@secure-exam/types';
+import type { AnswerDraft, PaletteSummary } from '../ui.types';
 
+type SavedAnswer = { selectedOptionIds: string[] | null; textResponse: string | null; state: QuestionState; markedForReview?: boolean; savedAt?: number };
 interface ExamState {
-  // Navigation
+  restoredDraftTimes: Record<string, number>;
+  localPending: Record<string, boolean>;
+  markLocallySaved: (id: string, draft: AnswerDraft, review: boolean) => void;
   currentIndex: number;
   questionIds: string[];
-
-  // Answer drafts & states keyed by questionId
+  questionTypes: Record<string, QuestionType>;
   answers: Record<string, AnswerDraft>;
   questionStates: Record<string, QuestionState>;
   markedForReview: Record<string, boolean>;
-
-  // Actions
-  initExam: (questionIds: string[]) => void;
-  /** Bumped each time saved answers are loaded; lets editors re-seed from the restored draft. */
+  codeSubmittedAt: Record<string, string>;
+  codeDirtySinceSubmit: Record<string, boolean>;
+  codeSubmissions: Record<string, LatestCodeSubmission>;
   restoreVersion: number;
-  loadSavedAnswers: (saved: Record<string, { selectedOptionIds: string[] | null; textResponse: string | null; state: QuestionState }>) => void;
+  initExam: (ids: string[], types?: Record<string, QuestionType>) => void;
+  loadSavedAnswers: (answers: Record<string, SavedAnswer>) => void;
+  loadCodeSubmissions: (rows: LatestCodeSubmission[]) => void;
+  recordCodeSubmission: (row: LatestCodeSubmission) => void;
   setCurrentIndex: (index: number) => void;
   goToNext: () => void;
   goToPrevious: () => void;
-
-  // Interacting with the current question
-  selectOption: (questionId: string, optionId: string, isMulti: boolean) => void;
-  setTextResponse: (questionId: string, text: string) => void;
-  clearCurrentAnswer: (questionId: string) => void;
-  toggleMarkForReview: (questionId: string) => void;
-  markAsSaved: (questionId: string) => void;
-
-  // Selectors
+  selectOption: (id: string, option: string, multi: boolean) => void;
+  setTextResponse: (id: string, text: string) => void;
+  clearCurrentAnswer: (id: string) => void;
+  toggleMarkForReview: (id: string) => void;
+  markAsSaved: (id: string) => void;
   getSummary: () => PaletteSummary;
 }
-
+const empty = (): AnswerDraft => ({ selectedOptionIds: [], textResponse: '' });
+/** A submission as the draft text it matches (a coding draft carries its language, see encodeCodeDraft). */
+const submittedDraft = (row: LatestCodeSubmission) => encodeCodeDraft(row.language ?? CodeLanguage.PYTHON, row.code);
+function derive(state: ExamState) {
+  const questionStates = { ...state.questionStates };
+  const codeDirtySinceSubmit: Record<string, boolean> = {};
+  for (const id of state.questionIds) {
+    const draft = state.answers[id] ?? empty();
+    const coding = state.questionTypes[id] === QuestionType.CODING;
+    const submitted = state.codeSubmissions[id];
+    codeDirtySinceSubmit[id] = !!submitted && submittedDraft(submitted) !== draft.textResponse;
+    const answered = coding ? !!submitted && !codeDirtySinceSubmit[id] : draft.selectedOptionIds.length > 0 || draft.textResponse.trim().length > 0;
+    const visited = questionStates[id] !== QuestionState.NOT_VISITED || draft.textResponse.length > 0;
+    questionStates[id] = state.markedForReview[id]
+      ? answered ? QuestionState.ANSWERED_AND_MARKED_REVIEW : QuestionState.MARKED_REVIEW
+      : answered ? QuestionState.ANSWERED : visited ? QuestionState.VISITED : QuestionState.NOT_VISITED;
+  }
+  return { questionStates, codeDirtySinceSubmit };
+}
 export const useExamStore = create<ExamState>((set, get) => ({
-  currentIndex: 0,
-  questionIds: [],
-  answers: {},
-  questionStates: {},
-  markedForReview: {},
-  restoreVersion: 0,
-
-  initExam: (questionIds: string[]) => {
-    const states: Record<string, QuestionState> = {};
-    const answers: Record<string, AnswerDraft> = {};
-    const reviews: Record<string, boolean> = {};
-
-    questionIds.forEach((id, idx) => {
-      // First question starts as VISITED, others as NOT_VISITED
-      states[id] = idx === 0 ? QuestionState.VISITED : QuestionState.NOT_VISITED;
-      answers[id] = { selectedOptionIds: [], textResponse: '' };
-      reviews[id] = false;
-    });
-
-    set({
-      questionIds,
-      currentIndex: 0,
-      questionStates: states,
-      answers,
-      markedForReview: reviews,
-    });
-  },
-
-  loadSavedAnswers: (saved) => {
-    set((state) => {
-      const nextStates = { ...state.questionStates };
-      const nextAnswers = { ...state.answers };
-      const nextReviews = { ...state.markedForReview };
-
-      Object.entries(saved).forEach(([qId, item]) => {
-        if (item.selectedOptionIds || item.textResponse) {
-          nextAnswers[qId] = {
-            selectedOptionIds: item.selectedOptionIds || [],
-            textResponse: item.textResponse || '',
-          };
-        }
-        if (item.state) {
-          nextStates[qId] = item.state;
-          if (
-            item.state === QuestionState.MARKED_REVIEW ||
-            item.state === QuestionState.ANSWERED_AND_MARKED_REVIEW
-          ) {
-            nextReviews[qId] = true;
-          }
-        }
-      });
-
-      return {
-        questionStates: nextStates,
-        answers: nextAnswers,
-        markedForReview: nextReviews,
-        restoreVersion: state.restoreVersion + 1,
-      };
-    });
-  },
-
-  setCurrentIndex: (index: number) => {
-    const { questionIds, currentIndex, questionStates, answers, markedForReview } = get();
-    if (index < 0 || index >= questionIds.length) return;
-
-    const currentQId = questionIds[currentIndex];
-    const targetQId = questionIds[index];
-
-    const nextStates = { ...questionStates };
-
-    // Update previous question state if it was unvisited/visited without answers
-    if (currentQId && nextStates[currentQId] === QuestionState.NOT_VISITED) {
-      nextStates[currentQId] = QuestionState.VISITED;
+  restoredDraftTimes: {},
+  localPending: {},
+  markLocallySaved: (id, draft, review) => set(state => {
+    const current = state.answers[id];
+    if (current?.textResponse !== draft.textResponse || JSON.stringify(current?.selectedOptionIds) !== JSON.stringify(draft.selectedOptionIds) || !!state.markedForReview[id] !== review) return {};
+    return { localPending: { ...state.localPending, [id]: false } };
+  }),
+  currentIndex: 0, questionIds: [], questionTypes: {}, answers: {}, questionStates: {}, markedForReview: {},
+  codeSubmittedAt: {}, codeDirtySinceSubmit: {}, codeSubmissions: {}, restoreVersion: 0,
+  initExam: (ids, types = {}) => set({ restoredDraftTimes: {}, localPending: {}, currentIndex: 0, questionIds: ids, questionTypes: types,
+    answers: Object.fromEntries(ids.map(id => [id, empty()])),
+    questionStates: Object.fromEntries(ids.map((id,i) => [id, i === 0 ? QuestionState.VISITED : QuestionState.NOT_VISITED])),
+    markedForReview: {}, codeSubmittedAt: {}, codeDirtySinceSubmit: {}, codeSubmissions: {},
+  }),
+  loadSavedAnswers: saved => set(state => {
+    const restoredDraftTimes = { ...state.restoredDraftTimes };
+    const answers = { ...state.answers }, markedForReview = { ...state.markedForReview }, questionStates = { ...state.questionStates };
+    for (const [id, item] of Object.entries(saved)) {
+      if (!state.questionIds.includes(id)) continue;
+      restoredDraftTimes[id] = item.savedAt ?? Infinity;
+      answers[id] = { selectedOptionIds: item.selectedOptionIds ?? [], textResponse: item.textResponse ?? '' };
+      markedForReview[id] = item.markedForReview ?? [QuestionState.MARKED_REVIEW, QuestionState.ANSWERED_AND_MARKED_REVIEW].includes(item.state);
+      questionStates[id] = item.state;
     }
-
-    // Target question becomes at least VISITED if it was NOT_VISITED
-    if (targetQId && nextStates[targetQId] === QuestionState.NOT_VISITED) {
-      nextStates[targetQId] = QuestionState.VISITED;
+    const next = { ...state, answers, markedForReview, questionStates };
+    return { restoredDraftTimes, answers, markedForReview, ...derive(next), restoreVersion: state.restoreVersion + 1 };
+  }),
+  loadCodeSubmissions: rows => set(state => {
+    const codeSubmissions = Object.fromEntries(rows.map(row => [row.questionId, row]));
+    const answers = { ...state.answers };
+    for (const row of rows) {
+      // Submit can reach the server before the debounced draft save. Restore
+      // that confirmed code instead of an older autosave on the next device.
+      // Pending local edits have an infinite timestamp and always survive.
+      if (state.questionIds.includes(row.questionId) && !state.localPending[row.questionId] &&
+          Date.parse(row.savedAt) > (state.restoredDraftTimes[row.questionId] ?? 0)) {
+        answers[row.questionId] = { ...(answers[row.questionId] ?? empty()), textResponse: submittedDraft(row) };
+      }
     }
-
-    set({
-      currentIndex: index,
-      questionStates: nextStates,
+    return { answers, codeSubmissions, codeSubmittedAt: Object.fromEntries(rows.map(row => [row.questionId, row.savedAt])), ...derive({ ...state, answers, codeSubmissions }) };
+  }),
+  recordCodeSubmission: row => set(state => {
+    const codeSubmissions = { ...state.codeSubmissions, [row.questionId]: row };
+    return { codeSubmissions, codeSubmittedAt: { ...state.codeSubmittedAt, [row.questionId]: row.savedAt }, ...derive({ ...state, codeSubmissions }) };
+  }),
+  setCurrentIndex: index => set(state => {
+    if (index < 0 || index >= state.questionIds.length) return {};
+    const id = state.questionIds[index];
+    return { currentIndex: index, questionStates: { ...state.questionStates, [id]: state.questionStates[id] === QuestionState.NOT_VISITED ? QuestionState.VISITED : state.questionStates[id] } };
+  }),
+  goToNext: () => get().setCurrentIndex(get().currentIndex + 1),
+  goToPrevious: () => get().setCurrentIndex(get().currentIndex - 1),
+  selectOption: (id, option, multi) => set(state => {
+    const draft = state.answers[id] ?? empty();
+    const selectedOptionIds = multi ? draft.selectedOptionIds.includes(option) ? draft.selectedOptionIds.filter(o => o !== option) : [...draft.selectedOptionIds, option] : [option];
+    const answers = { ...state.answers, [id]: { ...draft, selectedOptionIds } };
+    return { answers, localPending: { ...state.localPending, [id]: true }, ...derive({ ...state, answers }) };
+  }),
+  setTextResponse: (id, text) => set(state => {
+    if (state.answers[id]?.textResponse === text) return {};
+    const answers = { ...state.answers, [id]: { ...(state.answers[id] ?? empty()), textResponse: text } };
+    return { answers, localPending: { ...state.localPending, [id]: true }, ...derive({ ...state, answers }) };
+  }),
+  clearCurrentAnswer: id => set(state => {
+    const answers = { ...state.answers, [id]: empty() };
+    return { answers, localPending: { ...state.localPending, [id]: true }, ...derive({ ...state, answers }) };
+  }),
+  toggleMarkForReview: id => set(state => {
+    const markedForReview = { ...state.markedForReview, [id]: !state.markedForReview[id] };
+    return { markedForReview, localPending: { ...state.localPending, [id]: true }, ...derive({ ...state, markedForReview }) };
+  }),
+  markAsSaved: () => set(state => derive(state)),
+  getSummary: () => {
+    const state = get();
+    const summary: PaletteSummary = { total: state.questionIds.length, answered: 0, visited: 0, notVisited: 0,
+      markedReview: 0, answeredAndMarkedReview: 0, mcqTotal: 0, mcqAnswered: 0, codingSubmitted: 0, codingUnsubmitted: [] };
+    state.questionIds.forEach((id, index) => {
+      const status = state.questionStates[id];
+      const answered = status === QuestionState.ANSWERED || status === QuestionState.ANSWERED_AND_MARKED_REVIEW;
+      if (state.questionTypes[id] === QuestionType.CODING) {
+        if (answered) summary.codingSubmitted!++; else summary.codingUnsubmitted!.push(index);
+      } else { summary.mcqTotal!++; if (answered) summary.mcqAnswered!++; }
+      if (status === QuestionState.ANSWERED) summary.answered++;
+      else if (status === QuestionState.ANSWERED_AND_MARKED_REVIEW) summary.answeredAndMarkedReview++;
+      else if (status === QuestionState.MARKED_REVIEW) summary.markedReview++;
+      else if (status === QuestionState.VISITED) summary.visited++;
+      else summary.notVisited++;
     });
-  },
-
-  goToNext: () => {
-    const { currentIndex, questionIds, setCurrentIndex } = get();
-    if (currentIndex < questionIds.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    }
-  },
-
-  goToPrevious: () => {
-    const { currentIndex, setCurrentIndex } = get();
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
-  },
-
-  selectOption: (questionId: string, optionId: string, isMulti: boolean) => {
-    set((state) => {
-      const currentDraft = state.answers[questionId] || { selectedOptionIds: [], textResponse: '' };
-      let newSelected: string[];
-
-      if (isMulti) {
-        if (currentDraft.selectedOptionIds.includes(optionId)) {
-          newSelected = currentDraft.selectedOptionIds.filter((id) => id !== optionId);
-        } else {
-          newSelected = [...currentDraft.selectedOptionIds, optionId];
-        }
-      } else {
-        // Single choice toggle / select
-        newSelected = [optionId];
-      }
-
-      return {
-        answers: {
-          ...state.answers,
-          [questionId]: {
-            ...currentDraft,
-            selectedOptionIds: newSelected,
-          },
-        },
-      };
-    });
-  },
-
-  setTextResponse: (questionId: string, text: string) => {
-    set((state) => {
-      const currentDraft = state.answers[questionId] || { selectedOptionIds: [], textResponse: '' };
-      return {
-        answers: {
-          ...state.answers,
-          [questionId]: {
-            ...currentDraft,
-            textResponse: text,
-          },
-        },
-      };
-    });
-  },
-
-  clearCurrentAnswer: (questionId: string) => {
-    set((state) => {
-      const isMarked = state.markedForReview[questionId];
-      return {
-        answers: {
-          ...state.answers,
-          [questionId]: { selectedOptionIds: [], textResponse: '' },
-        },
-        questionStates: {
-          ...state.questionStates,
-          [questionId]: isMarked ? QuestionState.MARKED_REVIEW : QuestionState.VISITED,
-        },
-      };
-    });
-  },
-
-  toggleMarkForReview: (questionId: string) => {
-    set((state) => {
-      const currentlyMarked = !!state.markedForReview[questionId];
-      const nextMarked = !currentlyMarked;
-
-      const draft = state.answers[questionId];
-      const hasContent = (draft?.selectedOptionIds && draft.selectedOptionIds.length > 0) ||
-                         (draft?.textResponse && draft.textResponse.trim().length > 0);
-
-      let nextState: QuestionState;
-      if (nextMarked) {
-        nextState = hasContent
-          ? QuestionState.ANSWERED_AND_MARKED_REVIEW
-          : QuestionState.MARKED_REVIEW;
-      } else {
-        nextState = hasContent
-          ? QuestionState.ANSWERED
-          : QuestionState.VISITED;
-      }
-
-      return {
-        markedForReview: {
-          ...state.markedForReview,
-          [questionId]: nextMarked,
-        },
-        questionStates: {
-          ...state.questionStates,
-          [questionId]: nextState,
-        },
-      };
-    });
-  },
-
-  markAsSaved: (questionId: string) => {
-    set((state) => {
-      const isMarked = !!state.markedForReview[questionId];
-      const draft = state.answers[questionId];
-      const hasContent = (draft?.selectedOptionIds && draft.selectedOptionIds.length > 0) ||
-                         (draft?.textResponse && draft.textResponse.trim().length > 0);
-
-      let nextState: QuestionState;
-      if (isMarked && hasContent) {
-        nextState = QuestionState.ANSWERED_AND_MARKED_REVIEW;
-      } else if (isMarked) {
-        nextState = QuestionState.MARKED_REVIEW;
-      } else if (hasContent) {
-        nextState = QuestionState.ANSWERED;
-      } else {
-        nextState = QuestionState.VISITED;
-      }
-
-      return {
-        questionStates: {
-          ...state.questionStates,
-          [questionId]: nextState,
-        },
-      };
-    });
-  },
-
-  getSummary: (): PaletteSummary => {
-    const { questionIds, questionStates } = get();
-    let answered = 0;
-    let visited = 0;
-    let notVisited = 0;
-    let markedReview = 0;
-    let answeredAndMarkedReview = 0;
-
-    questionIds.forEach((id) => {
-      const st = questionStates[id] || QuestionState.NOT_VISITED;
-      switch (st) {
-        case QuestionState.ANSWERED:
-          answered++;
-          break;
-        case QuestionState.VISITED:
-          visited++;
-          break;
-        case QuestionState.MARKED_REVIEW:
-          markedReview++;
-          break;
-        case QuestionState.ANSWERED_AND_MARKED_REVIEW:
-          answeredAndMarkedReview++;
-          break;
-        case QuestionState.NOT_VISITED:
-        default:
-          notVisited++;
-          break;
-      }
-    });
-
-    return {
-      total: questionIds.length,
-      answered,
-      visited,
-      notVisited,
-      markedReview,
-      answeredAndMarkedReview,
-    };
+    return summary;
   },
 }));

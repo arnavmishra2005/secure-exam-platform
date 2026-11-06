@@ -12,6 +12,9 @@ interface OptionListProps {
   selectedOptionIds: string[];
   onSelectOption: (optionId: string, isMulti: boolean) => void;
   disabled?: boolean;
+  /** Only supplied by the published-result review. */
+  correctOptionIds?: string[];
+  review?: boolean;
 }
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -23,6 +26,8 @@ export const OptionList: React.FC<OptionListProps> = ({
   selectedOptionIds = [],
   onSelectOption,
   disabled = false,
+  correctOptionIds,
+  review = false,
 }) => {
   const isMulti = type === QuestionType.MCQ_MULTI;
 
@@ -34,22 +39,24 @@ export const OptionList: React.FC<OptionListProps> = ({
       {sortedOptions.map((option, idx) => {
         const isSelected = selectedOptionIds.includes(option.id);
         const label = OPTION_LABELS[idx] || String(idx + 1);
+        const correct = correctOptionIds?.includes(option.id) === true;
+        const wrong = correctOptionIds !== undefined && isSelected && !correct;
+        const feedback = correct ? (isSelected ? 'Correct · Your answer' : 'Correct answer · Not selected')
+          : wrong ? 'Incorrect · Your answer' : review && isSelected ? 'Your answer' : null;
+        const tone = correct ? 'border-emerald-600 bg-emerald-500/10'
+          : wrong ? 'border-red-600 bg-red-500/10'
+          : isSelected && review ? 'border-slate-500 bg-slate-500/10'
+          : isSelected ? 'bg-primary/10 border-primary'
+          : review ? 'bg-card border-border' : 'bg-card border-border hover:border-primary hover:bg-muted';
+        const selectedTone = correct ? 'bg-emerald-700 border-emerald-700 text-white'
+          : wrong ? 'bg-red-700 border-red-700 text-white'
+          : review ? 'bg-slate-600 border-slate-600 text-white' : 'border-verdigris bg-verdigris text-white';
 
         return (
           <label
             key={option.id}
             htmlFor={`opt-${option.id}`}
-            onClick={(e) => {
-              if (disabled) return;
-              // Prevent native label double trigger
-              e.preventDefault();
-              onSelectOption(option.id, isMulti);
-            }}
-            className={`flex items-start gap-3.5 p-4 rounded border cursor-pointer transition-all select-none ${
-              isSelected
-                ? 'bg-verdigris-light/40 border-verdigris text-ink shadow-sm'
-                : 'bg-white border-hairline/80 hover:border-hairline hover:bg-paper-raised text-ink'
-            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+            className={`flex items-start gap-3.5 p-4 rounded border transition-all select-none focus-within:ring-2 focus-within:ring-ring ${tone} ${disabled ? 'cursor-default' : 'cursor-pointer'}`}
           >
             {/* Visual indicator (Radio or Checkbox) */}
             <div className="flex items-center justify-center pt-0.5">
@@ -58,7 +65,7 @@ export const OptionList: React.FC<OptionListProps> = ({
                 name={`question-${questionId}`}
                 type={isMulti ? 'checkbox' : 'radio'}
                 checked={isSelected}
-                onChange={() => {}}
+                onChange={() => onSelectOption(option.id, isMulti)}
                 disabled={disabled}
                 className="sr-only"
                 aria-checked={isSelected}
@@ -68,8 +75,8 @@ export const OptionList: React.FC<OptionListProps> = ({
                   isMulti ? 'rounded-[3px]' : 'rounded-full'
                 } border ${
                   isSelected
-                    ? 'border-verdigris bg-verdigris text-white'
-                    : 'border-ash-muted/50 bg-white hover:border-ash-muted'
+                    ? selectedTone
+                    : 'border-border bg-background hover:border-primary'
                 }`}
               >
                 {isSelected && (
@@ -88,7 +95,7 @@ export const OptionList: React.FC<OptionListProps> = ({
             <span
               className={`inline-flex items-center justify-center w-6 h-6 text-xs font-semibold rounded shrink-0 transition-colors ${
                 isSelected
-                  ? 'bg-verdigris text-white'
+                  ? selectedTone
                   : 'bg-paper text-ash-muted border border-hairline'
               }`}
             >
@@ -96,8 +103,9 @@ export const OptionList: React.FC<OptionListProps> = ({
             </span>
 
             {/* Option text content */}
-            <span className="flex-1 text-sm leading-relaxed text-ink pt-0.5 font-sans">
+            <span className="flex-1 text-sm leading-relaxed text-foreground pt-0.5 font-sans">
               {option.text}
+              {feedback && <span className={`mt-1 block text-xs font-semibold ${correct ? 'text-emerald-700 dark:text-emerald-400' : wrong ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}`}>{feedback}</span>}
             </span>
           </label>
         );

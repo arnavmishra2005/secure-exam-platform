@@ -1,10 +1,11 @@
 /**
- * Owner: Person B (question bank). Admin-only request bodies and queries.
+ * Owner: Person B (question bank). Staff-only request bodies and queries.
  */
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -19,10 +20,13 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import {
   CODE_MAX_LENGTH,
+  CodeLanguage,
+  NO_TOPIC,
   OutputComparisonMode,
   QuestionDifficulty,
   QuestionStatus,
@@ -56,7 +60,9 @@ export class BankQuestionQueryDto {
   @IsUUID('4')
   courseId?: string;
 
+  /** A topic id, or 'none' (NO_TOPIC) for questions without a topic. */
   @IsOptional()
+  @ValidateIf((o: BankQuestionQueryDto) => o.topicId !== NO_TOPIC)
   @IsUUID('4')
   topicId?: string;
 
@@ -141,10 +147,22 @@ export class CodingProblemInputDto {
   @IsEnum(OutputComparisonMode)
   comparisonMode?: OutputComparisonMode;
 
+  /** Languages students may use (#16); default Python only. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Allow at least one language' })
+  @ArrayUnique()
+  @IsEnum(CodeLanguage, { each: true })
+  allowedLanguages?: CodeLanguage[];
+
   @IsOptional()
   @IsString()
   @MaxLength(CODE_MAX_LENGTH)
   referenceSolution?: string | null;
+
+  @IsOptional()
+  @IsEnum(CodeLanguage)
+  referenceLanguage?: CodeLanguage;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'A coding question needs at least one test case' })
@@ -264,10 +282,38 @@ export class ValidateCodingDto {
   @Type(() => CodingProblemInputDto)
   coding!: CodingProblemInputDto;
 
+  /** Language of `code` (default: the problem's referenceLanguage, else Python). */
+  @IsOptional()
+  @IsEnum(CodeLanguage)
+  language?: CodeLanguage;
+
   @IsOptional()
   @IsString()
   @MaxLength(CODE_MAX_LENGTH)
   code?: string;
+}
+
+/**
+ * PATCH /exams/:examId/question-analytics/attempts/:attemptId/questions/:questionId/score (#13).
+ * Exactly one of `score` / `adjustment` (checked in the service).
+ */
+export class AdjustQuestionScoreDto {
+  /** The new mark for the question (0…its marks). */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  score?: number;
+
+  /** Marks to add (+) or take away (−) from the automatic score; 0 removes an adjustment. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  adjustment?: number;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsNotEmpty({ message: 'Give a reason for the change' })
+  @MaxLength(500)
+  reason!: string;
 }
 
 /** POST /exams/:examId/question-analytics/recalculate */

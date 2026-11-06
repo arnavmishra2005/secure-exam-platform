@@ -1,28 +1,38 @@
 /**
- * Owner: Person B. Question-wise results for an exam (admin only):
+ * Owner: Person B. Question-wise results for an exam (staff only):
  * the students × questions matrix with per-question stats, and a
  * per-attempt drill-down including submitted code and test results.
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, Not, Repository } from 'typeorm';
 import {
   CodeLanguage,
+  decodeCodeDraft,
   CodeSubmissionStatus,
   QuestionType,
   type AttemptDrilldown,
   type DrilldownCode,
   type DrilldownQuestion,
   type QuestionAnalyticsMatrix,
+  type ScoreAdjustmentInfo,
 } from '@secure-exam/types';
 import { CodeRunEntity } from '../coding/entities/code-run.entity';
 import { CodeSubmissionEntity } from '../coding/entities/code-submission.entity';
 import { CodingTestCaseEntity } from '../coding/entities/coding-test-case.entity';
 import { ExamEntity } from '../exam/entities/exam.entity';
 import { QuestionService } from '../question/question.service';
+import { QuestionScoreEntity } from '../results/entities/question-score.entity';
 import { ExamAttemptDataAdapter } from './exam-attempt-data.adapter';
-import { buildMatrix, type MatrixAttempt, type MatrixQuestion, type SubmittedKeys } from './matrix';
+import {
+  adjustmentKey,
+  buildMatrix,
+  type AdjustmentMap,
+  type MatrixAttempt,
+  type MatrixQuestion,
+  type SubmittedKeys,
+} from './matrix';
 
 /** A matrix question that also carries option texts (for the drill-down). */
 type ExamQuestion = Omit<MatrixQuestion, 'options'> & {
@@ -36,6 +46,8 @@ export class QuestionAnalyticsService {
     @InjectRepository(CodeSubmissionEntity) private readonly submissionRepo: Repository<CodeSubmissionEntity>,
     @InjectRepository(CodeRunEntity) private readonly runRepo: Repository<CodeRunEntity>,
     @InjectRepository(CodingTestCaseEntity) private readonly testCaseRepo: Repository<CodingTestCaseEntity>,
+    @InjectRepository(QuestionScoreEntity) private readonly scoreRepo: Repository<QuestionScoreEntity>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly questionService: QuestionService,
     private readonly attemptData: ExamAttemptDataAdapter,
   ) {}
@@ -44,7 +56,8 @@ export class QuestionAnalyticsService {
     const exam = await this.exam(examId);
     const questions = await this.questions(examId);
     const attempts = await this.attemptData.attempts(examId);
-    const result = await this.compute(questions, attempts);
+    const adjusted = await this.adjustmentRows(attempts.map((a) => a.attemptId));
+    const result = await this.compute(questions, attempts, undefined, toMap(adjusted));
     return { exam: { id: exam.id, title: exam.title, status: exam.status }, ...result };
   }
 
@@ -55,8 +68,11 @@ export class QuestionAnalyticsService {
 
     const questions = await this.questions(examId);
     const answers = await this.attemptData.answers([attemptId]);
-    const { students, cells } = await this.compute(questions, [attempt], answers);
+    const adjusted = await this.adjustmentRows([attemptId]);
+    const { students, cells } = await this.compute(questions, [attempt], answers, toMap(adjusted));
     const answerBy = new Map(answers.map((a) => [a.questionId, a]));
+    const names = await this.userNames(adjusted.map((r) => r.adjustedBy).filter((id): id is string => !!id));
+    const adjustmentBy = new Map(adjusted.map((r) => [r.questionId, r]));
 
     const codingIds = questions.filter((q) => q.type === QuestionType.CODING).map((q) => q.id);
     const [subs, tests, runCounts] = await Promise.all([
@@ -85,6 +101,7 @@ export class QuestionAnalyticsService {
         score: cell.score,
         markedForReview: cell.markedForReview,
         answeredAt: answer?.answeredAt?.toISOString() ?? null,
+        adjustment: adjustmentInfo(cell.autoScore, adjustmentBy.get(q.id), names),
       };
       if (q.type === QuestionType.CODING) {
         const qSubs = subs.filter((s) => s.questionId === q.id);
@@ -99,6 +116,42 @@ export class QuestionAnalyticsService {
     });
 
     return { exam: { id: exam.id, title: exam.title }, student: students[0], questions: out };
+  }
+
+  // ---- Manual adjustments (#13) ----
+
+  /** One question's cell for one attempt, without any manual adjustment. */
+  async autoCell(examId: string, attemptId: string, questionId: string) {
+    await this.exam(examId);
+    const [attempt] = await this.attemptData.attempts(examId, attemptId);
+    if (!attempt) throw new NotFoundException('Attempt not found for this exam');
+    const question = (await this.questions(examId)).find((q) => q.id === questionId);
+    if (!question) throw new NotFoundException('Question not found in this exam');
+    const { cells } = await this.compute([question], [attempt]);
+    return { attempt, question, cell: cells[0] };
+  }
+
+  /** The attempt's total with adjustments, as question-wise results show it. */
+  async attemptTotal(examId: string, attemptId: string): Promise<number> {
+    const [attempt] = await this.attemptData.attempts(examId, attemptId);
+    if (!attempt) return 0;
+    const adjusted = await this.adjustmentRows([attemptId]);
+    const { students } = await this.compute(await this.questions(examId), [attempt], undefined, toMap(adjusted));
+    return students[0]?.score ?? 0;
+  }
+
+  async userNames(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows: Array<{ id: string; fullName: string }> = await this.dataSource.query(
+      `SELECT id, "fullName" FROM users WHERE id = ANY($1::uuid[])`,
+      [[...new Set(ids)]],
+    );
+    return new Map(rows.map((r) => [r.id, r.fullName]));
+  }
+
+  private async adjustmentRows(attemptIds: string[]): Promise<QuestionScoreEntity[]> {
+    if (attemptIds.length === 0) return [];
+    return this.scoreRepo.find({ where: { attemptId: In(attemptIds), manualAdjustment: Not(0) } });
   }
 
   // ---------------------------------------------------------------------
@@ -126,6 +179,7 @@ export class QuestionAnalyticsService {
     questions: MatrixQuestion[],
     attempts: MatrixAttempt[],
     preloadedAnswers?: Awaited<ReturnType<ExamAttemptDataAdapter['answers']>>,
+    adjustments?: AdjustmentMap,
   ) {
     const ids = attempts.map((a) => a.attemptId);
     const answers = preloadedAnswers ?? (await this.attemptData.answers(ids));
@@ -157,7 +211,7 @@ export class QuestionAnalyticsService {
         )
         .map((s) => `${s.attemptId}|${s.questionId}`),
     );
-    return buildMatrix(questions, attempts, answers, finals, submitted);
+    return buildMatrix(questions, attempts, answers, finals, submitted, adjustments);
   }
 
   private async runCounts(attemptId: string): Promise<Map<string, number>> {
@@ -183,11 +237,12 @@ export class QuestionAnalyticsService {
     if (!final) {
       // Not graded yet: show the latest Submit, else the autosaved draft.
       const lastSubmit = [...subs].reverse().find((s) => !s.isFinal && !s.fromDraft && s.code.trim());
-      const code = lastSubmit?.code ?? draft;
+      const saved = decodeCodeDraft(draft);
+      const code = lastSubmit?.code ?? saved.code;
       if (!code?.trim()) return null;
       return {
         code,
-        language: lastSubmit?.language ?? CodeLanguage.PYTHON,
+        language: lastSubmit?.language ?? saved.language ?? CodeLanguage.PYTHON,
         source: lastSubmit ? 'SUBMITTED' : 'DRAFT',
         status: lastSubmit?.status ?? null,
         passed: 0,
@@ -237,4 +292,25 @@ export class QuestionAnalyticsService {
       runCount,
     };
   }
+}
+
+function toMap(rows: QuestionScoreEntity[]): AdjustmentMap {
+  return new Map(rows.map((r) => [adjustmentKey(r.attemptId, r.questionId), r.manualAdjustment]));
+}
+
+function adjustmentInfo(
+  autoScore: number | undefined,
+  row: QuestionScoreEntity | undefined,
+  names: Map<string, string>,
+): ScoreAdjustmentInfo | null {
+  // No autoScore on the cell: not graded yet, so the adjustment doesn't apply right now.
+  if (!row || autoScore === undefined) return null;
+  return {
+    autoScore,
+    adjustment: row.manualAdjustment,
+    reason: row.adjustReason ?? '',
+    adjustedBy: row.adjustedBy ?? '',
+    adjustedByName: (row.adjustedBy && names.get(row.adjustedBy)) || null,
+    adjustedAt: row.adjustedAt?.toISOString() ?? '',
+  };
 }

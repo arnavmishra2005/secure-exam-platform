@@ -25,3 +25,6 @@ export interface CourseOption {
   id: string;
   name: string;
 }
+
+/** Name shown for questions without a topic. */
+export const UNCATEGORISED = 'Uncategorised';

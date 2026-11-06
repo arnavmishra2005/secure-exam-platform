@@ -8,6 +8,7 @@ import type { DesktopViolationType, JwtPayload, SecurityEventView } from '@secur
 import type { ReportSecurityEventsDto } from '@secure-exam/validation';
 import { In, Not, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
+import { assertAttemptSession } from '../attempt/attempt-session';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
 import { SecurityEventEntity } from './entities/security-event.entity';
 
@@ -31,6 +32,7 @@ export class ClientSecurityService {
     const attempt = await this.attempts.findOne({ where: { id: attemptId } });
     // 404 and not 403 for someone else's attempt: do not reveal that it exists.
     if (!attempt || attempt.studentId !== user.sub) throw new NotFoundException('Attempt not found');
+    assertAttemptSession(attempt, user);
 
     const existing = await this.events.count({ where: { attemptId } });
     const room = Math.max(MAX_EVENTS_PER_ATTEMPT - existing, 0);
@@ -67,7 +69,7 @@ export class ClientSecurityService {
     return { recorded: accepted.length };
   }
 
-  /** Every event of an attempt, oldest first. Admin only (enforced on the controller). */
+  /** Every event of an attempt, oldest first. Staff only (enforced on the controller). */
   async list(attemptId: string): Promise<SecurityEventView[]> {
     const attempt = await this.attempts.findOne({ where: { id: attemptId } });
     if (!attempt) throw new NotFoundException('Attempt not found');

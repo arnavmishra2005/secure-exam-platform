@@ -31,6 +31,10 @@ export enum AuditEventType {
   // Coding events (Person B)
   CODE_SUBMITTED = 'CODE_SUBMITTED',
   CODE_GRADED = 'CODE_GRADED',
+  /** The code runner saw something no solution needs (blocked system call, fork bomb...). Flag only. */
+  SUSPICIOUS_CODE = 'SUSPICIOUS_CODE',
+  /** A question's marks were adjusted by hand (#13); metadata has the old and new values and the reason. */
+  SCORE_ADJUSTED = 'SCORE_ADJUSTED',
   RESULTS_RECALCULATED = 'RESULTS_RECALCULATED',
 
   // Student assignment events (Person B)
@@ -61,6 +65,12 @@ export enum AuditEventType {
   EXAM_COURSE_UNASSIGNED = 'EXAM_COURSE_UNASSIGNED',
   EXAM_PUBLISHED = 'EXAM_PUBLISHED',
   RESULTS_RECOMPUTED = 'RESULTS_RECOMPUTED',
+
+  // Instructors, TAs and scheduling (Person A — Phase 5)
+  COURSE_STAFF_ADDED = 'COURSE_STAFF_ADDED',
+  COURSE_STAFF_UPDATED = 'COURSE_STAFF_UPDATED',
+  COURSE_STAFF_REMOVED = 'COURSE_STAFF_REMOVED',
+  EXAM_RESCHEDULED = 'EXAM_RESCHEDULED',
 
   // Time extension (Person C — Phase 4)
   EXAM_TIME_EXTENDED = 'EXAM_TIME_EXTENDED',

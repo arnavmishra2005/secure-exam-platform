@@ -13,7 +13,7 @@ import { QuestionBankImportService } from './question-bank-import.service';
 import { QuestionBankController } from './question-bank.controller';
 import { QuestionBankService } from './question-bank.service';
 
-/** Owner: Person B. Admin question bank (incl. coding problem authoring). */
+/** Owner: Person B. Staff question bank (incl. coding problem authoring). */
 @Module({
   imports: [
     TypeOrmModule.forFeature([

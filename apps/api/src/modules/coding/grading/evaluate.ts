@@ -40,6 +40,7 @@ export function evaluate(
     stdout: outcomes[i].stdout.slice(0, STORED_OUTPUT_CHARS),
     stderr: outcomes[i].stderr.slice(0, STORED_OUTPUT_CHARS),
     timeMs: outcomes[i].timeMs,
+    ...(outcomes[i].error && { errorKind: outcomes[i].error!.kind, errorLine: outcomes[i].error!.line }),
   }));
   return {
     sandboxOk: outcomes.every((o) => o.status !== ExecutionStatus.INTERNAL_ERROR),

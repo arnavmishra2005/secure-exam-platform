@@ -82,9 +82,9 @@ describe('PublishService', () => {
   });
 
   it('schedules a draft, stamps publishedAt, notifies every registered student and emits exam.published', async () => {
-    const result = await service.publish('exam-1', { passPercentage: 50, message: 'Bring a pencil.' }, 'admin-1');
+    const result = await service.publish('exam-1', { passPercentage: 50, message: 'Bring a pencil.' }, 'instructor-1');
 
-    expect(examService.schedule).toHaveBeenCalledWith('exam-1', 'admin-1');
+    expect(examService.schedule).toHaveBeenCalledWith('exam-1', 'instructor-1');
     expect(result.exam.publishedAt).not.toBeNull();
     expect(result.exam.passPercentage).toBe(50);
     expect(result.notifiedCount).toBe(3);
@@ -97,23 +97,23 @@ describe('PublishService', () => {
 
   it('does not re-schedule an exam that is already scheduled', async () => {
     exam.status = ExamStatus.SCHEDULED;
-    await service.publish('exam-1', {}, 'admin-1');
+    await service.publish('exam-1', {}, 'instructor-1');
     expect(examService.schedule).not.toHaveBeenCalled();
   });
 
   it('rejects publishing twice with 409', async () => {
     exam.publishedAt = new Date();
-    await expect(service.publish('exam-1', {}, 'admin-1')).rejects.toThrow(ConflictException);
+    await expect(service.publish('exam-1', {}, 'instructor-1')).rejects.toThrow(ConflictException);
   });
 
   it('rejects an exam with no questions with 400 and notifies nobody', async () => {
     examQuestionRepo.count.mockResolvedValue(0);
-    await expect(service.publish('exam-1', {}, 'admin-1')).rejects.toThrow(BadRequestException);
+    await expect(service.publish('exam-1', {}, 'instructor-1')).rejects.toThrow(BadRequestException);
     expect(notificationService.notifyMany).not.toHaveBeenCalled();
   });
 
   it('still returns success when an exam.published listener fails', async () => {
     events.emitAsync.mockRejectedValue(new Error('snapshot failed'));
-    await expect(service.publish('exam-1', {}, 'admin-1')).resolves.toMatchObject({ notifiedCount: 3 });
+    await expect(service.publish('exam-1', {}, 'instructor-1')).resolves.toMatchObject({ notifiedCount: 3 });
   });
 });

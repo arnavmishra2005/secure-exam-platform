@@ -1,5 +1,5 @@
 /**
- * Owner: Person B. Admin question bank.
+ * Owner: Person B. Staff question bank.
  */
 import { apiClient } from './client';
 import type {
@@ -12,6 +12,7 @@ import type {
   SaveBankQuestionRequest,
   TagCount,
   Topic,
+  TopicSummary,
   UpdateBankQuestionMetaRequest,
   ValidateCodingRequest,
   ValidateCodingResponse,
@@ -73,6 +74,13 @@ export function importBankQuestions(file: File): Promise<BulkImportResult> {
 export function listTopics(courseId?: string): Promise<Topic[]> {
   return apiClient
     .get<Topic[]>('/question-bank/topics', { params: courseId ? { courseId } : {} })
+    .then((res) => res.data);
+}
+
+/** Topics with question counts per type, for the bank's topic tree. */
+export function getTopicSummary(courseId?: string): Promise<TopicSummary> {
+  return apiClient
+    .get<TopicSummary>('/question-bank/topics/summary', { params: courseId ? { courseId } : {} })
     .then((res) => res.data);
 }
 

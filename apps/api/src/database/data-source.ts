@@ -2,6 +2,8 @@
 // The running app itself configures TypeORM via app.module.ts, not this file.
 
 import 'dotenv/config';
+import { ExamRefreshSessionEntity } from '../modules/auth/exam-refresh-session.entity';
+import { CaptchaEntity } from '../modules/client-security/entities/captcha.entity';
 import { DataSource } from 'typeorm';
 import { AuditEventEntity } from '../modules/audit/entities/audit-event.entity';
 import { StudentEntity } from '../modules/user/entities/student.entity';
@@ -34,6 +36,8 @@ import { QuestionScoreEntity } from '../modules/results/entities/question-score.
 import { ExamExtensionEntity } from '../modules/extension/entities/exam-extension.entity';
 import { SecurityEventEntity } from '../modules/client-security/entities/security-event.entity';
 import { ExamLaunchTokenEntity } from '../modules/client-security/entities/exam-launch-token.entity';
+// Phase 5 — Person A
+import { CourseStaffEntity } from '../modules/course/entities/course-staff.entity';
 
 export default new DataSource({
   type: 'postgres',
@@ -71,7 +75,11 @@ export default new DataSource({
     ExamExtensionEntity,
     SecurityEventEntity,
     ExamLaunchTokenEntity,
+    // Phase 5 — Person A
+    CourseStaffEntity,
+    ExamRefreshSessionEntity,
+    CaptchaEntity,
   ],
-  migrations: ['src/database/migrations/*.ts'],
+  migrations: [__dirname + '/migrations/*' + (__filename.endsWith('.ts') ? '.ts' : '.js')],
   synchronize: false,
 });

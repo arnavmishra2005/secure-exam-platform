@@ -7,7 +7,12 @@
 import ReactMarkdown from 'react-markdown';
 import type { PublicCodingProblem } from '@secure-exam/types';
 
-export function Markdown({ source }: { source: string }) {
+export function Markdown({ source, omitTitle }: { source: string; omitTitle?: string }) {
+  // Authors often include the same title as an initial Markdown heading.
+  // Keep one visible heading without changing the stored problem statement.
+  const heading = source.match(/^\s*#{1,2}\s+([^\n]+)\n?/);
+  const content = heading && omitTitle && heading[1].trim().toLowerCase() === omitTitle.trim().toLowerCase()
+    ? source.slice(heading[0].length) : source;
   return (
     <div className="space-y-3 text-sm leading-relaxed text-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-900 [&_pre]:p-3 [&_pre]:text-slate-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:list-disc">
       <ReactMarkdown
@@ -16,7 +21,7 @@ export function Markdown({ source }: { source: string }) {
           img: ({ alt }) => <span className="italic text-muted-foreground">[{alt || 'image'}]</span>,
         }}
       >
-        {source}
+        {content}
       </ReactMarkdown>
     </div>
   );
@@ -51,7 +56,7 @@ export function ProblemStatement({
           Python 3.12, standard library only
         </p>
       </header>
-      <Markdown source={problem.statementMd} />
+      <Markdown source={problem.statementMd} omitTitle={title} />
       {problem.samples.length > 0 && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Examples</h3>

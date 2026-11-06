@@ -1,5 +1,7 @@
 # Kiosk integration: decisions, fixes and follow-ups
 
+> **Phase 5:** there is no admin role any more. Where this log says "admin", read "instructor or TA" (with the course permission for the action); both are refused in the exam app.
+
 Written for Person A, B and C. It records how Person C's `kiosk-work` branch was merged into the
 A+B integration (`integrate/a-b`), why, and what is still open. Branch: `integrate/final`.
 
@@ -49,7 +51,7 @@ screens (`/launch`, `/student/exam`, `/student/exam/submitted`); everything else
 (`DesktopLockRoot`) and in the main process (`allowedPaths.ts`, `navigationGuard.ts`).
 
 - `apps/exam-client/src` is C's Electron shell. It loads `apps/web`.
-- `apps/exam-client/renderer` and `apps/admin-web` are legacy and untouched by the kiosk work.
+- `apps/exam-client/renderer` is legacy and untouched by the kiosk work. (`apps/admin-web` was removed in Phase 5.)
 - The Electron shell is a thin wrapper. All exam UI stays in `apps/web`, so there is one UI to maintain.
 - `window.desktop` is the only bridge between the web app and the shell. Its type is `DesktopBridge`
   in `packages/types/src/client-security.types.ts`. In a plain browser it does not exist, and every
@@ -228,10 +230,16 @@ migrations only (no drift for the new table, revert and re-apply work).
 - Packaging: confirm `extraResources` copies `apps/web/dist` to `resources/web`, and test an installer on a clean lab image. Add code signing later.
 
 ### Runner (B / C)
-- Add the acceptance checklist in `docs/local-code-runner.md` as an automated Linux CI test (fork bomb, memory bomb, network, filesystem, environment).
-- The cap is address space (`prlimit --as`). Python can fail to start with very small budgets. A cgroup memory limit is stronger if the lab image allows it.
-- Add a small unit test suite for `runner/localRunner.ts` (the manual test used the unsandboxed dev mode).
-- Cap total CPU time per exam so repeated Run clicks cannot slow the PC.
+- Done in Phase 5 (B, #19 and #16; see `docs/merge-notes-person-b.md` §3):
+  - a cgroup per run (`systemd-run --user --scope`: 64 tasks, memory cap counting `/tmp`, one CPU);
+  - a system-call filter (`seccompFilter.ts`) and a start-up self-test (`checkSandbox`);
+  - `prlimit` required;
+  - C, C++ and Java;
+  - unit tests in `test/runnerSandbox.test.mjs`.
+- Still open:
+  - Run the acceptance checklist in `docs/local-code-runner.md` on the Ubuntu lab image. It has only been exercised in a privileged Linux container, without systemd.
+  - Make the checklist an automated Linux CI test.
+  - Cap total CPU time per exam, so repeated Run clicks can't slow the PC.
 
 ### Web app (A / B)
 - Tests for `ReadinessGate`, `ViolationBanner`, the violations dialog and `SubmittedPage`'s unlock behaviour with a fake `window.desktop`. (`flushSecurityQueue`, `OpenInExamApp` and `DesktopOnly` are covered.)
@@ -259,13 +267,13 @@ npm run web:dev                   # browser: sign in, open the exam, press "Star
 EXAM_LAUNCH_LINK="secure-exam://launch/<token>" npm run client:desktop   # opens the app on that exam
 # no bubblewrap on your machine? for development only:
 EXAM_UNSANDBOXED_RUNNER=1 npm run client:desktop
-# test an admin in the exam app (dev only): ALLOW_ADMIN_ON_DESKTOP=true in apps/api/.env
+# test an instructor or TA in the exam app (dev only): ALLOW_STAFF_ON_DESKTOP=true in apps/api/.env
 # sit an exam in a normal browser (dev only): REQUIRE_DESKTOP_CLIENT=false in apps/api/.env
 #                                             and VITE_REQUIRE_DESKTOP_EXAM=false in apps/web/.env
 npm run desktop:test              # key policy (macOS + Linux) and deep-link tests
 ```
 
-Environment variables added: `ALLOW_ADMIN_ON_DESKTOP` (default false), `REQUIRE_DESKTOP_CLIENT` (default **true**),
+Environment variables added: `ALLOW_STAFF_ON_DESKTOP` (default false; `ALLOW_ADMIN_ON_DESKTOP` before Phase 5), `REQUIRE_DESKTOP_CLIENT` (default **true**),
 `VIOLATION_FLAG_THRESHOLD` (default 5), `EXAM_LAUNCH_TTL_SECONDS` (default 120) on the API; `VITE_REQUIRE_DESKTOP_EXAM` (default true) in `apps/web`;
 `EXAM_API_URL`, `EXAM_WEB_URL`, `EXAM_LAUNCH_LINK` (development), `INVIGILATOR_PIN`, `EXAM_UNSANDBOXED_RUNNER` for Electron.
 

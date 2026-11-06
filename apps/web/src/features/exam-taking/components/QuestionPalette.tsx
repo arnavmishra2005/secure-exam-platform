@@ -37,7 +37,7 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
       case QuestionState.ANSWERED:
         return `${base} ${ring} bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700`;
       case QuestionState.VISITED:
-        return `${base} ${ring} bg-amber-500 text-white border-amber-600 hover:bg-amber-600`;
+        return `${base} ${ring} bg-amber-300 text-amber-950 border-amber-600 hover:bg-amber-600`;
       case QuestionState.MARKED_REVIEW:
         return `${base} ${ring} bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700`;
       case QuestionState.ANSWERED_AND_MARKED_REVIEW:
@@ -78,9 +78,9 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
         <div className="flex items-center justify-between py-0.5">
           <div className="flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded-sm bg-emerald-600 shrink-0 inline-block" />
-            <span className="text-ash">Answered</span>
+            <span className="text-ash">Answered / code submitted</span>
           </div>
-          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-white border border-hairline text-[11px] min-w-[24px] text-center">
+          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-card border border-hairline text-[11px] min-w-[24px] text-center">
             {summary.answered}
           </span>
         </div>
@@ -88,9 +88,9 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
         <div className="flex items-center justify-between py-0.5">
           <div className="flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded-sm bg-amber-500 shrink-0 inline-block" />
-            <span className="text-ash">Not Answered</span>
+            <span className="text-ash">In progress / not submitted</span>
           </div>
-          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-white border border-hairline text-[11px] min-w-[24px] text-center">
+          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-card border border-hairline text-[11px] min-w-[24px] text-center">
             {summary.visited}
           </span>
         </div>
@@ -100,7 +100,7 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
             <span className="w-3.5 h-3.5 rounded-sm bg-indigo-600 shrink-0 inline-block" />
             <span className="text-ash">Marked for Review</span>
           </div>
-          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-white border border-hairline text-[11px] min-w-[24px] text-center">
+          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-card border border-hairline text-[11px] min-w-[24px] text-center">
             {summary.markedReview}
           </span>
         </div>
@@ -112,7 +112,7 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
             </span>
             <span className="text-ash">Answered & Marked Review</span>
           </div>
-          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-white border border-hairline text-[11px] min-w-[24px] text-center">
+          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-card border border-hairline text-[11px] min-w-[24px] text-center">
             {summary.answeredAndMarkedReview}
           </span>
         </div>
@@ -122,7 +122,7 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
             <span className="w-3.5 h-3.5 rounded-sm bg-gray-200 border border-gray-300 shrink-0 inline-block" />
             <span className="text-ash">Not Visited</span>
           </div>
-          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-white border border-hairline text-[11px] min-w-[24px] text-center">
+          <span className="font-semibold text-ink px-1.5 py-0.5 rounded bg-card border border-hairline text-[11px] min-w-[24px] text-center">
             {summary.notVisited}
           </span>
         </div>
@@ -135,7 +135,7 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
             key={tab}
             onClick={() => setFilter(tab)}
             className={`flex-1 py-1 px-1.5 rounded text-[11px] font-semibold transition-colors capitalize ${
-              filter === tab ? 'bg-white shadow-sm text-ink' : 'text-ash-muted hover:text-ink'
+              filter === tab ? 'bg-card shadow-sm text-ink' : 'text-ash-muted hover:text-ink'
             }`}
           >
             {tab.toLowerCase()}
@@ -162,7 +162,8 @@ export const QuestionPalette: React.FC<QuestionPaletteProps> = ({
                 title={`Question ${idx + 1}: ${state.replace(/_/g, ' ')}${
                   sync === 'pending' ? ' (not synced yet)' : sync === 'failed' ? ' (not accepted by the server)' : ''
                 }`}
-                aria-label={`Go to question ${idx + 1}`}
+                aria-label={`Go to question ${idx + 1}: ${state.replace(/_/g, " ")}`}
+                aria-current={isCurrent ? "step" : undefined}
               >
                 {idx + 1}
                 {(sync === 'pending' || sync === 'failed') && (

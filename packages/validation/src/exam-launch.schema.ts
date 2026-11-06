@@ -3,11 +3,19 @@
  * Opening an exam in the exam app with a one-time launch token.
  */
 
-import { IsUUID, Matches } from 'class-validator';
+import { IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateExamLaunchDto {
   @IsUUID('4')
   examId!: string;
+
+  @IsUUID('4')
+  captchaId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(16)
+  captchaAnswer!: string;
 }
 
 /** 32 random bytes, base64url: always 43 characters. */

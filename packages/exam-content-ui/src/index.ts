@@ -8,18 +8,20 @@
  */
 export { ExamContentApiProvider, defaultExamContentApi, useExamContentApi, type ExamContentApi } from './api/ExamContentApi';
 
-// Question bank (admin)
+// Question bank (staff)
 export { QuestionBankPage } from './question-bank/QuestionBankPage';
+export { ALL_TOPICS, bankQueryFromParams, bankQueryToParams } from './question-bank/bankQuery';
 export { QuestionForm } from './question-bank/QuestionForm';
 export { PickForExamDialog } from './question-bank/PickForExamDialog';
 export { ImportDialog } from './question-bank/ImportDialog';
 export type { CourseOption } from './question-bank/labels';
 
-// Coding (admin authoring + student exam view)
+// Coding (staff authoring + student exam view)
 export { CodingProblemEditor } from './coding/authoring/CodingProblemEditor';
 export { CodingQuestionView, type CodingQuestionViewProps } from './coding/CodingQuestionView';
 export { desktopLocalRunner } from './coding/localRunner';
 export { CodeEditor } from './coding/editor/CodeEditor';
+export { Markdown } from './coding/ProblemStatement';
 
-// Results (admin): Person A's results page adds this as the "Questions" tab
+// Results (staff): Person A's results page adds this as the "Questions" tab
 export { QuestionsTab } from './results/QuestionsTab';

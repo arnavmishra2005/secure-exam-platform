@@ -3,7 +3,7 @@
  *
  * Submitted page — shown after successful submission.
  * Displays a confirmation message and optionally the result if
- * the admin has published it (via Phase 1's Result.isPublished flag).
+ * the instructor has published it (via Phase 1's Result.isPublished flag).
  *
  * This page is intentionally minimal for Phase 2/3; result display
  * can be enriched once Phase 1's result publishing flow is complete.
@@ -58,15 +58,15 @@ function BrowserSubmitted() {
           </svg>
         </div>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <h1 className="text-2xl font-bold text-foreground mb-2">
           {isPending ? 'Submission Pending' : 'Exam Submitted'}
         </h1>
-        <p className="text-gray-500 text-sm mb-1">
+        <p className="text-muted-foreground text-sm mb-1">
           {isPending
             ? 'Your submission is saved on this device and will be sent when the connection returns.'
             : 'Your answers have been submitted successfully.'}
         </p>
-        <p className="text-gray-400 text-xs mb-8">
+        <p className="text-muted-foreground text-xs mb-8">
           Submitted as <strong>{user?.fullName ?? user?.email}</strong>
         </p>
 

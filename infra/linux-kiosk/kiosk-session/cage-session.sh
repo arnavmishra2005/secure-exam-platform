@@ -10,6 +10,7 @@
 #   API_URL         — backend API base URL
 
 set -euo pipefail
+export EXAM_KIOSK_SESSION=1
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/secure-exam}"
 APPIMAGE="${APPIMAGE:-$INSTALL_DIR/SecureExam.AppImage}"
@@ -20,7 +21,8 @@ if [[ ! -x "$APPIMAGE" ]]; then
 fi
 
 # cage flags:
-#   -d           — disable VT-switching inside the cage session (session-level control)
+#   -d           — suppress client-side window decorations
+# VT switching stays disabled by omitting -s (which would enable it).
 # Chromium/Electron flags:
 #   Preserves full Chromium multi-process sandbox (no --no-sandbox).
 exec cage -d -- "$APPIMAGE" \

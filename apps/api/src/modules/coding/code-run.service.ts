@@ -67,6 +67,7 @@ export class CodeRunService {
         code: dto.code,
         inputs,
         limits: { timeLimitMs: problem.timeLimitMs, memoryLimitMb: problem.memoryLimitMb },
+        context: { source: 'RUN', userId: user.sub, attemptId: attempt.id, examId: attempt.examId, questionId: dto.questionId },
       }),
     );
 
@@ -80,6 +81,7 @@ export class CodeRunService {
         stdout: outcomes[i].stdout,
         stderr: outcomes[i].stderr,
         timeMs: outcomes[i].timeMs,
+        ...(outcomes[i].error && { error: outcomes[i].error }),
       }));
       response = { kind: dto.kind, samples: results };
     } else {

@@ -5,9 +5,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Role } from '@secure-exam/types';
+import { Permission, Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
-import { ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
+import { AccessService } from '../../common/access/access.service';
+import { RequirePermission, StaffAccess } from '../../common/access/require-permission.decorator';
+import { HeartbeatDto, ListAttemptsQueryDto, StartAttemptDto } from '@secure-exam/validation';
 import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { AttemptService } from './attempt.service';
 
@@ -16,13 +18,17 @@ import { AttemptService } from './attempt.service';
 @Controller('attempts')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AttemptController {
-  constructor(private readonly attemptService: AttemptService) {}
+  constructor(
+    private readonly attemptService: AttemptService,
+    private readonly access: AccessService,
+  ) {}
 
-  /** Admin-only: powers the /monitoring screen. */
+  /** Staff: powers the /monitoring screen, limited to exams the caller may monitor. */
   @Get()
-  @Roles(Role.ADMIN)
-  list(@Query() query: ListAttemptsQueryDto) {
-    return this.attemptService.listForMonitoring(query);
+  @RequirePermission(Permission.MONITOR)
+  async list(@Query() query: ListAttemptsQueryDto, @CurrentUser() user: JwtPayload) {
+    if (query.examId) await this.access.assertExam(user, query.examId, Permission.MONITOR);
+    return this.attemptService.listForMonitoring(query, await this.access.examIdsFor(user, Permission.MONITOR));
   }
 
   /** The caller's own attempt at an exam, for resuming it. Declared before ':id' so it isn't parsed as one. */
@@ -33,7 +39,8 @@ export class AttemptController {
   }
 
   @Get(':id')
-  @Roles(Role.STUDENT, Role.ADMIN)
+  @Roles(Role.STUDENT, Role.INSTRUCTOR, Role.TA)
+  @StaffAccess(Permission.MONITOR, { attempt: 'id' })
   getOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
     return this.attemptService.getAttemptById(id, user);
   }
@@ -46,8 +53,18 @@ export class AttemptController {
   }
 
   /**
+   * Person C: lets a student continue an in-progress attempt on another device.
+   * Staff with MONITOR on the attempt's course (another course: 404).
+   */
+  @Post(':id/device-change/approve')
+  @RequirePermission(Permission.MONITOR, { attempt: 'id' })
+  approveDeviceChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.attemptService.approveDeviceChange(id, user.sub);
+  }
+
+  /**
    * Lightweight liveness ping the exam UI can call periodically so the
-   * admin monitoring screen can tell an actively-connected attempt apart
+   * staff monitoring screen can tell an actively-connected attempt apart
    * from one that's gone quiet.
    */
   @Post(':id/heartbeat')
@@ -57,7 +74,8 @@ export class AttemptController {
     @CurrentUser() user: JwtPayload,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
+    @Body() dto: HeartbeatDto,
   ) {
-    return this.attemptService.heartbeat(id, user, { ipAddress: ip, userAgent });
+    return this.attemptService.heartbeat(id, user, { ipAddress: ip, userAgent, lastQuestionId: dto.lastQuestionId });
   }
 }

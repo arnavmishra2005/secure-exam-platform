@@ -322,7 +322,7 @@ describe('AnswerService', () => {
 
       await service.saveAnswer('attempt-1', 'q-single', { selectedOptionIds: ['opt-a'] }, student);
 
-      expect(submissionService.withLockedInProgressAttempt).toHaveBeenCalledWith('attempt-1', expect.any(Function));
+      expect(submissionService.withLockedInProgressAttempt).toHaveBeenCalledWith('attempt-1', expect.any(Function), student);
       expect(manager.getRepository).toHaveBeenCalledWith(AnswerEntity);
       expect(managerAnswerRepo.save).toHaveBeenCalled();
       // If this were ever touched, the write would sit outside the lock,

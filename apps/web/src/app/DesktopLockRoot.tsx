@@ -1,6 +1,6 @@
 // Owner: Person C (Electron, Kiosk & Security)
 // In the exam app, only the launch screen, the exam and the "submitted" screen exist.
-// Everything else (dashboard, admin, login...) sends the student back to the launch screen.
+// Everything else (dashboard, staff pages, login...) sends the student back to the launch screen.
 // Keep this list in step with apps/exam-client/src/main/allowedPaths.ts, which enforces
 // the same rule from the other side. In a browser this component does nothing.
 

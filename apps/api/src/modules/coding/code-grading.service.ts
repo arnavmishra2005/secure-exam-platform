@@ -25,10 +25,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, LessThanOrEqual, Repository } from 'typeorm';
-import { AuditEventType, CodeLanguage, CodeSubmissionStatus } from '@secure-exam/types';
+import { AuditEventType, CodeLanguage, CodeSubmissionStatus, decodeCodeDraft, defaultLanguage } from '@secure-exam/types';
 import { AuditService } from '../audit/audit.service';
 import { logAuditSafely } from '../attempt/audit-safe.util';
-import { EXECUTION_PROVIDER, ExecutionProvider } from '../execution/execution-provider.interface';
+import { EXECUTION_PROVIDER, ExecutionProvider, RunContext } from '../execution/execution-provider.interface';
 import { RunLimiterService } from '../execution/run-limiter.service';
 import { QuestionEntity } from '../question/entities/question.entity';
 import { ATTEMPT_ACCESS, IAttemptAccess, PendingCodeGrade } from './attempt-access/attempt-access.interface';
@@ -118,7 +118,7 @@ export class CodeGradingService {
       });
     }
     if (lastSubmit) {
-      const evaluation = await this.runAllTests(lastSubmit.questionId, lastSubmit.code, marks);
+      const evaluation = await this.runAllTests(lastSubmit.questionId, lastSubmit.code, lastSubmit.language, marks, gradingContext(item));
       if (evaluation === 'SANDBOX_DOWN') return 'DEFERRED';
       return this.finalize(item, evaluation.score, marks, 'FROM_SUBMIT', async (repo) => {
         await repo.update({ id: lastSubmit.id }, { ...gradedFields(evaluation, marks), isFinal: true });
@@ -126,18 +126,24 @@ export class CodeGradingService {
     }
 
     // b. The saved draft.
-    const draft = (await this.attempts.getDraftCode(item.attemptId, item.questionId)) ?? '';
-    const evaluation = draft.trim() ? await this.runAllTests(item.questionId, draft, marks) : null;
+    // The draft carries its language (#16: encodeCodeDraft); a plain draft is Python.
+    const saved = decodeCodeDraft(await this.attempts.getDraftCode(item.attemptId, item.questionId));
+    const draft = saved.code;
+    const evaluation = draft.trim()
+      ? await this.runAllTests(item.questionId, draft, saved.language, marks, gradingContext(item))
+      : null;
     if (evaluation === 'SANDBOX_DOWN') return 'DEFERRED';
 
     if (!evaluation) {
       // c. Nothing gradeable: record 0 so the question is settled.
       return this.finalize(item, 0, marks, 'NO_CODE', async (repo) => {
-        await repo.insert(this.finalRow(item, draft, marks, { passed: 0, total: 0, score: 0, results: [] }));
+        await repo.insert(
+          this.finalRow(item, draft, saved.language ?? CodeLanguage.PYTHON, marks, { passed: 0, total: 0, score: 0, results: [] }),
+        );
       });
     }
     return this.finalize(item, evaluation.score, marks, 'FROM_DRAFT', async (repo) => {
-      await repo.insert(this.finalRow(item, draft, marks, evaluation));
+      await repo.insert(this.finalRow(item, draft, evaluation.language, marks, evaluation));
     });
   }
 
@@ -148,11 +154,18 @@ export class CodeGradingService {
   async rerunFinal(row: CodeSubmissionEntity): Promise<GradeOutcome> {
     const question = await this.questionRepo.findOne({ where: { id: row.questionId } });
     const marks = question?.marks ?? 0;
-    const evaluation = row.code.trim() ? await this.runAllTests(row.questionId, row.code, marks) : null;
+    const attempt = await this.attempts.getFinishedAttempt(row.attemptId);
+    const context: RunContext = {
+      source: 'REGRADE',
+      userId: row.studentId,
+      attemptId: row.attemptId,
+      examId: attempt?.examId,
+      questionId: row.questionId,
+    };
+    const evaluation = row.code.trim() ? await this.runAllTests(row.questionId, row.code, row.language, marks, context) : null;
     if (evaluation === 'SANDBOX_DOWN') return 'DEFERRED';
 
     const graded = gradedFields(evaluation, marks);
-    const attempt = await this.attempts.getFinishedAttempt(row.attemptId);
 
     await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(CodeSubmissionEntity);
@@ -178,18 +191,28 @@ export class CodeGradingService {
   // ---------------------------------------------------------------------
 
   /** Runs `code` against all of the question's tests. No problem/tests → 0 marks (not a failure). */
-  private async runAllTests(questionId: string, code: string, marks: number): Promise<Evaluation | 'SANDBOX_DOWN'> {
+  private async runAllTests(
+    questionId: string,
+    code: string,
+    wanted: CodeLanguage | null,
+    marks: number,
+    context: RunContext,
+  ): Promise<(Evaluation & { language: CodeLanguage }) | 'SANDBOX_DOWN'> {
     const problem = await this.problemRepo.findOne({ where: { questionId } });
     const tests = problem ? await this.resolver.allTests(questionId) : [];
     if (!problem || tests.length === 0) {
-      return { sandboxOk: true, results: [], passed: 0, total: 0, score: 0, maxScore: marks };
+      return { sandboxOk: true, results: [], passed: 0, total: 0, score: 0, maxScore: marks, language: wanted ?? CodeLanguage.PYTHON };
     }
+    // Run in the student's language when the question allows it. Code in a language the
+    // question doesn't allow is run as the question's default language and fails to compile.
+    const language = wanted && problem.allowedLanguages.includes(wanted) ? wanted : defaultLanguage(problem.allowedLanguages);
     const outcomes = await this.limiter.runShared(() =>
       this.executor.runBatch({
-        language: problem.allowedLanguages[0] ?? CodeLanguage.PYTHON,
+        language,
         code,
         inputs: tests.map((t) => t.input),
         limits: { timeLimitMs: problem.timeLimitMs, memoryLimitMb: problem.memoryLimitMb },
+        context,
       }),
     );
     const evaluation = evaluate(tests, outcomes, problem.comparisonMode, marks);
@@ -197,7 +220,7 @@ export class CodeGradingService {
       this.logger.warn(`Sandbox unavailable while grading question ${questionId}; will retry`);
       return 'SANDBOX_DOWN';
     }
-    return evaluation;
+    return { ...evaluation, language };
   }
 
   private async forEach<T>(items: T[], work: (item: T) => Promise<unknown>) {
@@ -213,6 +236,7 @@ export class CodeGradingService {
   private finalRow(
     item: PendingCodeGrade,
     code: string,
+    language: CodeLanguage,
     marks: number,
     graded: { passed: number; total: number; score: number; results: CodeSubmissionEntity['resultsJson'] },
   ): Partial<CodeSubmissionEntity> {
@@ -220,7 +244,7 @@ export class CodeGradingService {
       attemptId: item.attemptId,
       questionId: item.questionId,
       studentId: item.studentId,
-      language: CodeLanguage.PYTHON,
+      language,
       code,
       status: CodeSubmissionStatus.GRADED,
       passed: graded.passed,
@@ -285,4 +309,8 @@ function gradedFields(evaluation: Evaluation | null, marks: number): Partial<Cod
     maxScore: marks,
     resultsJson: evaluation?.results ?? [],
   };
+}
+
+function gradingContext(item: PendingCodeGrade): RunContext {
+  return { source: 'GRADING', userId: item.studentId, attemptId: item.attemptId, examId: item.examId, questionId: item.questionId };
 }

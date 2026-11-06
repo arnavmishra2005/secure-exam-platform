@@ -4,8 +4,9 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Role } from '@secure-exam/types';
+import { Permission, Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
+import { StaffAccess } from '../../common/access/require-permission.decorator';
 import { SaveAnswerDto } from '@secure-exam/validation';
 import { DesktopClientGuard } from '../../common/guards/desktop-client.guard';
 import { AnswerService } from './answer.service';
@@ -30,7 +31,8 @@ export class AnswerController {
   }
 
   @Get()
-  @Roles(Role.STUDENT, Role.ADMIN)
+  @Roles(Role.STUDENT, Role.INSTRUCTOR, Role.TA)
+  @StaffAccess(Permission.MONITOR, { attempt: 'attemptId' })
   listForAttempt(@Param('attemptId', ParseUUIDPipe) attemptId: string, @CurrentUser() user: JwtPayload) {
     return this.answerService.listForAttempt(attemptId, user);
   }

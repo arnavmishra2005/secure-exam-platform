@@ -3,11 +3,21 @@ import { isSecurityActive } from './examState';
 import { blockedKey } from './keyPolicy';
 import { emitSecurityEvent } from './securityEvents';
 
-export function installInputGuard(win: BrowserWindow): void {
+export function installInputGuard(win: BrowserWindow, interruptExam: () => void): void {
+  win.webContents.on('devtools-opened', () => {
+    if (!isSecurityActive()) return;
+    win.webContents.closeDevTools();
+    emitSecurityEvent(win, 'DEVTOOLS_ATTEMPT', 'Developer tools closed during exam');
+  });
   // before-input-event fires before the page and before any menu accelerator,
   // so preventDefault() here stops the shortcut completely.
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || !isSecurityActive()) return;
+    if (input.control && input.alt && input.code === 'Delete') {
+      event.preventDefault();
+      interruptExam();
+      return;
+    }
     const blocked = blockedKey(
       { key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift },
       process.platform,

@@ -11,6 +11,7 @@ import {
   CodeRunKind,
   CodeSubmissionStatus,
   ExecutionStatus,
+  NO_TOPIC,
   OutputComparisonMode,
   QuestionDifficulty,
   QuestionStatus,
@@ -19,12 +20,14 @@ import {
   type AttemptDrilldown,
   type BankQuestionDetail,
   type QuestionAnalyticsMatrix,
+  type ScoreAdjustmentInfo,
   type BankQuestionQuery,
   type CodingClientConfig,
   type LocalRunner,
   type PublicQuestion,
   type SaveBankQuestionRequest,
   type Topic,
+  type TopicCounts,
 } from '@secure-exam/types';
 import type { ExamContentApi } from '../api/ExamContentApi';
 
@@ -77,6 +80,8 @@ export interface FakeState {
   topics: Topic[];
   /** examId -> question ids in order */
   exams: Record<string, string[]>;
+  /** Manual adjustments (#13) by `attemptId|questionId`. */
+  adjustments?: Record<string, ScoreAdjustmentInfo>;
 }
 
 export function seedState(): FakeState {
@@ -252,7 +257,9 @@ export function fakeDrilldown(state: FakeState, attemptId: string): AttemptDrill
     questions: m.questions.map((q) => {
       const c = m.cells.find((x) => x.attemptId === attemptId && x.questionId === q.id)!;
       const { options: _options, ...question } = q;
-      const base = { ...question, state: c.state, score: c.score, markedForReview: c.markedForReview, answeredAt: null };
+      const adj = state.adjustments?.[`${attemptId}|${q.id}`];
+      const score = adj && c.score !== null ? Math.min(Math.max(c.score + adj.adjustment, 0), q.marks) : c.score;
+      const base = { ...question, state: c.state, score, markedForReview: c.markedForReview, answeredAt: null, adjustment: adj ?? null };
       if (q.type !== QuestionType.CODING) {
         return {
           ...base,
@@ -343,7 +350,7 @@ export function createFakeApi(
           (!query.type || q.type === query.type) &&
           (!query.status || q.status === query.status) &&
           (!query.difficulty || q.difficulty === query.difficulty) &&
-          (!query.topicId || q.topicId === query.topicId) &&
+          (!query.topicId || q.topicId === (query.topicId === NO_TOPIC ? null : query.topicId)) &&
           (!query.courseId || q.courseId === query.courseId) &&
           (!query.tag || q.tags.includes(query.tag)) &&
           (!query.excludeExamId || !(state.exams[query.excludeExamId] ?? []).includes(q.id)),
@@ -404,7 +411,23 @@ export function createFakeApi(
       return wait({ createdCount: Math.max(0, lines.length - 1), errors: [] });
     },
     async listTopics(courseId) {
-      return wait(state.topics.filter((t) => !courseId || t.courseId === courseId));
+      return wait(state.topics.filter((t) => !courseId || !t.courseId || t.courseId === courseId));
+    },
+    async getTopicSummary(courseId) {
+      const empty = (): TopicCounts => ({ total: 0, byType: {} });
+      const count = (pred: (q: BankQuestionDetail) => boolean): TopicCounts => {
+        const c = empty();
+        for (const q of state.questions) {
+          if ((courseId && q.courseId !== courseId) || !pred(q)) continue;
+          c.total += 1;
+          c.byType[q.type] = (c.byType[q.type] ?? 0) + 1;
+        }
+        return c;
+      };
+      const topics = state.topics
+        .filter((t) => !courseId || !t.courseId || t.courseId === courseId)
+        .map((t) => ({ id: t.id, name: t.name, courseId: t.courseId ?? null, ...count((q) => q.topicId === t.id) }));
+      return wait({ topics, uncategorised: count((q) => !q.topicId), all: count(() => true) });
     },
     async createTopic(data) {
       if (state.topics.some((t) => t.name.toLowerCase() === data.name.toLowerCase())) {
@@ -512,6 +535,30 @@ export function createFakeApi(
     async getQuestionAnalytics(examId) {
       if (examId !== 'exam-demo') throw httpError(404, `Exam ${examId} not found`);
       return wait(fakeAnalytics(state));
+    },
+    async adjustQuestionScore(examId, attemptId, questionId, data) {
+      const d = fakeDrilldown(state, attemptId);
+      const q = d.questions.find((x) => x.id === questionId);
+      if (!q) throw httpError(404, 'Question not found in this exam');
+      if (!data.reason?.trim()) throw httpError(400, 'Give a reason for the change');
+      const auto = q.adjustment ? q.adjustment.autoScore : q.score;
+      if (auto === null) throw httpError(409, 'This answer is still being graded. Adjust it once grading has finished.');
+      const adjustment = data.score !== undefined ? data.score - auto : data.adjustment ?? 0;
+      const score = auto + adjustment;
+      if (score < 0 || score > q.marks) throw httpError(400, `The score must be between 0 and ${q.marks} (the automatic score is ${auto})`);
+      const key = `${attemptId}|${questionId}`;
+      state.adjustments ??= {};
+      const info: ScoreAdjustmentInfo = {
+        autoScore: auto,
+        adjustment,
+        reason: data.reason.trim(),
+        adjustedBy: 'admin-1',
+        adjustedByName: 'Ada Admin',
+        adjustedAt: '2026-11-05T10:00:00.000Z',
+      };
+      if (adjustment === 0) delete state.adjustments[key];
+      else state.adjustments[key] = info;
+      return wait({ questionId, autoScore: auto, score, maxScore: q.marks, adjustment: adjustment === 0 ? null : info, total: 0 });
     },
     async getAttemptDrilldown(_examId, attemptId) {
       return wait(fakeDrilldown(state, attemptId));

@@ -46,10 +46,12 @@ export class QuestionService {
   // Question CRUD
   // ---------------------------------------------------------------------
 
-  async create(dto: CreateQuestionDto, actorId: string): Promise<QuestionEntity> {
+  /** `ownerId`: the instructor whose bank the question goes into. */
+  async create(dto: CreateQuestionDto, actorId: string, ownerId: string): Promise<QuestionEntity> {
     this.validateOptionsForType(dto.type as unknown as QuestionType, dto.options);
 
     const question = this.questionRepo.create({
+      ownerId,
       text: dto.text,
       type: dto.type as unknown as QuestionType,
       marks: dto.marks,
@@ -67,8 +69,14 @@ export class QuestionService {
     return saved;
   }
 
-  findAll(): Promise<QuestionEntity[]> {
-    return this.questionRepo.find({ relations: ['options'], order: { createdAt: 'DESC' } });
+  /** The questions in `ownerIds`' banks. */
+  findAll(ownerIds: string[]): Promise<QuestionEntity[]> {
+    if (ownerIds.length === 0) return Promise.resolve([]);
+    return this.questionRepo.find({
+      where: { ownerId: In(ownerIds) },
+      relations: ['options'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async findOne(id: string): Promise<QuestionEntity> {
@@ -242,6 +250,7 @@ export class QuestionService {
   async bulkImport(
     csvContent: string,
     actorId: string,
+    ownerId: string,
   ): Promise<BulkImportResult> {
     const lines = csvContent
       .split(/\r?\n/)
@@ -286,6 +295,7 @@ export class QuestionService {
 
         toInsert.push(
           this.questionRepo.create({
+            ownerId,
             text,
             type: type as QuestionType,
             marks,

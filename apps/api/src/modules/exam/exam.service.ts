@@ -6,11 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
-import { EXAM_STATUS_TRANSITIONS, ExamStatus } from '@secure-exam/types';
+import { EXAM_STATUS_TRANSITIONS, ExamStatus, NotificationType } from '@secure-exam/types';
 import { AuditEventType } from '@secure-exam/types';
 import { AuditService } from '../audit/audit.service';
 import { ExamEntity } from './entities/exam.entity';
-import { CreateExamDto, UpdateExamDto } from '@secure-exam/validation';
+import { CreateExamDto, RescheduleExamDto, UpdateExamDto } from '@secure-exam/validation';
 import { RegistrationService } from '../course/registration.service';
 
 @Injectable()
@@ -26,6 +26,11 @@ export class ExamService {
   // CRUD
   // ---------------------------------------------------------------------
 
+  /**
+   * A new draft owned by `dto.courseId` (the caller's access to that course is
+   * checked by the controller). The course is also assigned, so its enrolled
+   * students are registered.
+   */
   async create(dto: CreateExamDto, actorId: string): Promise<ExamEntity> {
     this.assertValidWindow(dto.startTime, dto.endTime);
 
@@ -37,20 +42,26 @@ export class ExamService {
       endTime: new Date(dto.endTime),
       status: ExamStatus.DRAFT,
       passPercentage: dto.passPercentage ?? 40,
+      passMarkEnabled: dto.passMarkEnabled ?? true,
+      courseId: dto.courseId,
+      gradeUnsubmittedCode: dto.gradeUnsubmittedCode ?? false,
       publishedAt: null,
     });
     const saved = await this.examRepo.save(exam);
 
     await this.auditService.logEvent(
       AuditEventType.EXAM_CREATED,
-      { examId: saved.id, title: saved.title },
+      { examId: saved.id, title: saved.title, courseId: dto.courseId },
       actorId,
     );
+    await this.registrationService.assignCourse(saved.id, dto.courseId, actorId);
     return saved;
   }
 
-  findAll(): Promise<ExamEntity[]> {
-    return this.examRepo.find({ order: { createdAt: 'DESC' } });
+  /** Exams owned by `courseIds` (the courses the caller may see exams on), newest first. */
+  findAll(courseIds: string[]): Promise<ExamEntity[]> {
+    if (courseIds.length === 0) return Promise.resolve([]);
+    return this.examRepo.find({ where: { courseId: In(courseIds) }, order: { createdAt: 'DESC' } });
   }
 
   findManyByIds(ids: string[]): Promise<ExamEntity[]> {
@@ -69,10 +80,13 @@ export class ExamService {
 
     if (exam.status !== ExamStatus.DRAFT && (dto.startTime || dto.endTime || dto.durationMinutes)) {
       throw new BadRequestException(
-        'Timing/duration can only be edited while the exam is in DRAFT status',
+        'Timing can only be edited here while the exam is a draft. Use Reschedule instead.',
       );
     }
 
+    if ([ExamStatus.ACTIVE, ExamStatus.CLOSED].includes(exam.status) && dto.gradeUnsubmittedCode !== undefined && dto.gradeUnsubmittedCode !== exam.gradeUnsubmittedCode) {
+      throw new BadRequestException('Coding submission policy cannot change after an exam starts');
+    }
     const nextStart = dto.startTime ? new Date(dto.startTime) : exam.startTime;
     const nextEnd = dto.endTime ? new Date(dto.endTime) : exam.endTime;
     this.assertValidWindow(nextStart.toISOString(), nextEnd.toISOString());
@@ -84,6 +98,8 @@ export class ExamService {
       startTime: nextStart,
       endTime: nextEnd,
       passPercentage: dto.passPercentage ?? exam.passPercentage,
+      passMarkEnabled: dto.passMarkEnabled ?? exam.passMarkEnabled,
+      gradeUnsubmittedCode: dto.gradeUnsubmittedCode ?? exam.gradeUnsubmittedCode,
     });
     const saved = await this.examRepo.save(exam);
 
@@ -92,6 +108,83 @@ export class ExamService {
       { examId: saved.id, changes: dto },
       actorId,
     );
+    return saved;
+  }
+
+  /**
+   * Moves a scheduled, active or published exam.
+   * - Nobody has started: any change that leaves a valid window the duration fits in.
+   * - Someone has started: only the end time, and only later. Running attempts
+   *   keep their own expiry; give them more time with an extension instead.
+   * - CLOSED: refused.
+   * The first time a published exam's start moves, the old start is kept as
+   * originalStartTime so students see that it was rescheduled.
+   */
+  async reschedule(id: string, dto: RescheduleExamDto, actorId: string): Promise<ExamEntity> {
+    const exam = await this.findOne(id);
+    if (exam.status === ExamStatus.CLOSED) {
+      throw new BadRequestException('A closed exam cannot be rescheduled');
+    }
+    if (dto.startTime === undefined && dto.endTime === undefined && dto.durationMinutes === undefined && dto.note === undefined) {
+      throw new BadRequestException('Nothing to change');
+    }
+
+    const nextStart = dto.startTime ? new Date(dto.startTime) : exam.startTime;
+    const nextEnd = dto.endTime ? new Date(dto.endTime) : exam.endTime;
+    const nextDuration = dto.durationMinutes ?? exam.durationMinutes;
+    const startMoved = nextStart.getTime() !== exam.startTime.getTime();
+
+    const [{ count }]: { count: string }[] = await this.examRepo.query(
+      `SELECT COUNT(*) AS count FROM "attempts" WHERE "examId" = $1`,
+      [id],
+    );
+    if (Number(count) > 0) {
+      if (startMoved || nextDuration !== exam.durationMinutes) {
+        throw new BadRequestException(
+          'Students have already started this exam, so only its end time can change. Use Extend time to give them more time.',
+        );
+      }
+      if (nextEnd.getTime() < exam.endTime.getTime()) {
+        throw new BadRequestException('Students have already started this exam, so its end time can only move later.');
+      }
+    }
+
+    this.assertValidWindow(nextStart.toISOString(), nextEnd.toISOString());
+    if (nextDuration * 60_000 > nextEnd.getTime() - nextStart.getTime()) {
+      throw new BadRequestException('The duration is longer than the window between the start and end times');
+    }
+
+    const before = {
+      startTime: exam.startTime.toISOString(),
+      endTime: exam.endTime.toISOString(),
+      durationMinutes: exam.durationMinutes,
+    };
+    if (exam.publishedAt && startMoved && !exam.originalStartTime) exam.originalStartTime = exam.startTime;
+    exam.startTime = nextStart;
+    exam.endTime = nextEnd;
+    exam.durationMinutes = nextDuration;
+    if (dto.note !== undefined) exam.scheduleNote = dto.note.trim() || null;
+    const saved = await this.examRepo.save(exam);
+
+    await this.auditService.logEvent(
+      AuditEventType.EXAM_RESCHEDULED,
+      {
+        examId: id,
+        before,
+        after: { startTime: nextStart.toISOString(), endTime: nextEnd.toISOString(), durationMinutes: nextDuration },
+        note: saved.scheduleNote,
+      },
+      actorId,
+    );
+    if (saved.publishedAt) {
+      await this.registrationService.notifyRegistered(id, {
+        type: NotificationType.EXAM_RESCHEDULED,
+        title: `Rescheduled: ${saved.title}`,
+        // Times go in `data`: the dashboard shows them in the student's own time zone.
+        body: `"${saved.title}" has new times. Check your dashboard.` + (saved.scheduleNote ? ` ${saved.scheduleNote}` : ''),
+        data: { examId: id, startTime: nextStart.toISOString(), endTime: nextEnd.toISOString() },
+      });
+    }
     return saved;
   }
 
@@ -174,7 +267,7 @@ export class ExamService {
 
   // ---------------------------------------------------------------------
   // Student assignment — Phase 1 routes, now backed by exam registrations
-  // (modules/course). Kept so the legacy admin portal keeps working.
+  // (modules/course).
   // ---------------------------------------------------------------------
 
   async listAssignedStudents(examId: string) {

@@ -4,8 +4,10 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Role } from '@secure-exam/types';
+import { Permission, Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
+import { AccessService } from '../../common/access/access.service';
+import { RequirePermission } from '../../common/access/require-permission.decorator';
 import {
   ListSubmissionsQueryDto,
   OverrideResultScoreDto,
@@ -36,27 +38,37 @@ export class SubmissionController {
 }
 
 /**
- * Admin-only "Submissions list + result publishing screen" routes, kept in
+ * Staff "Submissions list + result publishing screen" routes, kept in
  * a separate controller (same file, distinct base path) so `/submissions`
  * never collides with the `:id` param route above.
  */
 @Controller('submissions')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
-export class SubmissionAdminController {
-  constructor(private readonly submissionService: SubmissionService) {}
+@RequirePermission(Permission.RESULTS_PUBLISH, { attempt: 'attemptId' })
+export class SubmissionStaffController {
+  constructor(
+    private readonly submissionService: SubmissionService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  list(@Query() query: ListSubmissionsQueryDto) {
-    return this.submissionService.listSubmissions(query);
+  @RequirePermission(Permission.RESULTS_VIEW)
+  async list(@Query() query: ListSubmissionsQueryDto, @CurrentUser() user: JwtPayload) {
+    if (query.examId) await this.access.assertExam(user, query.examId, Permission.RESULTS_VIEW);
+    return this.submissionService.listSubmissions({
+      ...query,
+      examIds: await this.access.examIdsFor(user, Permission.RESULTS_VIEW),
+    });
   }
 
   @Get(':attemptId/result')
+  @RequirePermission(Permission.RESULTS_VIEW, { attempt: 'attemptId' })
   getResult(@Param('attemptId', ParseUUIDPipe) attemptId: string) {
     return this.submissionService.getResultForAttempt(attemptId);
   }
 
   @Patch(':attemptId/result')
+  @RequirePermission(Permission.MARKS_ADJUST, { attempt: 'attemptId' })
   overrideScore(
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
     @Body() dto: OverrideResultScoreDto,

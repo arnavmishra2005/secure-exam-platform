@@ -2,7 +2,7 @@
 // Compares the key policy against the shortcuts that matter on macOS and Ubuntu.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { blockedKey, describeShortcut } from '../dist/main/keyPolicy.js';
+import { blockedKey, describeShortcut, describeAccelerator } from '../dist/main/keyPolicy.js';
 
 const press = (code, mods = {}, key = code.replace(/^Key/, '').toLowerCase()) => ({
   key,
@@ -101,5 +101,23 @@ test('AltGr (reported as Ctrl+Alt) can still type brackets on non-US layouts', (
 test('labels name the keys the way each system does', () => {
   assert.equal(describeShortcut(press('KeyR', { meta: true }), MAC), 'Cmd+R');
   assert.equal(describeShortcut(press('KeyR', { ctrl: true, shift: true }), LINUX), 'Ctrl+Shift+R');
-  assert.equal(describeShortcut(press('KeyD', { meta: true }), LINUX), 'Super+D');
+  assert.equal(describeShortcut(press('KeyD', { meta: true }), LINUX), 'Win+D');
+  for (const code of ['MetaLeft', 'MetaRight', 'OSLeft', 'OSRight']) {
+    assert.equal(describeShortcut(press(code), LINUX), 'Win');
+    assert.equal(describeShortcut(press(code, { meta: true }), LINUX), 'Win');
+    assert.equal(describeShortcut(press(code), MAC), 'Cmd');
+  }
+  for (const [code, label] of Object.entries({
+    ControlLeft: 'Ctrl', AltRight: 'Alt', ShiftLeft: 'Shift',
+    ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down',
+    PageUp: 'Page Up', PageDown: 'Page Down', PrintScreen: 'Print Screen',
+    NumpadAdd: 'Numpad +', NumpadSubtract: 'Numpad -', Numpad0: 'Numpad 0',
+    Escape: 'Esc', F12: 'F12', Delete: 'Delete', Backspace: 'Backspace',
+    KeyA: 'A', Digit9: '9', Space: 'Space', Tab: 'Tab', Equal: '+', Minus: '-',
+    Comma: ',', Backquote: '`',
+  })) assert.equal(describeShortcut(press(code), LINUX), label);
+  assert.equal(describeAccelerator('Super+D', LINUX), 'Win+D');
+  assert.equal(describeAccelerator('Control+Alt+T', LINUX), 'Ctrl+Alt+T');
+  assert.equal(describeAccelerator('Alt+Escape', LINUX), 'Alt+Esc');
+  assert.equal(describeAccelerator('Command+Shift+Tab', MAC), 'Cmd+Shift+Tab');
 });

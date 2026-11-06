@@ -10,6 +10,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { assertAttemptSession } from '../attempt/attempt-session';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
 import { AnswerEntity } from './entities/answer.entity';
 import { SubmissionEntity } from './entities/submission.entity';
@@ -98,6 +99,7 @@ export class SubmissionService {
   async withLockedInProgressAttempt<T>(
     attemptId: string,
     work: (manager: EntityManager, attempt: AttemptEntity) => Promise<T>,
+    user?: JwtPayload,
   ): Promise<T> {
     return this.dataSource.transaction(async (manager) => {
       const attempt = await manager.getRepository(AttemptEntity).findOne({
@@ -107,6 +109,7 @@ export class SubmissionService {
       if (!attempt) {
         throw new NotFoundException('Attempt not found');
       }
+      if (user) assertAttemptSession(attempt, user);
       if (attempt.status !== AttemptStatus.IN_PROGRESS) {
         throw new ConflictException('This attempt has already been submitted');
       }
@@ -175,6 +178,7 @@ export class SubmissionService {
     // clean, deterministic 409 instead of a raw constraint-violation error.
     const outcome = await this.withLockedInProgressAttempt(attemptId, (manager, lockedAttempt) =>
       this.finalizeLocked(manager, lockedAttempt, isAutoSubmit),
+      user,
     );
 
     await this.logFinalizeAudit(outcome, isAutoSubmit, user.sub);
@@ -352,10 +356,12 @@ export class SubmissionService {
     return { sweptCount, failedCount };
   }
 
-  // ---- Admin: submissions list + result publishing (/results screen) ----
+  // ---- Staff: submissions list + result publishing (/results screen) ----
 
   async listSubmissions(query: {
     examId?: string;
+    /** Only these exams (the ones the caller may see results of). */
+    examIds: string[];
     published?: boolean;
     page?: number;
     limit?: number;
@@ -377,6 +383,7 @@ export class SubmissionService {
         'result.attemptId = submission.attemptId',
       );
 
+    qb.andWhere('result.examId = ANY(:examIds::uuid[])', { examIds: query.examIds });
     if (query.examId) {
       qb.andWhere('result.examId = :examId', { examId: query.examId });
     }
@@ -408,12 +415,12 @@ export class SubmissionService {
   }
 
   /**
-   * `score` is validated against this result's own `maxScore` — an admin
+   * `score` is validated against this result's own `maxScore` — an instructor
    * cannot set a score above the maximum the attempt could actually earn.
    * Decimal scores ARE valid (partial-credit marking schemes are common;
    * the DTO caps precision at 2 decimal places — see OverrideResultScoreDto).
    */
-  async overrideScore(attemptId: string, score: number, adminId: string): Promise<Result> {
+  async overrideScore(attemptId: string, score: number, actorId: string): Promise<Result> {
     const result = await this.resultRepository.findOne({ where: { attemptId } });
     if (!result) throw new NotFoundException('Result not found for this attempt');
 
@@ -434,13 +441,13 @@ export class SubmissionService {
       this.auditService,
       'RESULT_SCORE_OVERRIDDEN',
       { attemptId, newScore: score },
-      adminId,
+      actorId,
     );
 
     return toResultDto(saved);
   }
 
-  async setPublished(attemptId: string, publish: boolean, adminId: string): Promise<Result> {
+  async setPublished(attemptId: string, publish: boolean, actorId: string): Promise<Result> {
     const result = await this.resultRepository.findOne({ where: { attemptId } });
     if (!result) throw new NotFoundException('Result not found for this attempt');
 
@@ -453,7 +460,7 @@ export class SubmissionService {
       this.auditService,
       publish ? 'RESULT_PUBLISHED' : 'RESULT_UNPUBLISHED',
       { attemptId, examId: result.examId },
-      adminId,
+      actorId,
     );
 
     return toResultDto(saved);

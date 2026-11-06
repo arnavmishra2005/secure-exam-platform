@@ -47,6 +47,10 @@ export class CodingProblemEntity {
   @Column({ name: 'reference_solution', type: 'text', nullable: true })
   referenceSolution: string | null;
 
+  /** Language of `referenceSolution` (#16). */
+  @Column({ name: 'reference_language', type: 'varchar', length: 20, default: CodeLanguage.PYTHON })
+  referenceLanguage: CodeLanguage;
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

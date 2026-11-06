@@ -52,6 +52,70 @@ describe('QuestionsTab', () => {
     expect(within(dialog).getByText('Wrong answer')).toBeTruthy(); // hidden test 3 verdict
   });
 
+  describe('manual mark adjustment (#13)', () => {
+    async function openAttempt(name: RegExp, api = createFakeApi()) {
+      renderWithApi(<QuestionsTab examId="exam-demo" />, api);
+      fireEvent.click(await screen.findByRole('button', { name }));
+      const dialog = await screen.findByRole('dialog');
+      await within(dialog).findByText(/Last submission before the end|Saved draft/);
+      return { dialog, api };
+    }
+    const section = (dialog: HTMLElement, n: number) =>
+      within(within(dialog).getByText(new RegExp(`^Q${n}\\.`)).closest('section') as HTMLElement);
+
+    it('sets a new mark with a reason, then shows the automatic score, the change and the reason', async () => {
+      const api = createFakeApi();
+      const adjust = vi.spyOn(api, 'adjustQuestionScore');
+      const { dialog } = await openAttempt(/Alice Johnson alice@/, api);
+      const q3 = section(dialog, 3);
+      fireEvent.click(q3.getByRole('button', { name: 'Adjust' }));
+      expect(q3.getByText('Automatic score: 6.67 / 10')).toBeTruthy();
+      fireEvent.change(q3.getByLabelText('New mark'), { target: { value: '8' } });
+      expect(q3.getByText(/→ 8 \/ 10/)).toBeTruthy();
+      const save = q3.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+      expect(save.disabled).toBe(true); // a reason is required
+      fireEvent.change(q3.getByLabelText('Reason'), { target: { value: 'Right approach; output format differs' } });
+      fireEvent.click(save);
+
+      await waitFor(() =>
+        expect(adjust).toHaveBeenCalledWith('exam-demo', 'att-1', 'q-coding', { score: 8, reason: 'Right approach; output format differs' }),
+      );
+      expect((await within(dialog).findByTestId('adjusted-3')).textContent).toBe('auto 6.67 · adjusted +1.33 →');
+      expect(within(dialog).getByText(/“Right approach; output format differs” — Ada Admin/)).toBeTruthy();
+    });
+
+    it('takes marks away, refuses a mark outside the range, and can remove the adjustment', async () => {
+      const api = createFakeApi();
+      const adjust = vi.spyOn(api, 'adjustQuestionScore');
+      const { dialog } = await openAttempt(/Bob Smith bob@/, api);
+      let q3 = section(dialog, 3);
+      fireEvent.click(q3.getByRole('button', { name: 'Adjust' }));
+      fireEvent.click(q3.getByLabelText('Add / take away'));
+      fireEvent.change(q3.getByLabelText('Marks to add (negative to take away)'), { target: { value: '12' } });
+      expect(q3.getByText(/must be 0–10/)).toBeTruthy();
+      fireEvent.change(q3.getByLabelText('Marks to add (negative to take away)'), { target: { value: '-3' } });
+      fireEvent.change(q3.getByLabelText('Reason'), { target: { value: 'Hard-coded a test' } });
+      fireEvent.click(q3.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(adjust).toHaveBeenCalledWith('exam-demo', 'att-2', 'q-coding', { adjustment: -3, reason: 'Hard-coded a test' }));
+      expect((await within(dialog).findByTestId('adjusted-3')).textContent).toBe('auto 10 · adjusted −3 →');
+
+      q3 = section(dialog, 3);
+      fireEvent.click(q3.getByRole('button', { name: 'Adjust' }));
+      fireEvent.change(q3.getByLabelText('Reason'), { target: { value: 'Checked again: it was fine' } });
+      fireEvent.click(q3.getByRole('button', { name: 'Remove adjustment' }));
+      await waitFor(() => expect(adjust).toHaveBeenLastCalledWith('exam-demo', 'att-2', 'q-coding', { adjustment: 0, reason: 'Checked again: it was fine' }));
+      await waitFor(() => expect(within(dialog).queryByTestId('adjusted-3')).toBeNull());
+    });
+
+    it('offers no adjustment while the attempt is still in progress', async () => {
+      renderWithApi(<QuestionsTab examId="exam-demo" />, createFakeApi());
+      fireEvent.click(await screen.findByRole('button', { name: /Carol Williams carol@/ }));
+      const dialog = await screen.findByRole('dialog');
+      await within(dialog).findByText(/Saved draft/);
+      expect(within(dialog).queryByRole('button', { name: 'Adjust' })).toBeNull();
+    });
+  });
+
   it('shows an empty state when nobody has started', async () => {
     const api = createFakeApi();
     vi.spyOn(api, 'getQuestionAnalytics').mockImplementation(async () => ({

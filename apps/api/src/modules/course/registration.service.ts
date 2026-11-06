@@ -23,7 +23,7 @@ import type {
 import { In, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { ExamEntity } from '../exam/entities/exam.entity';
-import { NotificationService } from '../notification/notification.service';
+import { NotificationService, type NotificationInput } from '../notification/notification.service';
 import { StudentEntity } from '../user/entities/student.entity';
 import { toStudentSummary, UserService } from '../user/user.service';
 import { CourseEnrollmentEntity } from './entities/course-enrollment.entity';
@@ -248,6 +248,12 @@ export class RegistrationService {
       actorId,
     );
     return { registrationsRemoved: removed };
+  }
+
+  /** Notifies every registered student (e.g. the exam was rescheduled). Returns how many. */
+  async notifyRegistered(examId: string, input: NotificationInput): Promise<number> {
+    const userIds = await this.registeredUserIds(examId);
+    return userIds.length ? this.notificationService.notifyMany(userIds, input) : 0;
   }
 
   /** Called after students are enrolled in a course: registers them for its exams. */

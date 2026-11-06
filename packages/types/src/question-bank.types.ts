@@ -1,9 +1,10 @@
 /**
  * Owner: Person B (question bank)
- * Plain type/interface declarations only — no logic. All admin-only.
+ * Plain type/interface declarations only — no logic. All staff-only.
  */
 
 import type {
+  CodeLanguage,
   CodingProblem,
   CodingTestCase,
   OutputComparisonMode,
@@ -71,6 +72,7 @@ export interface BankQuestionQuery {
   /** Case-insensitive match on the question text. */
   search?: string;
   courseId?: string;
+  /** A topic id, or NO_TOPIC ('none') for questions without a topic. */
   topicId?: string;
   difficulty?: QuestionDifficulty;
   type?: QuestionType;
@@ -95,7 +97,11 @@ export interface CodingProblemInput {
   timeLimitMs?: number;
   memoryLimitMb?: number;
   comparisonMode?: OutputComparisonMode;
+  /** Languages students may use (#16). Default: Python only. */
+  allowedLanguages?: CodeLanguage[];
   referenceSolution?: string | null;
+  /** Language of the reference solution. Default Python. */
+  referenceLanguage?: CodeLanguage;
   /** Replaces all test cases; order is kept. */
   tests: CodingTestCaseInput[];
 }
@@ -131,6 +137,32 @@ export interface UpdateBankQuestionMetaRequest {
 export interface CreateTopicRequest {
   name: string;
   courseId?: string | null;
+}
+
+/** `topicId` filter value meaning "questions without a topic". */
+export const NO_TOPIC = 'none';
+
+/** Questions per type; a type with no questions is left out. */
+export type QuestionTypeCounts = Partial<Record<QuestionType, number>>;
+
+export interface TopicCounts {
+  total: number;
+  byType: QuestionTypeCounts;
+}
+
+export interface TopicWithCounts extends TopicCounts {
+  id: string;
+  name: string;
+  courseId: string | null;
+}
+
+/** GET /question-bank/topics/summary: the bank's topic list with question counts. */
+export interface TopicSummary {
+  topics: TopicWithCounts[];
+  /** Questions without a topic. */
+  uncategorised: TopicCounts;
+  /** Every question (in the course, when one is given). */
+  all: TopicCounts;
 }
 
 export interface TagCount {

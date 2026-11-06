@@ -1,20 +1,32 @@
 // Owner: Person C (Electron, Kiosk & Security)
 // Shown in a normal browser where an exam would start. The dashboard, results and
-// the admin portal work in the browser; the exam itself is sat in the exam app.
+// the staff portal work in the browser; the exam itself is sat in the exam app.
 //
 // "Start" asks the API for a one-time launch token and opens the app with it
 // (secure-exam://launch/<token>). The app signs the student in with that token, so
 // the password is never sent to it.
 
-import { createExamLaunch } from '@secure-exam/api-client';
+import { createCaptcha, createExamLaunch } from '@secure-exam/api-client';
 import { MonitorSmartphone } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { CaptchaChallenge } from '@secure-exam/types';
+import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/errors';
 import { examAppLink } from '../desktop/requireDesktop';
 
 export function OpenInExamApp({ examId, resuming }: { examId: string; resuming: boolean }) {
+  const [challenge, setChallenge] = useState<CaptchaChallenge | null>(null);
+  const [answer, setAnswer] = useState('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState(false);
+  async function refreshCaptcha() {
+    setLoadingCaptcha(true); setAnswer('');
+    try { setChallenge(await createCaptcha()); }
+    catch (error) { setChallenge(null); setError(getErrorMessage(error)); }
+    finally { setLoadingCaptcha(false); }
+  }
+  useEffect(() => { void refreshCaptcha(); }, []);
   const [agreed, setAgreed] = useState(false);
   const [opening, setOpening] = useState(false);
   const [link, setLink] = useState<string | null>(null);
@@ -24,12 +36,15 @@ export function OpenInExamApp({ examId, resuming }: { examId: string; resuming: 
     setOpening(true);
     setError(null);
     try {
-      const { token } = await createExamLaunch(examId);
+      if (!challenge) return;
+      const { token } = await createExamLaunch(examId, { captchaId: challenge.captchaId, captchaAnswer: answer });
       const url = examAppLink(token);
       setLink(url);
       window.location.href = url;
     } catch (err) {
       setError(getErrorMessage(err, 'Could not prepare the exam app. Please try again.'));
+      const replacement = (err as { response?: { data?: { captcha?: CaptchaChallenge } } }).response?.data?.captcha;
+      if (replacement) { setChallenge(replacement); setAnswer(''); } else await refreshCaptcha();
     } finally {
       setOpening(false);
     }
@@ -55,7 +70,12 @@ export function OpenInExamApp({ examId, resuming }: { examId: string; resuming: 
         </label>
       )}
 
-      <Button size="lg" onClick={() => void open()} loading={opening} disabled={!resuming && !agreed}>
+      <div className="space-y-2 rounded border p-4">
+        <label htmlFor="exam-captcha" className="block text-sm font-medium">Enter the characters in the image</label>
+        {challenge && <img width={150} height={50} alt="Captcha challenge. Enter its characters below; refresh for another image." src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(challenge.svg)}`} />}
+        <div className="flex max-w-sm gap-2"><Input id="exam-captcha" autoComplete="off" maxLength={16} value={answer} onChange={e => setAnswer(e.target.value)} disabled={opening} /><Button variant="outline" loading={loadingCaptcha} disabled={opening} onClick={() => void refreshCaptcha()}>Refresh image</Button></div>
+      </div>
+      <Button size="lg" onClick={() => void open()} loading={opening} disabled={(!resuming && !agreed) || !challenge || !answer.trim() || loadingCaptcha}>
         <MonitorSmartphone /> {resuming ? 'Resume in exam app' : 'Start exam in exam app'}
       </Button>
 

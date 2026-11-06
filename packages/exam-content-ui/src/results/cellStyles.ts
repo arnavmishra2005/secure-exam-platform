@@ -12,7 +12,13 @@ export const CELL_STYLE: Record<QuestionCellState, { symbol: string; label: stri
 export function cellTitle(cell: AnalyticsCell): string {
   const s = CELL_STYLE[cell.state];
   const score = cell.score === null ? '' : ` · ${cell.score}/${cell.maxScore}`;
-  return `${s.label}${score}${cell.markedForReview ? ' · marked for review' : ''}`;
+  const adjusted = cell.adjustment ? ` · adjusted ${signed(cell.adjustment)} (auto ${cell.autoScore})` : '';
+  return `${s.label}${score}${adjusted}${cell.markedForReview ? ' · marked for review' : ''}`;
+}
+
+/** "+2", "−1.5". */
+export function signed(n: number): string {
+  return n > 0 ? `+${n}` : `−${Math.abs(n)}`;
 }
 
 const pct = (n: number | null | undefined) => (n == null ? '—' : `${Math.round(n * 100)}%`);

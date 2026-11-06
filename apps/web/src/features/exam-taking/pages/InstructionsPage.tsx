@@ -48,7 +48,7 @@ export default function InstructionsPage() {
     queryKey: ['me', 'exams', examId],
     queryFn: () => getMyExam(examId),
     // An upcoming exam flips to live on its own; keep checking.
-    refetchInterval: (query) => (query.state.data?.state === StudentExamState.UPCOMING ? 15_000 : false),
+    refetchInterval: 15_000, // Refresh grants even while an exam is already live.
   });
 
   function enter(attemptId: string) {
@@ -114,7 +114,7 @@ export default function InstructionsPage() {
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 text-sm sm:grid-cols-3">
-            <Fact icon={Clock} label="Duration" value={`${exam.durationMinutes} minutes`} />
+            <Fact icon={Clock} label="Duration" value={`${exam.durationMinutes} minutes${exam.extendedMinutes ? ` + ${exam.extendedMinutes} extra minutes` : ''}`} />
             <Fact icon={FileQuestion} label="Questions" value={String(exam.questionCount)} />
             <Fact icon={CalendarClock} label="Window" value={`${formatDateTime(exam.startTime)} – ${formatDateTime(exam.endTime)}`} />
           </dl>

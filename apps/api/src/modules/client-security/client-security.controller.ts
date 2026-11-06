@@ -2,9 +2,10 @@
 
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@secure-exam/types';
+import { Permission, Role } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import { ReportSecurityEventsDto } from '@secure-exam/validation';
+import { RequirePermission } from '../../common/access/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ClientSecurityService } from './client-security.service';
@@ -27,9 +28,9 @@ export class ClientSecurityController {
     return this.service.record(attemptId, user, dto);
   }
 
-  /** What an admin sees when they open an attempt's violations. */
+  /** What staff see when they open an attempt's violations. */
   @Get()
-  @Roles(Role.ADMIN)
+  @RequirePermission(Permission.MONITOR, { attempt: 'attemptId' })
   list(@Param('attemptId', ParseUUIDPipe) attemptId: string) {
     return this.service.list(attemptId);
   }

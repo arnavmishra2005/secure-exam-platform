@@ -3,6 +3,7 @@
 // instead of surfacing as a confusing runtime error later.
 
 import * as Joi from 'joi';
+import { labNetworkAllows } from '../guards/lab-network';
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
@@ -16,6 +17,8 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
 
   CORS_ORIGIN: Joi.string().required(),
+  TRUST_PROXY_HOPS: Joi.number().integer().min(0).max(5).default(0),
+  EXAM_ALLOWED_CIDRS: Joi.string().allow('').custom((value) => { labNetworkAllows('127.0.0.1', value); return value; }),
 
   THROTTLE_TTL: Joi.number().default(60),
   THROTTLE_LIMIT: Joi.number().default(1000),
@@ -23,11 +26,22 @@ export const envValidationSchema = Joi.object({
   // Person B: sandboxed code runner (modules/execution)
   RUNNER_DOCKER_BIN: Joi.string().default('docker'),
   RUNNER_PYTHON_IMAGE: Joi.string().default('python:3.12-slim'),
+  // #16: C/C++ (gcc + g++) and Java images, built from infra/runner-images (`npm run runner:images`).
+  RUNNER_GCC_IMAGE: Joi.string().default('secure-exam/runner-gcc:1'),
+  RUNNER_JAVA_IMAGE: Joi.string().default('secure-exam/runner-java:21'),
+  // C/C++/Java only under gVisor (RUNNER_DOCKER_RUNTIME). Unset = required in production only.
+  RUNNER_REQUIRE_GVISOR_FOR_COMPILED: Joi.boolean(),
   RUNNER_MAX_CONCURRENCY: Joi.number().integer().min(1).default(4),
   RUNNER_MAX_QUEUE: Joi.number().integer().min(0).default(100),
   RUNNER_RUNS_PER_MINUTE: Joi.number().integer().min(1).default(20),
   RUNNER_OUTPUT_LIMIT_BYTES: Joi.number().integer().min(1024).default(65536),
   RUNNER_STARTUP_TIMEOUT_MS: Joi.number().integer().min(1000).default(10000),
+  // #19 sandbox hardening (docs/execution-security.md). Docker runtime for sandboxes, e.g. `runsc` (gVisor).
+  RUNNER_DOCKER_RUNTIME: Joi.string().allow('').optional(),
+  // seccomp profile path (relative to apps/api), or `docker-default` for Docker's own, weaker profile.
+  RUNNER_SECCOMP_PROFILE: Joi.string().default('../../infra/runner/seccomp.json'),
+  // Runs of one attempt stopped by limits before it is flagged as suspicious on Monitoring.
+  RUNNER_FLAG_LIMIT_BATCHES: Joi.number().integer().min(1).default(3),
   // Person B: execution modes — see "Decision log" in person_b_plan.md.
   // DEFERRED: Submit only saves; grading runs after the attempt ends. LIVE: Submit grades immediately.
   CODING_GRADING_MODE: Joi.string().valid('DEFERRED', 'LIVE').default('DEFERRED'),
@@ -47,8 +61,10 @@ export const envValidationSchema = Joi.object({
 
   // Person C — desktop client (DESKTOP_*). Optional until the Electron app lands.
   DESKTOP_MIN_CLIENT_VERSION: Joi.string().optional(),
-  // Development only: let administrators sign in from the exam app (X-Client-Type: DESKTOP).
-  ALLOW_ADMIN_ON_DESKTOP: Joi.boolean().default(false),
+  // Development only: let instructors and TAs sign in from the exam app (X-Client-Type: DESKTOP).
+  ALLOW_STAFF_ON_DESKTOP: Joi.boolean().default(false),
+  // Phase 5 migration: the instructor who gets existing courses/exams/questions (default: all former admins).
+  MIGRATION_DEFAULT_INSTRUCTOR_EMAIL: Joi.string().email().optional(),
   // Exams (start, questions, answers, submit) only from the exam app. Set false to use a browser in development.
   REQUIRE_DESKTOP_CLIENT: Joi.boolean().default(true),
   // Violations at which an attempt shows as flagged on the monitoring screen.

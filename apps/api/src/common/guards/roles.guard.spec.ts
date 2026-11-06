@@ -24,7 +24,7 @@ describe('RolesGuard', () => {
 
   it('denies access when the user role is not in the allowed list', () => {
     const reflector = {
-      getAllAndOverride: jest.fn().mockReturnValue([Role.ADMIN]),
+      getAllAndOverride: jest.fn().mockReturnValue([Role.INSTRUCTOR]),
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
     expect(guard.canActivate(buildContext({ role: Role.STUDENT }))).toBe(false);
@@ -32,9 +32,9 @@ describe('RolesGuard', () => {
 
   it('allows access when the user role is in the allowed list', () => {
     const reflector = {
-      getAllAndOverride: jest.fn().mockReturnValue([Role.ADMIN]),
+      getAllAndOverride: jest.fn().mockReturnValue([Role.INSTRUCTOR]),
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
-    expect(guard.canActivate(buildContext({ role: Role.ADMIN }))).toBe(true);
+    expect(guard.canActivate(buildContext({ role: Role.INSTRUCTOR }))).toBe(true);
   });
 });

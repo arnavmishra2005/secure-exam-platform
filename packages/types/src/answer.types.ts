@@ -14,6 +14,7 @@ export interface Answer {
   /** Present for descriptive/free-text questions. */
   textResponse: string | null;
   state: QuestionState;
+  markedForReview?: boolean;
   /** ISO 8601, or null if the question has no saved response yet. */
   answeredAt: string | null;
   createdAt: string;

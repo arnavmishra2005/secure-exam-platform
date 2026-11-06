@@ -29,7 +29,8 @@ export class TimerService {
    * closes. `extraMinutes` is per-student extra time granted before the
    * student started (Phase 4 extensions); it deliberately applies on top of
    * the cap, since its purpose is to let that one student run past the end.
-   * Whole-exam extensions move `examEndTime` itself instead.
+   * Whole-exam extensions increase both `durationMinutes` and `examEndTime`
+   * before this method is called, so they are not counted twice.
    */
   computeExpiresAt(startedAt: Date, durationMinutes: number, examEndTime: Date, extraMinutes = 0): Date {
     const byDuration = startedAt.getTime() + durationMinutes * 60_000;

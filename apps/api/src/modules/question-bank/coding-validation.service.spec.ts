@@ -1,6 +1,6 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ExecutionStatus, OutputComparisonMode, TestCaseVerdict, type ExecutionOutcome } from '@secure-exam/types';
+import { CodeLanguage, ExecutionStatus, OutputComparisonMode, TestCaseVerdict, type ExecutionOutcome } from '@secure-exam/types';
 import { RunLimiterService } from '../execution/run-limiter.service';
 import { CodingValidationService } from './coding-validation.service';
 
@@ -34,7 +34,7 @@ describe('CodingValidationService', () => {
     const { service, executor } = setup();
     executor.runBatch.mockResolvedValue([ok('4\n', 120), ok('9\n', 800)]);
 
-    const res = await service.validate({ coding }, 'admin-1');
+    const res = await service.validate({ coding }, 'instructor-1');
 
     expect(executor.runBatch).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'print(int(input())**2)', inputs: ['2', '3'], limits: { timeLimitMs: 1000, memoryLimitMb: 256 } }),
@@ -43,10 +43,21 @@ describe('CodingValidationService', () => {
     expect(res.tests[1]).toMatchObject({ index: 2, isSample: false, verdict: TestCaseVerdict.WRONG_ANSWER, expectedOutput: '10', stdout: '9\n' });
   });
 
+  it('runs the reference solution in its own language (#16)', async () => {
+    const { service, executor } = setup();
+    executor.runBatch.mockResolvedValue([ok('4'), ok('9')]);
+    await service.validate({ coding: { ...coding, referenceLanguage: CodeLanguage.CPP } }, 'admin-1');
+    expect(executor.runBatch.mock.calls[0][0].language).toBe(CodeLanguage.CPP);
+    await service.validate({ coding: { ...coding, referenceLanguage: CodeLanguage.CPP }, code: 'x', language: CodeLanguage.JAVA }, 'admin-1');
+    expect(executor.runBatch.mock.calls[1][0].language).toBe(CodeLanguage.JAVA);
+    await service.validate({ coding }, 'admin-1');
+    expect(executor.runBatch.mock.calls[2][0].language).toBe(CodeLanguage.PYTHON);
+  });
+
   it('runs explicit code instead of the reference solution', async () => {
     const { service, executor } = setup();
     executor.runBatch.mockResolvedValue([ok('4'), ok('10')]);
-    const res = await service.validate({ coding, code: 'print("other")' }, 'admin-1');
+    const res = await service.validate({ coding, code: 'print("other")' }, 'instructor-1');
     expect(executor.runBatch.mock.calls[0][0].code).toBe('print("other")');
     expect(res.ok).toBe(true);
   });

@@ -84,7 +84,7 @@ app.on('will-quit', (event) => {
 app.whenReady().then(() => {
   installAppProtocol();
 
-  // Tell the API this is the exam app, so it refuses administrator sign-ins and
+  // Tell the API this is the exam app, so it refuses instructor and TA sign-ins and
   // lets the exam be started and answered only from here.
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${new URL(API_URL).origin}/*`] }, (details, done) => {
     done({ requestHeaders: { ...details.requestHeaders, [CLIENT_TYPE_HEADER]: 'DESKTOP' } });
@@ -103,10 +103,10 @@ app.whenReady().then(() => {
   });
 
   installNavigationGuard(win);
-  installInputGuard(win);
+  const interruptExam = registerIpcHandlers(win);
+  installInputGuard(win, interruptExam);
   installFocusMonitor(win);
   installDisplayMonitor(win);
-  registerIpcHandlers(win);
 });
 
 // ponytail: in a real kiosk deployment the session manager relaunches the app on exit.

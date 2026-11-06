@@ -7,37 +7,48 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Role } from '@secure-exam/types';
+import { Permission, STAFF_ROLES } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
+import { AccessService } from '../../common/access/access.service';
+import { RequirePermission, StaffAccess } from '../../common/access/require-permission.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { ExamService } from './exam.service';
-import { AssignStudentDto, CreateExamDto, UpdateExamDto } from '@secure-exam/validation';
+import { AssignStudentDto, CreateExamDto, RescheduleExamDto, UpdateExamDto } from '@secure-exam/validation';
 
+/**
+ * Every exam belongs to one course; its instructors and TAs (with the
+ * permission) manage it. Person A: access rules and reschedule.
+ */
 @ApiTags('exams')
 @ApiBearerAuth()
 @Controller('exams')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@RequirePermission(Permission.EXAM_EDIT, { exam: 'id' })
 export class ExamController {
-  constructor(private readonly examService: ExamService) {}
+  constructor(
+    private readonly examService: ExamService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post()
-  create(@Body() dto: CreateExamDto, @CurrentUser() user: JwtPayload) {
+  @RequirePermission(Permission.EXAM_EDIT)
+  async create(@Body() dto: CreateExamDto, @CurrentUser() user: JwtPayload) {
+    await this.access.assertCourse(user, dto.courseId, Permission.EXAM_EDIT);
     return this.examService.create(dto, user.sub);
   }
 
   @Get()
-  findAll() {
-    return this.examService.findAll();
+  @RequirePermission(Permission.EXAM_VIEW)
+  async findAll(@CurrentUser() user: JwtPayload) {
+    return this.examService.findAll(await this.access.courseIdsFor(user, Permission.EXAM_VIEW));
   }
 
+  /** Any staff member of the owning course (the results and monitoring pages show the exam's details too). */
   @Get(':id')
+  @Roles(...STAFF_ROLES)
+  @StaffAccess(undefined, { exam: 'id' })
   findOne(@Param('id') id: string) {
     return this.examService.findOne(id);
   }
@@ -72,7 +83,15 @@ export class ExamController {
     return this.examService.close(id, user.sub);
   }
 
+  /** Move the exam's times after it left draft (rules in ExamService.reschedule). */
+  @Post(':id/reschedule')
+  @HttpCode(200)
+  reschedule(@Param('id') id: string, @Body() dto: RescheduleExamDto, @CurrentUser() user: JwtPayload) {
+    return this.examService.reschedule(id, dto, user.sub);
+  }
+
   @Get(':id/students')
+  @RequirePermission(Permission.EXAM_VIEW, { exam: 'id' })
   listStudents(@Param('id') id: string) {
     return this.examService.listAssignedStudents(id);
   }

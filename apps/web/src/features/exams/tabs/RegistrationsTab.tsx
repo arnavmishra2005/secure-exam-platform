@@ -29,10 +29,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/components/ui/toast';
 import { StudentPickerDialog } from '@/features/courses/StudentPickerDialog';
 import { getErrorMessage } from '@/lib/errors';
+import { ExtendTimeDialog, type ExtendTarget } from '@/features/monitoring/ExtendTimeDialog';
 import type { ExamTabProps } from '../examTabs.registry';
 
 export function RegistrationsTab({ exam }: ExamTabProps) {
   const queryClient = useQueryClient();
+  const [extendTarget, setExtendTarget] = useState<ExtendTarget | null>(null);
   const [courseToAdd, setCourseToAdd] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -92,7 +94,7 @@ export function RegistrationsTab({ exam }: ExamTabProps) {
               {examCourses.data.map((link) => (
                 <li key={link.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
                   <div className="min-w-0">
-                    <Link to={`/admin/courses/${link.courseId}`} className="font-medium hover:underline">
+                    <Link to={`/instructor/courses/${link.courseId}`} className="font-medium hover:underline">
                       <span className="font-mono text-xs">{link.course.code}</span> {link.course.name}
                     </Link>
                     <p className="text-xs text-muted-foreground">{link.enrolledCount} enrolled</p>
@@ -128,7 +130,7 @@ export function RegistrationsTab({ exam }: ExamTabProps) {
           </div>
           {courses.data?.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              No courses exist yet. <Link to="/admin/courses" className="text-primary hover:underline">Create one</Link>.
+              No courses exist yet. <Link to="/instructor/courses" className="text-primary hover:underline">Create one</Link>.
             </p>
           )}
         </CardContent>
@@ -184,6 +186,7 @@ export function RegistrationsTab({ exam }: ExamTabProps) {
                     )}
                   </TableCell>
                   <TableCell>
+                    <Button size="sm" variant="outline" disabled={exam.status === 'CLOSED' || exam.status === 'DRAFT'} onClick={() => setExtendTarget({ examId: exam.id, examTitle: exam.title, student: { id: r.studentId, name: r.student.fullName } })}>Extend time</Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -200,6 +203,7 @@ export function RegistrationsTab({ exam }: ExamTabProps) {
         )}
       </div>
 
+      <ExtendTimeDialog target={extendTarget} onOpenChange={open => !open && setExtendTarget(null)} onExtended={refresh} />
       <StudentPickerDialog
         open={picking}
         onOpenChange={setPicking}
