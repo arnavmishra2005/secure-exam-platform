@@ -132,6 +132,40 @@ describe('CodingQuestionView', () => {
       expect(picker().value).toBe(CodeLanguage.PYTHON);
     });
 
+    it('saves (and so grades, if drafts count) the language last typed in, not just the one picked', async () => {
+      const onCodeChange = vi.fn();
+      const { onSaveDraft } = setup({ onCodeChange }, {}, [CodeLanguage.PYTHON, CodeLanguage.JAVA]);
+      fireEvent.change(editor(), { target: { value: 'print(7)' } });
+      await waitFor(() => expect(onSaveDraft).toHaveBeenLastCalledWith('print(7)'));
+
+      // Picking Java to look at it keeps the Python work as the saved answer.
+      fireEvent.change(picker(), { target: { value: CodeLanguage.JAVA } });
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to Java' }));
+      expect(editor().value).toContain('public class Main');
+      await new Promise((r) => setTimeout(r, 30));
+      expect(onSaveDraft).toHaveBeenLastCalledWith('print(7)');
+      expect(onCodeChange).toHaveBeenLastCalledWith('print(7)');
+
+      // Typing in Java makes the Java code the saved answer.
+      fireEvent.change(editor(), { target: { value: 'class Main {}' } });
+      await waitFor(() => expect(onSaveDraft).toHaveBeenLastCalledWith(encodeCodeDraft(CodeLanguage.JAVA, 'class Main {}')));
+    });
+
+    it('moves the saved answer to the submitted language on Submit', async () => {
+      const onCodeChange = vi.fn();
+      const { api } = setup({ onCodeChange }, {}, [CodeLanguage.PYTHON, CodeLanguage.C]);
+      fireEvent.change(editor(), { target: { value: 'print(7)' } });
+      fireEvent.change(picker(), { target: { value: CodeLanguage.C } });
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to C' }));
+      const submit = vi.spyOn(api, 'submitCode');
+      await enabled('Submit');
+      fireEvent.click(button('Submit'));
+      await waitFor(() => expect(submit).toHaveBeenCalledWith('att-1', expect.objectContaining({ language: CodeLanguage.C })));
+      await waitFor(() =>
+        expect(onCodeChange).toHaveBeenLastCalledWith(encodeCodeDraft(CodeLanguage.C, CODE_LANGUAGES[CodeLanguage.C].defaultStarter)),
+      );
+    });
+
     it('runs and submits in the selected language', async () => {
       const localRunner = createFakeLocalRunner();
       const run = vi.spyOn(localRunner, 'run');

@@ -105,11 +105,19 @@ export function CodingQuestionView({
   // focus from the exam window, which the exam app records as a violation.
   const [pendingConfirm, setPendingConfirm] = useState<{ kind: 'language'; next: CodeLanguage } | { kind: 'reset' } | null>(null);
 
-  // The saved draft is the code in the selected language: that is what gets graded without a
-  // Submit (when the exam allows it). The host sees the same text on every change.
-  const draft = encodeCodeDraft(language, code);
+  // The saved draft is the code in the language the student last typed in (or submitted): that is
+  // what gets graded without a Submit, when the exam allows it. Only picking another language in the
+  // menu doesn't change it, so looking at another language never replaces the work. The host sees
+  // the same text on every change.
+  const [draftLanguage, setDraftLanguage] = useState<CodeLanguage>(initial.language);
+  const draftCode = codes[draftLanguage] ?? starterFor(problem?.starterCode, draftLanguage);
+  const draft = encodeCodeDraft(draftLanguage, draftCode);
   useEffect(() => { onCodeChange?.(draft); }, [draft, onCodeChange]);
-  const changeCode = (value: string) => { setCode(value); onCodeChange?.(encodeCodeDraft(language, value)); };
+  const changeCode = (value: string) => {
+    setCode(value);
+    setDraftLanguage(language);
+    onCodeChange?.(encodeCodeDraft(language, value));
+  };
   const { status: draftStatus } = useDebouncedDraft(draft, onSaveDraft, draftDelayMs);
   const { run, submit, busy, canRun, configLoading } = useCodeRun(attemptId, question.id, problem, localRunner, language);
 
@@ -162,6 +170,7 @@ export function CodingQuestionView({
       // navigates to another question before this request finishes.
       const result = await submit.mutateAsync(submittedCode);
       setLast({ kind: 'submit', result });
+      setDraftLanguage(submittedLanguage); // the submitted language is now the one being worked in
       onSubmitted?.(submittedCode, result, submittedLanguage);
     } catch (error) {
       setError(friendlyRunError(error));
@@ -214,8 +223,9 @@ export function CodingQuestionView({
     >
       <p className="text-sm text-muted-foreground">
         {pendingConfirm.kind === 'language'
-          ? `Your ${CODE_LANGUAGES[language].shortLabel} code is kept while you stay on this question, but from now on your ` +
-            `${CODE_LANGUAGES[pendingConfirm.next].shortLabel} code is what gets saved and graded.`
+          ? `Your ${CODE_LANGUAGES[language].shortLabel} code stays saved. Once you start typing in ` +
+            `${CODE_LANGUAGES[pendingConfirm.next].shortLabel}, your ${CODE_LANGUAGES[pendingConfirm.next].shortLabel} code becomes your saved answer instead. ` +
+            'Submit always submits the language shown in the editor.'
           : `Your ${CODE_LANGUAGES[language].shortLabel} code on this question will be replaced with the starter code. This can't be undone.`}
       </p>
     </Dialog>
