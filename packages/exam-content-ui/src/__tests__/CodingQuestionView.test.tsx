@@ -47,6 +47,21 @@ describe('CodingQuestionView', () => {
     expect(editor().value).toBe('nums = list(map(int, input().split()))\n');
   });
 
+  it('asks in the page before Reset replaces edited code with the starter code', () => {
+    const confirm = vi.spyOn(window, 'confirm');
+    setup();
+    const starter = editor().value;
+    fireEvent.change(editor(), { target: { value: 'print(99)' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep my code' }));
+    expect(editor().value).toBe('print(99)');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace with starter code' }));
+    expect(editor().value).toBe(starter);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
   it('prefers the saved draft over the starter code', () => {
     setup({ savedCode: 'print(42)' });
     expect(editor().value).toBe('print(42)');
@@ -84,19 +99,37 @@ describe('CodingQuestionView', () => {
       expect(editor().value).toBe('int main(){ return 0; }');
     });
 
-    it('asks before switching away from edited code, and keeps it for switching back', () => {
+    it('asks in the page (not a native dialog) before switching away from edited code, and keeps it for switching back', () => {
+      // A native OS dialog takes focus from the exam window and is recorded as a violation.
+      const confirm = vi.spyOn(window, 'confirm');
       setup({}, {}, [CodeLanguage.PYTHON, CodeLanguage.JAVA]);
       fireEvent.change(editor(), { target: { value: 'print(7)' } });
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+
       fireEvent.change(picker(), { target: { value: CodeLanguage.JAVA } });
+      expect(screen.getByRole('dialog', { name: 'Switch to Java?' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep Python' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
       expect(picker().value).toBe(CodeLanguage.PYTHON);
+      expect(editor().value).toBe('print(7)');
+
       fireEvent.change(picker(), { target: { value: CodeLanguage.JAVA } });
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to Java' }));
       expect(picker().value).toBe(CodeLanguage.JAVA);
       expect(editor().value).toContain('public class Main');
       fireEvent.change(picker(), { target: { value: CodeLanguage.PYTHON } }); // Java template unchanged: no question
+      expect(screen.queryByRole('dialog')).toBeNull();
       expect(editor().value).toBe('print(7)');
-      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(confirm).not.toHaveBeenCalled();
       confirm.mockRestore();
+    });
+
+    it('closes the language question with Escape and stays in the current language', () => {
+      setup({}, {}, [CodeLanguage.PYTHON, CodeLanguage.JAVA]);
+      fireEvent.change(editor(), { target: { value: 'print(7)' } });
+      fireEvent.change(picker(), { target: { value: CodeLanguage.JAVA } });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(picker().value).toBe(CodeLanguage.PYTHON);
     });
 
     it('runs and submits in the selected language', async () => {

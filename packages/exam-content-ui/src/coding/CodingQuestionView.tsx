@@ -30,7 +30,7 @@ import {
   type LatestCodeSubmission,
   type PublicQuestion,
 } from '@secure-exam/types';
-import { Alert, Badge, Button, Select, Textarea, cx } from '../ui';
+import { Alert, Badge, Button, Dialog, Select, Textarea, cx } from '../ui';
 import { SplitPane } from '../ui/SplitPane';
 import { CodeEditor } from './editor/CodeEditor';
 import { friendlyRunError, useCodeRun, type LastAction } from './hooks/useCodeRun';
@@ -101,6 +101,9 @@ export function CodingQuestionView({
   const [last, setLast] = useState<LastAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [pasteBlocked, setPasteBlocked] = useState(false);
+  // Confirmations are shown in the page, never with window.confirm(): a native OS dialog takes
+  // focus from the exam window, which the exam app records as a violation.
+  const [pendingConfirm, setPendingConfirm] = useState<{ kind: 'language'; next: CodeLanguage } | { kind: 'reset' } | null>(null);
 
   // The saved draft is the code in the selected language: that is what gets graded without a
   // Submit (when the exam allows it). The host sees the same text on every change.
@@ -172,25 +175,51 @@ export function CodingQuestionView({
       : null;
   // Code and language must both match what was submitted.
   const submittedIsCurrent = !!latestSubmission && latestSubmission.code === code && latestSubmission.language === language;
-  const switchLanguage = (next: CodeLanguage) => {
-    if (next === language) return;
-    const changed = code !== starter && code.trim() !== '';
-    if (
-      changed &&
-      !window.confirm(
-        `Switch to ${CODE_LANGUAGES[next].shortLabel}? Your ${CODE_LANGUAGES[language].shortLabel} code is kept while you stay on this question, ` +
-          `but from now on your ${CODE_LANGUAGES[next].shortLabel} code is what gets saved and graded.`,
-      )
-    ) {
-      return;
-    }
+  const applyLanguage = (next: CodeLanguage) => {
     setLanguage(next);
     setLast(null);
     setError(null);
   };
-  const resetToStarter = () => {
-    if (code === starter || window.confirm('Replace your code with the starter code?')) changeCode(starter);
+  const switchLanguage = (next: CodeLanguage) => {
+    if (next === language) return;
+    const changed = code !== starter && code.trim() !== '';
+    if (changed) setPendingConfirm({ kind: 'language', next });
+    else applyLanguage(next);
   };
+  const resetToStarter = () => {
+    if (code === starter) return;
+    setPendingConfirm({ kind: 'reset' });
+  };
+  const closeConfirm = () => setPendingConfirm(null);
+  const acceptConfirm = () => {
+    if (pendingConfirm?.kind === 'language') applyLanguage(pendingConfirm.next);
+    else if (pendingConfirm?.kind === 'reset') changeCode(starter);
+    setPendingConfirm(null);
+  };
+  const confirmDialog = pendingConfirm && (
+    <Dialog
+      open
+      title={pendingConfirm.kind === 'language' ? `Switch to ${CODE_LANGUAGES[pendingConfirm.next].shortLabel}?` : 'Replace your code with the starter code?'}
+      onClose={closeConfirm}
+      footer={
+        <>
+          <Button onClick={closeConfirm}>
+            {pendingConfirm.kind === 'language' ? `Keep ${CODE_LANGUAGES[language].shortLabel}` : 'Keep my code'}
+          </Button>
+          <Button variant="primary" onClick={acceptConfirm}>
+            {pendingConfirm.kind === 'language' ? `Switch to ${CODE_LANGUAGES[pendingConfirm.next].shortLabel}` : 'Replace with starter code'}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        {pendingConfirm.kind === 'language'
+          ? `Your ${CODE_LANGUAGES[language].shortLabel} code is kept while you stay on this question, but from now on your ` +
+            `${CODE_LANGUAGES[pendingConfirm.next].shortLabel} code is what gets saved and graded.`
+          : `Your ${CODE_LANGUAGES[language].shortLabel} code on this question will be replaced with the starter code. This can't be undone.`}
+      </p>
+    </Dialog>
+  );
 
   const statementPane = (
     <div className="h-full overflow-y-auto rounded-lg border border-border bg-card p-4">
@@ -292,31 +321,34 @@ export function CodingQuestionView({
   // Draggable dividers: problem | workspace (wide screens; stacked on narrow ones),
   // and editor / run panel inside the workspace. Sizes are remembered per browser.
   return (
-    <SplitPane
-      className="h-auto lg:h-[clamp(560px,calc(100dvh-220px),900px)]"
-      direction="horizontal"
-      defaultRatio={38}
-      minRatio={20}
-      maxRatio={65}
-      collapseBelow={1024}
-      storageKey="exam-content-ui:split:problem"
-      label="Resize problem and editor"
-      first={statementPane}
-      second={
-        <div className="h-[560px] min-h-0 lg:h-full">
-          <SplitPane
-            className="h-full"
-            direction="vertical"
-            defaultRatio={60}
-            minRatio={25}
-            maxRatio={80}
-            storageKey="exam-content-ui:split:editor"
-            label="Resize editor and output"
-            first={editorPane}
-            second={runPane}
-          />
-        </div>
-      }
-    />
+    <>
+      {confirmDialog}
+      <SplitPane
+        className="h-auto lg:h-[clamp(560px,calc(100dvh-220px),900px)]"
+        direction="horizontal"
+        defaultRatio={38}
+        minRatio={20}
+        maxRatio={65}
+        collapseBelow={1024}
+        storageKey="exam-content-ui:split:problem"
+        label="Resize problem and editor"
+        first={statementPane}
+        second={
+          <div className="h-[560px] min-h-0 lg:h-full">
+            <SplitPane
+              className="h-full"
+              direction="vertical"
+              defaultRatio={60}
+              minRatio={25}
+              maxRatio={80}
+              storageKey="exam-content-ui:split:editor"
+              label="Resize editor and output"
+              first={editorPane}
+              second={runPane}
+            />
+          </div>
+        }
+      />
+    </>
   );
 }
