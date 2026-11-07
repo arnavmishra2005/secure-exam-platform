@@ -2,7 +2,9 @@
  * Dev Seed Script — creates instructors (there is no admin), a TA, 3 test
  * students, a course they are enrolled in, and an active, published exam
  * owned by that course. A second instructor gets their own course and draft
- * exam, so you can check that instructors only see their own courses.
+ * exam, so you can check that instructors only see their own courses. Every
+ * instructor ends up with two courses, each with its own question bank
+ * (seed-data/course-banks.ts).
  *
  * Run once after migrations:
  *   npm run db:seed --workspace=apps/api
@@ -36,6 +38,7 @@ import {
 } from './seed-data/last-element';
 import { EASY_CODING_QUESTIONS, EASY_CODING_TAGS, EASY_CODING_TOPIC } from './seed-data/easy-coding';
 import { DEFAULT_INSTRUCTORS, upsertInstructors } from './seed-data/instructors';
+import { COURSE_BANKS } from './seed-data/course-banks';
 import { backfillOwnership, convertAdminRoleToInstructor } from './phase5-ownership';
 
 // ── Seed data ──────────────────────────────────────────────────────────────
@@ -533,6 +536,96 @@ async function seedBankCodingQuestions(ds: DataSource, ownerId: string) {
   }
 }
 
+/**
+ * Each instructor's two courses (seed-data/course-banks.ts) and a question bank per
+ * course: course topics, objective questions and coding questions, owned by the course's
+ * instructor and tagged with the course. Courses that already exist (CS201, CS301) are
+ * reused. Idempotent: a question is skipped when its instructor already has one with the
+ * same text.
+ */
+async function seedCourseBanks(ds: DataSource, instructorIds: Map<string, string>, studentIds: string[]) {
+  console.log('\n🏫 Seeding second courses and course question banks…');
+  for (const bank of COURSE_BANKS) {
+    const ownerId = instructorIds.get(bank.instructorEmail);
+    if (!ownerId) throw new Error(`Unknown instructor ${bank.instructorEmail} in course-banks.ts`);
+    const [existingCourse] = await ds.query<{ id: string }[]>(`SELECT id FROM courses WHERE "code" = $1`, [bank.course.code]);
+    const courseId = existingCourse?.id ?? (await seedCourse(ds, bank.course, ownerId, studentIds));
+
+    let added = 0;
+    let skipped = 0;
+    for (const topic of bank.topics) {
+      let [topicRow] = await ds.query<{ id: string }[]>(
+        `SELECT id FROM topics WHERE "course_id" = $1 AND "name" = $2 LIMIT 1`,
+        [courseId, topic.name],
+      );
+      if (!topicRow) {
+        [topicRow] = await ds.query<{ id: string }[]>(
+          `INSERT INTO topics ("name", "course_id", "owner_id") VALUES ($1, $2, $3) RETURNING id`,
+          [topic.name, courseId, ownerId],
+        );
+      }
+
+      const exists = async (text: string) =>
+        (await ds.query<{ id: string }[]>(`SELECT id FROM questions WHERE "text" = $1 AND "owner_id" = $2 LIMIT 1`, [text, ownerId]))
+          .length > 0;
+
+      for (const q of topic.questions) {
+        if (await exists(q.text)) {
+          skipped++;
+          continue;
+        }
+        await ds.transaction(async (tx) => {
+          const [row] = await tx.query<{ id: string }[]>(
+            `INSERT INTO questions ("text", "type", "marks", "negative_marks", "explanation", "difficulty", "status", "course_id", "topic_id", "owner_id")
+             VALUES ($1, $2, $3, $4, $5, $6, 'READY', $7, $8, $9) RETURNING id`,
+            [q.text, q.type, q.marks, q.negativeMarks, q.explanation, q.difficulty, courseId, topicRow.id, ownerId],
+          );
+          let order = 1;
+          for (const o of q.options) {
+            await tx.query(`INSERT INTO options ("question_id", "text", "is_correct", "order") VALUES ($1, $2, $3, $4)`, [
+              row.id,
+              o.text,
+              o.correct,
+              order++,
+            ]);
+          }
+        });
+        added++;
+      }
+
+      for (const c of topic.coding ?? []) {
+        if (await exists(c.title)) {
+          skipped++;
+          continue;
+        }
+        await ds.transaction(async (tx) => {
+          const [row] = await tx.query<{ id: string }[]>(
+            `INSERT INTO questions ("text", "type", "marks", "negative_marks", "difficulty", "status", "course_id", "topic_id", "owner_id")
+             VALUES ($1, 'CODING', $2, 0, $3, 'READY', $4, $5, $6) RETURNING id`,
+            [c.title, c.marks, c.difficulty, courseId, topicRow.id, ownerId],
+          );
+          await tx.query(
+            `INSERT INTO coding_problems
+               ("question_id", "statement_md", "starter_code", "allowed_languages", "time_limit_ms", "memory_limit_mb", "comparison_mode", "reference_solution")
+             VALUES ($1, $2, $3::jsonb, '{python}', 2000, 256, 'TRIM', $4)`,
+            [row.id, c.statement, JSON.stringify({ python: c.starter }), c.reference],
+          );
+          let order = 0;
+          for (const t of c.testCases) {
+            await tx.query(
+              `INSERT INTO coding_test_cases ("question_id", "input", "expected_output", "is_sample", "weight", "order")
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [row.id, t.input, t.expectedOutput, t.isSample, t.weight, order++],
+            );
+          }
+        });
+        added++;
+      }
+    }
+    console.log(`   ✅ ${bank.course.code} ${bank.course.name}: ${added} questions added${skipped ? `, ${skipped} already there` : ''}`);
+  }
+}
+
 /** #16: the sample coding questions accept every language (C/C++/Java start from the default templates). */
 const SEED_LANGUAGES = ['python', 'c', 'cpp', 'java'];
 
@@ -635,6 +728,7 @@ async function seed() {
   await seedTopics(ds, instructorId);
   await assignExamToCourse(ds, SAMPLE_EXAM_ID, courseId, studentIds);
   await seedOtherInstructorExam(ds, otherCourseId);
+  await seedCourseBanks(ds, new Map(instructors.map((r) => [r.email, r.id])), studentIds);
 
   // Rows from before Phase 5 (made by the old admin) go to the main instructor.
   await backfillOwnership(ds, INSTRUCTOR.email);
@@ -644,9 +738,11 @@ async function seed() {
   console.log('');
   console.log('  Web app — one login for everyone (http://localhost:3003)');
   console.log('  Instructors');
-  console.log(`    ${INSTRUCTOR.fullName.padEnd(18)} → ${INSTRUCTOR.email} / ${INSTRUCTOR.password}   (${SAMPLE_COURSE.code}, the sample exam)`);
-  console.log(`    ${OTHER_INSTRUCTOR.fullName.padEnd(18)} → ${OTHER_INSTRUCTOR.email} / ${OTHER_INSTRUCTOR.password}   (${OTHER_COURSE.code} only)`);
-  console.log(`    ${DEFAULT_INSTRUCTORS[2].fullName.padEnd(18)} → ${DEFAULT_INSTRUCTORS[2].email} / ${DEFAULT_INSTRUCTORS[2].password}   (no courses yet)`);
+  for (const i of DEFAULT_INSTRUCTORS) {
+    const courses = COURSE_BANKS.filter((b) => b.instructorEmail === i.email).map((b) => b.course.code);
+    const note = i.email === INSTRUCTOR.email ? ', the sample exam' : '';
+    console.log(`    ${i.fullName.padEnd(18)} → ${i.email} / ${i.password}   (${courses.join(', ')}${note})`);
+  }
   console.log('  Teaching assistant');
   console.log(`    ${TA.fullName.padEnd(18)} → ${TA.email} / ${TA.password}   (${SAMPLE_COURSE.code}: view exams, monitor, view results)`);
   console.log('');

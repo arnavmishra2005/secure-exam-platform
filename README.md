@@ -615,13 +615,18 @@ You do not need them for development.
 
 | Account | Email | Password |
 |---|---|---|
-| Instructor (browser only; owns CS201 and the sample exam) | `instructor@secure-exam.dev` | `Instructor@1234` |
-| Instructor (owns CS301 only, to check isolation) | `instructor2@secure-exam.dev` | `Instructor@1234` |
-| Instructor (no courses yet) | `instructor3@secure-exam.dev` | `Instructor@1234` |
+| Dr. Meera Iyer, instructor (browser only): CS201 Operating Systems & Networks (the sample exam), CS204 Database Management Systems | `instructor@secure-exam.dev` | `Instructor@1234` |
+| Dr. Arjun Rao, instructor: CS301 Design & Analysis of Algorithms (a draft exam), CS210 Data Structures | `instructor2@secure-exam.dev` | `Instructor@1234` |
+| Prof. Sana Khan, instructor: CS320 Computer Architecture, CS340 Machine Learning | `instructor3@secure-exam.dev` | `Instructor@1234` |
 | Teaching assistant on CS201 (view exams, monitor, view results) | `ta@secure-exam.dev` | `Assistant@1234` |
 | Student | `alice@secure-exam.dev` | `Student@1234` |
 | Student | `bob@secure-exam.dev` | `Student@1234` |
 | Student | `carol@secure-exam.dev` | `Student@1234` |
+
+Each course has its own question bank: two topics with multiple-choice and true/false questions, plus a
+coding question in CS301 and CS210 (`apps/api/src/database/seed-data/course-banks.ts`). Instructors see only
+their own banks, so the three accounts also show that banks are kept apart. alice, bob and carol are enrolled
+in every course.
 
 Login is limited to 5 attempts per minute per IP. If you see "Too many requests", wait a minute.
 
