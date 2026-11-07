@@ -23,7 +23,6 @@ import { NotificationService } from '../notification/notification.service';
 import { QuestionService } from '../question/question.service';
 import { StudentEntity } from '../user/entities/student.entity';
 import { UserService } from '../user/user.service';
-import { McqGradingService } from './mcq-grading.service';
 import {
   mean,
   median,
@@ -52,7 +51,6 @@ export class ResultsService {
     private readonly registrationService: RegistrationService,
     private readonly userService: UserService,
     private readonly notificationService: NotificationService,
-    private readonly mcqGrading: McqGradingService,
     private readonly auditService: AuditService,
     private readonly clientSecurity: ClientSecurityService,
   ) {}
@@ -229,28 +227,6 @@ export class ResultsService {
     }
     await this.auditService.logEvent(AuditEventType.RESULT_PUBLISHED, { examId, publishedCount: userIds.length }, actorId);
     return { publishedCount: userIds.length };
-  }
-
-  /** Re-runs MCQ grading for every finalized attempt (e.g. after an answer-key fix). */
-  async recompute(examId: string, actorId: string): Promise<{ attemptsGraded: number; failed: number }> {
-    await this.examService.findOne(examId);
-    const attempts = await this.attemptRepo.find({
-      where: { examId, status: In([...FINALIZED]) },
-      select: ['id'],
-    });
-    let attemptsGraded = 0;
-    let failed = 0;
-    for (const attempt of attempts) {
-      try {
-        await this.mcqGrading.gradeAttempt(attempt.id);
-        attemptsGraded++;
-      } catch (err) {
-        failed++;
-        this.logger.error(`Recompute failed for attempt ${attempt.id}`, err instanceof Error ? err.stack : undefined);
-      }
-    }
-    await this.auditService.logEvent(AuditEventType.RESULTS_RECOMPUTED, { examId, attemptsGraded, failed }, actorId);
-    return { attemptsGraded, failed };
   }
 
   private async loadExamData(examId: string) {

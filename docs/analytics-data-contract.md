@@ -75,10 +75,20 @@ automatic score on the `question_scores` row:
 | `adjustedBy`, `adjustedAt`, `adjustReason` | Who, when and why (reason required). |
 
 `score = clamp(autoScore + manualAdjustment, 0, maxScore)` whenever an
-adjustment is set. Re-grading writes `autoScore` only and re-applies the
-adjustment (`ScoreRecorder` and B's `ResultTotalsService` both do), so a
-manual change survives a re-grade or a recalculation. Every change is audited
-as `SCORE_ADJUSTED` with the old and new values.
+adjustment is set. Grading writes `autoScore` only and re-applies the
+adjustment (`ScoreRecorder` does), so a manual change survives a
+recalculation. Every change is audited as `SCORE_ADJUSTED` with the old and
+new values.
+
+**Recalculate results** (`POST /exams/:examId/question-analytics/recalculate`,
+MARKS_ADJUST) is the one way to re-score an exam after editing it; the old
+objective-only `POST /results/exams/:examId/recompute` was removed. For every
+finished attempt it re-scores objective questions with the current answer key
+(full marks for the exact correct set, `−negativeMarks` for a wrong answer, 0
+when unanswered), rescales coding answers to the current marks (or re-runs
+them when their tests changed), and writes every question's score to
+`question_scores` through `ScoreRecorder`, so the per-question marks and the
+total agree.
 
 **Whole attempt (legacy).** `PATCH /submissions/:attemptId/result` overrides
 `results.score` directly. A later `ScoreRecorder` write or recalculation for

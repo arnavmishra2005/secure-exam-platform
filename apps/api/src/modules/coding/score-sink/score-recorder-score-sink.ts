@@ -9,7 +9,7 @@ import { CodeScoreRecord, ICodeScoreSink } from './code-score-sink.interface';
  * Sends graded coding scores to Person A's ScoreRecorder (source AUTO_CODE),
  * so they land in question_scores next to the MCQ scores. The recorder keeps
  * Result.score equal to the sum of those rows, which means a later MCQ
- * grading or /results recompute can no longer wipe the code marks.
+ * grading or a recalculation can no longer wipe the code marks.
  *
  * Runs inside the grading transaction (`manager`), as before.
  */

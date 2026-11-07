@@ -31,7 +31,7 @@ export class McqGradingService {
     try {
       await this.gradeAttempt(event.attemptId);
     } catch (err) {
-      // Result.score keeps the submit-time total; POST /results/exams/:id/recompute repairs it.
+      // Result.score keeps the submit-time total; "Recalculate results" (POST /exams/:id/question-analytics/recalculate) repairs it.
       this.logger.error(
         `MCQ grading failed for attempt ${event.attemptId}`,
         err instanceof Error ? err.stack : undefined,

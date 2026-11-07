@@ -28,8 +28,3 @@ export async function publishExamResults(examId: string): Promise<PublishResults
   const { data } = await apiClient.post<PublishResultsResponse>(`/results/exams/${examId}/publish-results`);
   return data;
 }
-
-export async function recomputeExamResults(examId: string): Promise<{ attemptsGraded: number; failed: number }> {
-  const { data } = await apiClient.post<{ attemptsGraded: number; failed: number }>(`/results/exams/${examId}/recompute`);
-  return data;
-}

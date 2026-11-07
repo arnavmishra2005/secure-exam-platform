@@ -140,19 +140,10 @@ describe('QuestionsTab', () => {
 });
 
 describe('QuestionsTab recalculation', () => {
-  it('asks for confirmation, recalculates, and reports what happened', async () => {
-    const api = createFakeApi();
-    const spy = vi.spyOn(api, 'recalculateResults');
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
-    renderWithApi(<QuestionsTab examId="exam-demo" />, api);
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Recalculate results' }));
-    expect(spy).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Recalculate results' }));
-    expect(await screen.findByText(/Recalculated 1 of 2 results; 1 coding answers are being graded again/)).toBeTruthy();
-    expect(spy).toHaveBeenCalledWith('exam-demo');
-    expect(confirm.mock.calls[0][0]).toMatch(/replaces any score you adjusted by hand/);
-    confirm.mockRestore();
+  it('has no Recalculate button of its own (the one on the results page header covers every tab)', async () => {
+    renderWithApi(<QuestionsTab examId="exam-demo" />, createFakeApi());
+    expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /recalculate/i })).toBeNull();
   });
 
   it('shows that grading is still in progress for finished attempts', async () => {

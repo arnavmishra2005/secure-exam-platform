@@ -107,7 +107,7 @@ Use it rather than raw Tailwind for new screens.
 | `GET /exams/:id/publish-readiness`, `POST /exams/:id/publish` | admin | A |
 | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` | any (own) | A |
 | `GET /results/exams`, `GET /results/exams/:id/overview`, `GET /results/exams/:id/students` | admin | A |
-| `POST /results/exams/:id/publish-results`, `POST /results/exams/:id/recompute` | admin | A |
+| `POST /results/exams/:id/publish-results` (`/recompute` was removed in Phase 5: use `POST /exams/:id/question-analytics/recalculate`) | admin | A |
 | `GET/POST /exams/:id/extensions` | admin | C |
 | `GET /me/dashboard`, `GET /me/exams/:examId` | student | C |
 

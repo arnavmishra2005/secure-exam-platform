@@ -2,10 +2,10 @@
  * Owner: Person B. Pure computation of the students × questions matrix and
  * per-question stats. No I/O, so every rule is unit-tested.
  *
- * MCQ correctness uses the same exact-set rule as the attempt scorer
- * (computeScore): full marks only when the selected options equal the
- * correct set. Coding cells use the final code submission's score.
- * Swap MCQ scoring for Person A's QuestionScore rows once they exist.
+ * MCQ scoring is the same rule as Person A's grader (results/mcq-evaluator.ts):
+ * full marks only when the selected options equal the correct set, minus the
+ * question's negative marks for a wrong answer, 0 when unanswered. Coding
+ * cells use the final code submission's score.
  */
 
 import {
@@ -24,6 +24,8 @@ export interface MatrixQuestion {
   text: string;
   type: QuestionType;
   marks: number;
+  /** Marks taken away for a wrong objective answer (0 or missing: none). */
+  negativeMarks?: number | null;
   options: { id: string; isCorrect: boolean; text?: string }[];
 }
 
@@ -95,7 +97,7 @@ export function buildCell(
     const right = correct.size > 0 && correct.size === picked.size && [...correct].every((id) => picked.has(id));
     return right
       ? { ...base, state: QuestionCellState.CORRECT, score: q.marks }
-      : { ...base, state: QuestionCellState.WRONG, score: 0 };
+      : { ...base, state: QuestionCellState.WRONG, score: q.negativeMarks ? -q.negativeMarks : 0 };
   }
 
   if (q.type === QuestionType.CODING) {

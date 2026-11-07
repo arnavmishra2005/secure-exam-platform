@@ -169,6 +169,7 @@ export class QuestionAnalyticsService {
       text: q.text,
       type: q.type,
       marks: q.marks,
+      negativeMarks: q.negativeMarks,
       options: [...(q.options ?? [])]
         .sort((a, b) => a.order - b.order)
         .map((o) => ({ id: o.id, text: o.text, isCorrect: o.isCorrect })),

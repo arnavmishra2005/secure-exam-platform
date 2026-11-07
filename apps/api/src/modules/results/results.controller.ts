@@ -43,11 +43,4 @@ export class ResultsController {
   publishResults(@Param('examId', ParseUUIDPipe) examId: string, @CurrentUser() user: JwtPayload) {
     return this.resultsService.publishResults(examId, user.sub);
   }
-
-  @Post(':examId/recompute')
-  @HttpCode(HttpStatus.OK)
-  @RequirePermission(Permission.MARKS_ADJUST, { exam: 'examId' })
-  recompute(@Param('examId', ParseUUIDPipe) examId: string, @CurrentUser() user: JwtPayload) {
-    return this.resultsService.recompute(examId, user.sub);
-  }
 }

@@ -73,6 +73,21 @@ describe('buildMatrix', () => {
     ]);
   });
 
+  it('takes negative marks off a wrong answer, but not off an unanswered one', () => {
+    const negative = { ...mcq, negativeMarks: 0.5 };
+    const r = buildMatrix(
+      [negative],
+      [attempt('s1'), attempt('s2'), attempt('s3')],
+      [ans('s1', 'mcq', { selectedOptionIds: ['a'] }), ans('s2', 'mcq', { selectedOptionIds: ['b'] })],
+      [],
+      new Set(),
+    );
+    expect(cell(r, 's1', 'mcq')).toMatchObject({ state: QuestionCellState.CORRECT, score: 2 });
+    expect(cell(r, 's2', 'mcq')).toMatchObject({ state: QuestionCellState.WRONG, score: -0.5 });
+    expect(cell(r, 's3', 'mcq')).toMatchObject({ state: QuestionCellState.NOT_ANSWERED, score: 0 });
+    expect(r.students.map((s) => s.score)).toEqual([2, -0.5, 0]);
+  });
+
   it('uses the final code submission for coding cells', () => {
     const attempts = ['full', 'part', 'zero', 'empty'].map((id) => attempt(id));
     const r = buildMatrix(

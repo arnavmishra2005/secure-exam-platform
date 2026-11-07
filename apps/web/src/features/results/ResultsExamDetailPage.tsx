@@ -1,6 +1,6 @@
 // Owner: Person A — tab host for one exam's results.
 
-import { getExam, publishExamResults, recomputeExamResults } from '@secure-exam/api-client';
+import { getExam, publishExamResults, recalculateResults } from '@secure-exam/api-client';
 import { Permission } from '@secure-exam/types';
 import { useAccess } from '@/auth/useAccess';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,13 +23,16 @@ export default function ResultsExamDetailPage() {
   const { examId = '' } = useParams();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [confirm, setConfirm] = useState<'publish' | 'recompute' | null>(null);
+  const [confirm, setConfirm] = useState<'publish' | 'recalculate' | null>(null);
   const exam = useQuery({ queryKey: ['exams', examId], queryFn: () => getExam(examId) });
   const tab = searchParams.get('tab') ?? resultsTabs[0].id;
   const { can } = useAccess();
   const courseId = exam.data?.courseId;
 
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['results'] });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['results'] });
+    void queryClient.invalidateQueries({ queryKey: ['question-analytics', examId] });
+  };
 
   if (exam.error) return <ErrorState message={getErrorMessage(exam.error)} onRetry={() => exam.refetch()} />;
 
@@ -54,8 +57,8 @@ export default function ResultsExamDetailPage() {
         actions={
           <>
             {can(Permission.MARKS_ADJUST, courseId) && (
-              <Button variant="outline" onClick={() => setConfirm('recompute')}>
-                <RefreshCw /> Re-grade
+              <Button variant="outline" onClick={() => setConfirm('recalculate')}>
+                <RefreshCw /> Recalculate results
               </Button>
             )}
             {can(Permission.RESULTS_PUBLISH, courseId) && (
@@ -99,16 +102,22 @@ export default function ResultsExamDetailPage() {
         }}
       />
       <ConfirmDialog
-        open={confirm === 'recompute'}
+        open={confirm === 'recalculate'}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title="Re-grade objective questions?"
-        description="Recalculates every submitted attempt from the current answer key, e.g. after correcting a question. Manual score overrides on those attempts are replaced."
-        confirmLabel="Re-grade"
+        title="Recalculate results?"
+        description={
+          'Re-scores every submitted attempt with the current questions: marks, negative marks, correct answers and coding ' +
+          'test cases. Coding answers whose tests changed are run again. Marks you adjusted per question are kept; a ' +
+          "changed total score is replaced."
+        }
+        confirmLabel="Recalculate"
         onConfirm={async () => {
           try {
-            const { attemptsGraded, failed } = await recomputeExamResults(examId);
-            if (failed) toast.warning(`Re-graded ${attemptsGraded}; ${failed} failed. See the server log.`);
-            else toast.success(`Re-graded ${attemptsGraded} attempt(s)`);
+            const r = await recalculateResults(examId);
+            toast.success(
+              `Recalculated ${r.recalculatedNow} of ${r.attempts} result(s)` +
+                (r.queuedToRerun ? `; ${r.queuedToRerun} coding answer(s) are being graded again` : ''),
+            );
             refresh();
           } catch (err) {
             toast.error(getErrorMessage(err));
