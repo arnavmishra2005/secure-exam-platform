@@ -44,15 +44,19 @@ export default function SubmissionReviewPage() {
           const draft = decodeCodeDraft(row.textResponse);
           const shown = row.code?.code ? row.code : { code: draft.code, language: draft.language ?? CodeLanguage.PYTHON };
           return <>
-            <p className="text-sm text-muted-foreground">{row.code && !row.code.fromDraft ? `Submitted ${formatDateTime(row.code.submittedAt)} · ${CODE_LANGUAGES[row.code.language]?.label ?? row.code.language}` : shown.code ? 'No explicit code submission. Saved draft shown below.' : 'No code submitted.'}</p>
+            <p className="text-sm text-muted-foreground">{row.code && !row.code.fromDraft
+              ? `Submitted ${formatDateTime(row.code.submittedAt)} · ${CODE_LANGUAGES[shown.language]?.label ?? shown.language}`
+              : shown.code
+                ? `No explicit code submission. ${review.gradeUnsubmittedCode ? 'Your saved draft was graded' : 'Saved draft shown below'} · ${CODE_LANGUAGES[shown.language]?.label ?? shown.language}`
+                : 'No code submitted.'}</p>
             <div className="h-80"><Suspense fallback={<Spinner label="Loading code" />}><CodeEditor value={shown.code} language={CODE_LANGUAGES[shown.language]?.monacoId ?? 'python'} onChange={() => {}} readOnly hardened={false} /></Suspense></div>
           </>;
         })()}
         {row.analysis && <div className="space-y-3">
           <p className="text-sm">{row.analysis.reason}</p>
-          {row.analysis.tests?.map(test => <details key={test.index} className={`rounded border p-3 text-sm ${test.verdict === 'PASSED' ? 'border-emerald-600 bg-emerald-500/5' : 'border-red-600 bg-red-500/5'}`}>
-            <summary className="cursor-pointer font-medium">{test.isSample ? 'Sample' : 'Hidden test'} {test.index}: {test.verdict.replaceAll('_', ' ')}{test.errorKind ? ` · ${test.errorKind}` : ''} · {test.timeMs} ms</summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">{[['Input',test.input],['Expected output',test.expectedOutput],['Your output',test.stdout],['Errors',test.stderr]].map(([label,value]) => <div key={label} className="min-w-0"><h4 className="font-medium">{label}</h4><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2">{value === undefined ? 'Unavailable' : value || '(empty)'}</pre></div>)}</div>
+          {row.analysis.tests?.map(test => <details key={test.index} className={`rounded border p-3 text-sm ${test.verdict === null ? 'border-border' : test.verdict === 'PASSED' ? 'border-emerald-600 bg-emerald-500/5' : 'border-red-600 bg-red-500/5'}`}>
+            <summary className="cursor-pointer font-medium">{test.isSample ? 'Sample' : 'Hidden test'} {test.index}: {test.verdict === null ? 'Not run' : test.verdict.replaceAll('_', ' ')}{test.errorKind ? ` · ${test.errorKind}` : ''}{test.timeMs !== null ? ` · ${test.timeMs} ms` : ''}</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">{[['Input',test.input],['Expected output',test.expectedOutput],['Your output',test.stdout],['Errors',test.stderr]].map(([label,value]) => <div key={label} className="min-w-0"><h4 className="font-medium">{label}</h4><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2">{value === undefined ? (test.verdict === null ? 'Not run' : 'Unavailable') : value || '(empty)'}</pre></div>)}</div>
           </details>)}
         </div>}
       </CardContent></Card> : <QuestionRenderer question={row.question} questionNumber={index + 1} totalQuestions={review.questions.length}

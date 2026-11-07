@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In } from 'typeorm';
-import { AttemptStatus, CodeSubmissionStatus, QuestionState, QuestionType, TestCaseVerdict } from '@secure-exam/types';
+import { AttemptStatus, CodeSubmissionStatus, QuestionState, QuestionType, TestCaseVerdict, decodeCodeDraft } from '@secure-exam/types';
 import type { StudentQuestionReview, StudentSubmissionReview } from '@secure-exam/types';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
 import { AnswerEntity } from '../answer/entities/answer.entity';
@@ -69,22 +69,31 @@ export class StudentSubmissionService {
         row.analysis.correctOptionIds = (q.options ?? []).filter(o => o.isCorrect).map(o => o.id);
         row.analysis.explanation = q.explanation ?? null;
       } else {
+        const questionTests = tests.filter(t => t.questionId === q.id);
+        const resultBy = new Map((code?.resultsJson ?? []).map(r => [r.testCaseId, r]));
         row.analysis.passed = code?.passed ?? 0;
-        row.analysis.total = code?.total ?? 0;
-        row.analysis.tests = (code?.resultsJson ?? []).map((r, index) => {
-          const test = tests.find(t => t.id === r.testCaseId && t.questionId === q.id);
-          // The owning student may learn from all tests only after publication.
-          return { index: index + 1, isSample: test?.isSample === true, verdict: r.verdict, timeMs: r.timeMs,
-            ...((r as { errorKind?: string }).errorKind ? { errorKind: (r as { errorKind?: string }).errorKind } : {}),
-            ...(test ? { input: test.input, expectedOutput: test.expectedOutput, stdout: r.stdout, stderr: r.stderr } : {}),
+        row.analysis.total = code?.total || questionTests.length;
+        // Every test case of the question, hidden ones included, so the owning student can learn from them
+        // once results are published, also when no code ran (then only input and expected output are known).
+        row.analysis.tests = questionTests.map((test, index) => {
+          const r = resultBy.get(test.id);
+          const errorKind = (r as { errorKind?: string } | undefined)?.errorKind;
+          return { index: index + 1, isSample: test.isSample, verdict: r?.verdict ?? null, timeMs: r?.timeMs ?? null,
+            ...(errorKind ? { errorKind } : {}),
+            input: test.input, expectedOutput: test.expectedOutput,
+            ...(r ? { stdout: r.stdout, stderr: r.stderr } : {}),
           };
         });
         const failed = (code?.resultsJson ?? []).filter(r => r.verdict !== TestCaseVerdict.PASSED);
         const counts = new Map<string, number>();
         failed.forEach(r => counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1));
-        row.analysis.reason = row.analysis.gradingPending ? 'Grading in progress' : code?.fromDraft && !exam.gradeUnsubmittedCode
-          ? 'Code was not submitted; saved drafts do not receive marks for this exam'
-          : `${failed.length} of ${code?.total ?? 0} tests failed${counts.size ? ` (${[...counts].map(([v,n]) => `${v} ×${n}`).join(', ')})` : ''}`;
+        const wroteDraft = decodeCodeDraft(answer?.textResponse).code.trim().length > 0;
+        row.analysis.reason = row.analysis.gradingPending ? 'Grading in progress'
+          : !code?.code.trim()
+            ? wroteDraft && !exam.gradeUnsubmittedCode
+              ? 'Code was not submitted; saved drafts do not receive marks for this exam'
+              : 'No code was written, so no tests were run'
+            : `${failed.length} of ${code.total} tests failed${counts.size ? ` (${[...counts].map(([v,n]) => `${v} ×${n}`).join(', ')})` : ''}`;
       }
       if (adjustment?.manualAdjustment) row.analysis.reason += `; adjusted by instructor: ${adjustment.manualAdjustment > 0 ? '+' : ''}${adjustment.manualAdjustment}, ${adjustment.adjustReason ?? ''}`;
       return row;

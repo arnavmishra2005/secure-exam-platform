@@ -13,9 +13,10 @@ export interface LatestCodeSubmission {
 export interface StudentTestReview {
   index: number;
   isSample: boolean;
-  verdict: TestCaseVerdict;
+  /** null: the test was not run (no code, or the code was not graded). */
+  verdict: TestCaseVerdict | null;
   errorKind?: string;
-  timeMs: number;
+  timeMs: number | null;
   input?: string;
   expectedOutput?: string;
   stdout?: string;

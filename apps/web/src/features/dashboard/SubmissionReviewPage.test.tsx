@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { getMySubmission } from '@secure-exam/api-client';
-import { CodeLanguage, OutputComparisonMode, QuestionType, TestCaseVerdict, type StudentSubmissionReview } from '@secure-exam/types';
+import { CodeLanguage, OutputComparisonMode, QuestionType, TestCaseVerdict, encodeCodeDraft, type StudentSubmissionReview } from '@secure-exam/types';
 import SubmissionReviewPage from './SubmissionReviewPage';
 
 vi.mock('@secure-exam/api-client', async importOriginal => ({
@@ -38,5 +38,21 @@ describe('submitted coding answer review', () => {
     expect(await screen.findByText(/Hidden test 1: WRONG ANSWER/)).toBeTruthy();
     for (const text of ['hidden input', 'expected value', 'student output', 'student error']) expect(screen.getByText(text)).toBeTruthy();
     expect(screen.getByText('0 / 5 marks')).toBeTruthy();
+  });
+  it('lists tests that were not run (no code) with their input and expected output', async () => {
+    show({ ...base, published: true, questions: [{ ...base.questions[0], textResponse: null, analysis: {
+      score: 0, maxScore: 5, gradingPending: false, reason: 'No code was written, so no tests were run',
+      tests: [{ index: 1, isSample: false, verdict: null, timeMs: null, input: 'hidden input', expectedOutput: 'expected value' }],
+    } }] });
+    expect(await screen.findByText('Hidden test 1: Not run')).toBeTruthy();
+    expect(screen.getByText('hidden input')).toBeTruthy();
+    expect(screen.getByText('expected value')).toBeTruthy();
+  });
+  it('shows a graded draft in its own language', async () => {
+    show({ ...base, published: true, gradeUnsubmittedCode: true, questions: [{ ...base.questions[0],
+      textResponse: encodeCodeDraft(CodeLanguage.JAVA, 'class Main {}'),
+      code: { code: 'class Main {}', language: CodeLanguage.JAVA, fromDraft: true, submittedAt: null } }] });
+    expect(await screen.findByText(/Your saved draft was graded · Java/)).toBeTruthy();
+    expect((await screen.findByLabelText('Code editor', {}, { timeout: 5000 }) as HTMLTextAreaElement).value).toBe('class Main {}');
   });
 });
