@@ -200,11 +200,13 @@ export function CodingQuestionView({
 
   const editorPane = (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div className="flex items-center justify-between text-xs">
+      {/* shrink-0: in a short pane the toolbar must keep its height, or the language picker gets cut off. */}
+      <div className="flex shrink-0 items-center justify-between gap-3 text-xs">
         {languages.length > 1 ? (
           <Select
             aria-label="Language"
-            className="h-7 w-auto py-0 text-xs"
+            compact
+            className="w-auto shrink-0"
             value={language}
             disabled={readOnly || busy}
             onChange={(e) => switchLanguage(e.target.value as CodeLanguage)}
@@ -218,15 +220,15 @@ export function CodingQuestionView({
         ) : (
           <span className="font-medium text-muted-foreground">{CODE_LANGUAGES[language].label}</span>
         )}
-        <span className="flex items-center gap-3">
-          <span className={cx(tooLong ? 'text-destructive' : 'text-muted-foreground')}>
+        <span className="flex min-w-0 items-center gap-3">
+          <span className={cx('shrink-0', tooLong ? 'text-destructive' : 'text-muted-foreground')}>
             {code.length.toLocaleString()} / {CODE_MAX_LENGTH.toLocaleString()}
           </span>
-          <span className={cx(draftStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
+          <span className={cx('truncate', draftStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
             {DRAFT_TEXT[draftStatus]}
           </span>
           {!readOnly && starter && (
-            <button type="button" className="text-muted-foreground underline hover:text-foreground" onClick={resetToStarter}>
+            <button type="button" className="shrink-0 text-muted-foreground underline hover:text-foreground" onClick={resetToStarter}>
               Reset
             </button>
           )}

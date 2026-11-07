@@ -48,7 +48,8 @@ export function PublishDialog({ exam, open, onOpenChange, onPublished }: Publish
     setError(null);
     try {
       const result = await publishExam(exam.id, {
-        passPercentage: Number(passPercentage),
+        // An exam without a pass mark keeps its stored percentage untouched.
+        ...(exam.passMarkEnabled ? { passPercentage: Number(passPercentage) } : {}),
         message: message.trim() || undefined,
       });
       toast.success(`Published. ${result.notifiedCount} student(s) notified.`);
@@ -63,7 +64,7 @@ export function PublishDialog({ exam, open, onOpenChange, onPublished }: Publish
 
   const r = readiness.data;
   const pass = Number(passPercentage);
-  const passValid = Number.isInteger(pass) && pass >= 0 && pass <= 100;
+  const passValid = !exam.passMarkEnabled || (Number.isInteger(pass) && pass >= 0 && pass <= 100);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,9 +100,11 @@ export function PublishDialog({ exam, open, onOpenChange, onPublished }: Publish
                     <CheckCircle2 className="h-4 w-4" /> Ready to publish.
                   </span>
                 </Alert>
-                <Field label="Pass mark (%)">
-                  <Input type="number" min={0} max={100} value={passPercentage} onChange={(e) => setPassPercentage(e.target.value)} />
-                </Field>
+                {exam.passMarkEnabled && (
+                  <Field label="Pass mark (%)">
+                    <Input type="number" min={0} max={100} value={passPercentage} onChange={(e) => setPassPercentage(e.target.value)} />
+                  </Field>
+                )}
                 <Field label="Message to students (optional)" hint="Added to the notification.">
                   <Textarea rows={2} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Bring your student ID card." />
                 </Field>

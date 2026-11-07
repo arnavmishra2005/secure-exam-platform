@@ -55,6 +55,14 @@ describe('CodingQuestionView', () => {
   describe('languages (#16)', () => {
     const picker = () => screen.getByLabelText('Language') as HTMLSelectElement;
 
+    it('sizes the picker with one consistent padding, so its text is not cut off', () => {
+      setup({}, {}, [CodeLanguage.PYTHON, CodeLanguage.JAVA]);
+      const classes = picker().className.split(/\s+/);
+      expect(classes).toContain('py-1');
+      expect(classes).not.toContain('py-2');
+      expect(classes.some((c) => /^h-\d/.test(c))).toBe(false);
+    });
+
     it('shows the only allowed language without a picker', () => {
       setup();
       expect(screen.queryByLabelText('Language')).toBeNull();

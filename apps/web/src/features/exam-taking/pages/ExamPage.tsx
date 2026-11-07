@@ -28,6 +28,7 @@ import { Header } from '../components/Header';
 import { questionRenderers } from '../questionRenderers.registry';
 import { QuestionPalette } from '../components/QuestionPalette';
 import { NavigationControls } from '../components/NavigationControls';
+import { SaveStatusLine } from '../components/SaveStatusLine';
 import { SubmitConfirmationModal } from '../components/SubmitConfirmationModal';
 import { isFixtureAttempt } from '../contexts/AttemptContext';
 import { requestSubmit } from '../persistence';
@@ -264,9 +265,7 @@ export default function ExamPage() {
       />
 
       <div className="mx-auto w-full max-w-7xl px-4 pt-3" role="status" aria-live="polite">
-        {unsavedIds.size > 0
-          ? <Alert variant="warning">{unsavedIds.size} unsaved answer(s). Keep this device open until all changes reach the server.</Alert>
-          : <p className="text-sm text-muted-foreground">All changes saved to the server.</p>}
+        <SaveStatusLine unsavedCount={unsavedIds.size} />
         {submitError && !isSubmitModalOpen && <Alert variant="destructive">{submitError}</Alert>}
         {navigation.error && !navigation.warningOpen && <Alert variant="destructive">{navigation.error}</Alert>}
       </div>

@@ -56,10 +56,13 @@ export const Button = forwardRef<
 /** Full width unless the caller sets a width class (w-*). */
 const width = (className?: string) => (/(^|\s)w-/.test(className ?? '') ? '' : 'w-full');
 
-const CONTROL =
-  'block rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground ' +
+const CONTROL_LOOK =
+  'block rounded-md border border-border bg-card text-foreground ' +
   'placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring ' +
   'disabled:bg-muted disabled:text-muted-foreground';
+const CONTROL = `${CONTROL_LOOK} px-3 py-2 text-sm`;
+/** A smaller control for toolbars (e.g. the language picker). cx() doesn't merge classes, so size it here, not with overrides. */
+const CONTROL_COMPACT = `${CONTROL_LOOK} px-2 py-1 text-xs leading-4`;
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
   { className, ...rest },
@@ -74,12 +77,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   },
 );
 
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
-  { className, children, ...rest },
-  ref,
-) {
+export const Select = forwardRef<
+  HTMLSelectElement,
+  SelectHTMLAttributes<HTMLSelectElement> & { /** Smaller padding and text, for toolbars. */ compact?: boolean }
+>(function Select({ className, children, compact = false, ...rest }, ref) {
   return (
-    <select ref={ref} className={cx(CONTROL, width(className), 'pr-8', className)} {...rest}>
+    <select ref={ref} className={cx(compact ? CONTROL_COMPACT : CONTROL, width(className), compact ? 'pr-7' : 'pr-8', className)} {...rest}>
       {children}
     </select>
   );
