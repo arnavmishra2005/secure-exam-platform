@@ -1,17 +1,17 @@
 import type { BrowserWindow } from 'electron';
-import { isSecurityActive } from './examState';
-import { emitSecurityEvent } from './securityEvents';
+import { reportBackInWindow, reportLeftWindow } from './windowPresence';
 
 export function installFocusMonitor(win: BrowserWindow): void {
-  // The student switched away (Alt+Tab, a notification, another window...).
+  // The student switched away (Alt+Tab, a notification, another window...). Recorded once
+  // per departure, and not while the lockdown itself is moving the window (windowPresence).
   win.on('blur', () => {
-    if (win.isDestroyed() || !isSecurityActive()) return;
-    emitSecurityEvent(win, 'FOCUS_LOST', 'window blurred');
+    if (win.isDestroyed()) return;
+    reportLeftWindow(win, 'Switched away from the exam window');
     // windowLockdown restores visibility, fullscreen and focus together.
   });
 
   win.on('focus', () => {
     if (win.isDestroyed()) return;
-    emitSecurityEvent(win, 'FOCUS_REGAINED', 'window focused');
+    reportBackInWindow(win);
   });
 }

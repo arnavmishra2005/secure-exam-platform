@@ -363,12 +363,13 @@ export function examPublishedNotification(exam: ExamEntity, message?: string) {
   const starts = exam.startTime.toISOString();
   return {
     type: NotificationType.EXAM_PUBLISHED,
-    title: `New exam: ${exam.title}`,
+    title: `New exam scheduled: ${exam.title}`,
+    // Times go in `data`: the dashboard shows them in the student's own time zone.
     body:
       `You are registered for "${exam.title}" (${exam.durationMinutes} min). ` +
-      `It opens at ${starts}.` +
+      `Nothing to do yet: you can start it once the exam opens.` +
       (message ? ` ${message}` : ''),
-    data: { examId: exam.id, startTime: starts },
+    data: { examId: exam.id, startTime: starts, endTime: exam.endTime.toISOString() },
   };
 }
 

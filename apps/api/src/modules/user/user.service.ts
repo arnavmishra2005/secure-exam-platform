@@ -7,11 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { CreateStudentDto, UpdateStudentDto } from '@secure-exam/validation';
+import { UpdateStudentDto } from '@secure-exam/validation';
 import { AuditEventType, Role } from '@secure-exam/types';
-import type { StudentSummary } from '@secure-exam/types';
+import type { StudentDirectoryPage, StudentSummary } from '@secure-exam/types';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { StudentEntity } from './entities/student.entity';
@@ -25,11 +24,6 @@ export interface ResolvedStudents {
   /** Keyed by the identifier the caller passed in. */
   found: Map<string, StudentEntity>;
   notFound: string[];
-}
-
-export interface BulkImportResult {
-  createdCount: number;
-  skipped: Array<{ collegeId: string; reason: string }>;
 }
 
 @Injectable()
@@ -175,68 +169,29 @@ export class UserService {
     });
   }
 
-  async createStudent(dto: CreateStudentDto, actorId: string): Promise<StudentEntity> {
-    const existingByEmail = await this.userRepository.findOne({ where: { email: dto.email } });
-    if (existingByEmail) throw new ConflictException('Email already registered');
-
-    const existingByCollegeId = await this.studentRepository.findOne({
-      where: { collegeId: dto.collegeId },
-    });
-    if (existingByCollegeId) throw new ConflictException('College ID already registered');
-
-    const plainPassword = dto.password ?? randomBytes(9).toString('base64url');
-    const passwordHash = await bcrypt.hash(plainPassword, BCRYPT_ROUNDS);
-
-    const user = await this.userRepository.save(
-      this.userRepository.create({
-        email: dto.email,
-        fullName: dto.fullName,
-        role: Role.STUDENT,
-        passwordHash,
-      }),
-    );
-
-    const student = await this.studentRepository.save(
-      this.studentRepository.create({
-        userId: user.id,
-        collegeId: dto.collegeId,
-      }),
-    );
-
-    await this.auditService.logEvent(
-      AuditEventType.STUDENT_CREATED,
-      { studentId: student.id, collegeId: dto.collegeId },
-      actorId,
-    );
-
-    return student;
-  }
-
-  async bulkImportStudents(
-    dtos: CreateStudentDto[],
-    actorId: string,
-  ): Promise<BulkImportResult> {
-    const result: BulkImportResult = { createdCount: 0, skipped: [] };
-
-    for (const dto of dtos) {
-      try {
-        await this.createStudent(dto, actorId);
-        result.createdCount += 1;
-      } catch (err) {
-        result.skipped.push({
-          collegeId: dto.collegeId,
-          reason: err instanceof Error ? err.message : 'Unknown error',
-        });
-      }
+  /**
+   * The college's student list, for enrolling and registering students: every
+   * student account, searched by college ID, email or name. Accounts come from
+   * the seeded college list; staff can't create them.
+   */
+  async searchStudentDirectory(search: string | undefined, limit: number, offset: number): Promise<StudentDirectoryPage> {
+    const qb = this.studentRepository.createQueryBuilder('s').innerJoinAndSelect('s.user', 'user');
+    const q = search?.trim();
+    if (q) {
+      const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+      qb.where('(s.collegeId ILIKE :pattern OR user.email ILIKE :pattern OR user.fullName ILIKE :pattern)', { pattern });
     }
-
-    await this.auditService.logEvent(
-      AuditEventType.STUDENT_BULK_IMPORTED,
-      { attempted: dtos.length, createdCount: result.createdCount, skippedCount: result.skipped.length },
-      actorId,
-    );
-
-    return result;
+    const [rows, total] = await qb.orderBy('s.collegeId', 'ASC').skip(offset).take(limit).getManyAndCount();
+    return {
+      items: rows.map((s) => ({
+        id: s.id,
+        collegeId: s.collegeId,
+        fullName: s.user.fullName,
+        email: s.user.email,
+        isActive: s.user.isActive,
+      })),
+      total,
+    };
   }
 
   async updateStudent(

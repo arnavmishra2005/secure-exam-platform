@@ -23,7 +23,8 @@ const CodeEditor = lazy(() => import('../editor/CodeEditor').then((m) => ({ defa
 export const EMPTY_PROBLEM: CodingProblemInput = {
   statementMd: '',
   starterCode: { [CodeLanguage.PYTHON]: '' },
-  allowedLanguages: [CodeLanguage.PYTHON],
+  // Every supported language by default; the author can untick the ones they don't want.
+  allowedLanguages: [...CODE_LANGUAGE_ORDER],
   referenceLanguage: CodeLanguage.PYTHON,
   timeLimitMs: 2000,
   memoryLimitMb: 256,

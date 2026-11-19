@@ -33,8 +33,26 @@ export type Platform = 'darwin' | 'linux' | 'win32' | string;
 export interface BlockedKey {
   /** Human-readable, e.g. "Cmd+R" or "Ctrl+Shift+I". Goes into the audit log. */
   label: string;
-  kind: 'shortcut' | 'devtools';
+  /**
+   * `quiet`: blocked, but a habit rather than an attempt to leave the exam (Cmd+S to save,
+   * zooming, printing). It is not recorded as a violation.
+   */
+  kind: 'shortcut' | 'devtools' | 'quiet';
 }
+
+// Blocked with Ctrl/Cmd, but harmless habits (saving, printing, opening, zooming): not recorded.
+const QUIET_MOD_KEYS = new Set([
+  'KeyS', // save page: students press it out of habit in the code editor
+  'KeyP', // print
+  'KeyO', // open file
+  'KeyJ', // downloads
+  'Digit0', // reset zoom
+  'Equal', // zoom in
+  'Minus', // zoom out
+  'NumpadAdd',
+  'NumpadSubtract',
+  'Numpad0',
+]);
 
 const MOD_KEYS = new Set([
   'KeyR', // reload
@@ -151,6 +169,7 @@ export function blockedKey(input: KeyInput, platform: Platform): BlockedKey | nu
   if (input.meta && input.alt && DEVTOOLS_META_ALT.has(code)) return block('devtools');
 
   if (PLAIN_KEYS.has(code)) return block();
+  if (mod && !input.shift && !input.alt && QUIET_MOD_KEYS.has(code)) return block('quiet');
   if (mod && MOD_KEYS.has(code)) return block();
   if (mod && input.shift && MOD_SHIFT_KEYS.has(code)) return block();
 

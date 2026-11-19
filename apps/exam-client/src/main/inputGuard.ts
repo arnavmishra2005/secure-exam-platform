@@ -24,6 +24,7 @@ export function installInputGuard(win: BrowserWindow, interruptExam: () => void)
     );
     if (!blocked) return;
     event.preventDefault();
+    if (blocked.kind === 'quiet') return; // blocked, but not an attempt to leave the exam
     emitSecurityEvent(win, blocked.kind === 'devtools' ? 'DEVTOOLS_ATTEMPT' : 'BLOCKED_SHORTCUT', blocked.label);
   });
 }

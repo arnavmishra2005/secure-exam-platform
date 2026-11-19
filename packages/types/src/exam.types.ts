@@ -113,3 +113,10 @@ export interface StudentLookupResponse {
   email: string;
   isActive: boolean;
 }
+
+/** GET /students/directory: one page of the college's student list. */
+export interface StudentDirectoryPage {
+  items: StudentLookupResponse[];
+  /** Students matching the search, across all pages. */
+  total: number;
+}

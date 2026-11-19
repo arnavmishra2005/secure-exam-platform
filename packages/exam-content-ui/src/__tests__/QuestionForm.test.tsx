@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { CodeLanguage, NO_TOPIC, QuestionStatus, QuestionType } from '@secure-exam/types';
+import { CODE_LANGUAGE_ORDER, CODE_LANGUAGES, CodeLanguage, NO_TOPIC, QuestionStatus, QuestionType } from '@secure-exam/types';
 import { QuestionForm } from '../question-bank/QuestionForm';
 import { createFakeApi, seedState } from '../testing/fakeApi';
 import { renderWithApi } from './render';
@@ -108,10 +108,10 @@ describe('QuestionForm (coding languages, #16)', () => {
     fireEvent.change(screen.getByLabelText('Problem statement'), { target: { value: 'Add two numbers.' } });
     fireEvent.change(screen.getByLabelText('Test 1 input'), { target: { value: '1 2' } });
     fireEvent.change(screen.getByLabelText('Test 1 expected output'), { target: { value: '3' } });
-    fireEvent.click(screen.getByLabelText('C++ 17 (g++)'));
-    fireEvent.click(screen.getByLabelText('Java 21'));
-    fireEvent.click(screen.getByLabelText('Python 3.12')); // students: C++ and Java only
-    // The starter tab follows the language just added.
+    // Every language is allowed by default; untick C and Python: students get C++ and Java only.
+    fireEvent.click(screen.getByLabelText(CODE_LANGUAGES[CodeLanguage.C].label));
+    fireEvent.click(screen.getByLabelText('Python 3.12'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Java' }));
     fireEvent.change(await screen.findByLabelText('Starter code (Java)'), { target: { value: 'public class Main {}' } });
     fireEvent.change(screen.getByLabelText('Reference solution language'), { target: { value: CodeLanguage.CPP } });
     fireEvent.change(screen.getByLabelText('Reference solution'), { target: { value: 'int main(){}' } });
@@ -127,9 +127,18 @@ describe('QuestionForm (coding languages, #16)', () => {
     });
   });
 
+  it('allows every language by default', () => {
+    renderWithApi(<QuestionForm onSaved={vi.fn()} onCancel={vi.fn()} />, createFakeApi());
+    fireEvent.change(typeSelect(), { target: { value: QuestionType.CODING } });
+    for (const l of CODE_LANGUAGE_ORDER) {
+      expect((screen.getByLabelText(CODE_LANGUAGES[l].label) as HTMLInputElement).checked).toBe(true);
+    }
+  });
+
   it('keeps at least one language', () => {
     renderWithApi(<QuestionForm onSaved={vi.fn()} onCancel={vi.fn()} />, createFakeApi());
     fireEvent.change(typeSelect(), { target: { value: QuestionType.CODING } });
+    for (const l of [CodeLanguage.C, CodeLanguage.CPP, CodeLanguage.JAVA]) fireEvent.click(screen.getByLabelText(CODE_LANGUAGES[l].label));
     expect((screen.getByLabelText('Python 3.12') as HTMLInputElement).disabled).toBe(true);
   });
 });

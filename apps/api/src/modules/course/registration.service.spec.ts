@@ -22,7 +22,7 @@ describe('RegistrationService', () => {
   let notificationService: any;
   let auditService: any;
   let service: RegistrationService;
-  const exam = { id: 'exam-1', title: 'OS', durationMinutes: 60, startTime: new Date('2026-06-01T09:00:00Z'), publishedAt: null as Date | null };
+  const exam = { id: 'exam-1', title: 'OS', durationMinutes: 60, startTime: new Date('2026-06-01T09:00:00Z'), endTime: new Date('2026-06-01T11:00:00Z'), publishedAt: null as Date | null };
 
   beforeEach(() => {
     registrationRepo = {

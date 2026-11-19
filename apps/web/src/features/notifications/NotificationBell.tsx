@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { formatRelative } from '@/lib/format';
+import { formatDateTime, formatRelative, formatWindow } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export const notificationsQueryKey = ['notifications'] as const;
@@ -106,6 +106,7 @@ export function NotificationList({
               <div className="min-w-0">
                 <p className="text-sm font-medium">{n.title}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{n.body}</p>
+                <ExamTimes data={n.data} />
                 <p className="mt-1 text-[11px] text-muted-foreground">{formatRelative(n.createdAt)}</p>
               </div>
             </div>
@@ -113,5 +114,17 @@ export function NotificationList({
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Exam times carried in a notification's data, shown in the reader's own time zone. */
+function ExamTimes({ data }: { data: Record<string, unknown> }) {
+  const start = typeof data?.startTime === 'string' ? data.startTime : null;
+  const end = typeof data?.endTime === 'string' ? data.endTime : null;
+  if (!start) return null;
+  return (
+    <p className="mt-0.5 text-xs text-foreground/80">
+      Exam window: {end ? formatWindow(start, end) : formatDateTime(start)}
+    </p>
   );
 }

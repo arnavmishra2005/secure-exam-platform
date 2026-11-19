@@ -206,7 +206,20 @@ export class ExamService {
   }
 
   async start(id: string, actorId: string): Promise<ExamEntity> {
-    return this.transition(id, ExamStatus.ACTIVE, AuditEventType.EXAM_STARTED, actorId);
+    const saved = await this.transition(id, ExamStatus.ACTIVE, AuditEventType.EXAM_STARTED, actorId);
+    if (saved.publishedAt) {
+      const openNow = Date.now() >= saved.startTime.getTime();
+      await this.registrationService.notifyRegistered(id, {
+        type: NotificationType.EXAM_OPENED,
+        title: openNow ? `Exam open: ${saved.title}` : `Exam ready: ${saved.title}`,
+        // Times go in `data`: the dashboard shows them in the student's own time zone.
+        body: openNow
+          ? `You can attempt "${saved.title}" now. Start it from your dashboard before the exam window closes.`
+          : `"${saved.title}" opens at its start time. You can start it from your dashboard from then on.`,
+        data: { examId: id, startTime: saved.startTime.toISOString(), endTime: saved.endTime.toISOString() },
+      });
+    }
+    return saved;
   }
 
   async close(id: string, actorId: string): Promise<ExamEntity> {

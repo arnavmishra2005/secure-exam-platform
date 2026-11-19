@@ -8,6 +8,7 @@ import { getLaunchToken, setLaunchToken } from '../launchState';
 import { runReadinessChecks } from '../readiness/checks';
 import { checkSandbox, runCode, type LocalRunJob } from '../runner/localRunner';
 import { drainSecurityEvents, emitSecurityEvent } from '../securityEvents';
+import { reportBackInWindow, reportLeftWindow, resetWindowPresence, settleWindow } from '../windowPresence';
 
 // ponytail: the invigilator exit PIN comes from the environment for now; fetch it from the API policy later.
 // There is no default outside development: without INVIGILATOR_PIN nobody can leave mid-exam except by submitting.
@@ -43,7 +44,12 @@ export function registerIpcHandlers(win: BrowserWindow): () => void {
     interruptTimer = setTimeout(closeInterruptedExam, 8_000);
   }
   const lockdown = createWindowLockdown(win, globalShortcut, isSecurityActive,
-    detail => emitSecurityEvent(win, 'BLOCKED_SHORTCUT', detail), process.platform, interruptExam);
+    detail => emitSecurityEvent(win, 'BLOCKED_SHORTCUT', detail), process.platform, interruptExam, {
+      left: detail => reportLeftWindow(win, detail),
+      back: () => reportBackInWindow(win),
+      settle: ms => settleWindow(win, ms),
+      reset: resetWindowPresence,
+    });
   const shortcuts = new GnomeShortcutGuard(app.getPath('userData'), reason => emitSecurityEvent(win, 'KIOSK_CHECK_FAILED', reason));
   let recoveryError: string | null = null;
   let securityGeneration = 0;
@@ -91,7 +97,9 @@ export function registerIpcHandlers(win: BrowserWindow): () => void {
     const wasLocked = isSecurityActive();
     setExamActive(Boolean(active));
     if (isSecurityActive()) {
-      void prepareSecurity();
+      // Already locked (the launch screen secured the window, or the exam page reloaded):
+      // locking again would re-run the kiosk/full-screen transition for nothing.
+      if (!wasLocked) void prepareSecurity();
     } else {
       securityGeneration++;
       if (wasLocked) lockdown.unlock();

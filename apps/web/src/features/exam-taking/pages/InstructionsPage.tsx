@@ -8,6 +8,7 @@
 
 import { getMyAttemptForExam, getMyExam, startAttempt } from '@secure-exam/api-client';
 import { AttemptStatus, StudentExamState } from '@secure-exam/types';
+import type { StudentExamView } from '@secure-exam/types';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, CalendarClock, CheckCircle2, Clock, FileQuestion, PlayCircle } from 'lucide-react';
 import { useState } from 'react';
@@ -18,7 +19,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
-import { formatDateTime, formatRelative } from '@/lib/format';
+import { fullMinutes, latestFullStart, minutesIfStartedNow, studentExamPhase } from '@/lib/examWindow';
+import { formatDateTime, formatRelative, formatWindow } from '@/lib/format';
 import { OpenInExamApp } from '../components/OpenInExamApp';
 import { useAttempt } from '../contexts/AttemptContext';
 import { isDesktop } from '../desktop/desktop';
@@ -116,7 +118,7 @@ export default function InstructionsPage() {
           <dl className="grid gap-3 text-sm sm:grid-cols-3">
             <Fact icon={Clock} label="Duration" value={`${exam.durationMinutes} minutes${exam.extendedMinutes ? ` + ${exam.extendedMinutes} extra minutes` : ''}`} />
             <Fact icon={FileQuestion} label="Questions" value={String(exam.questionCount)} />
-            <Fact icon={CalendarClock} label="Window" value={`${formatDateTime(exam.startTime)} – ${formatDateTime(exam.endTime)}`} />
+            <Fact icon={CalendarClock} label="Exam window" value={formatWindow(exam.startTime, exam.endTime)} />
           </dl>
         </CardContent>
       </Card>
@@ -134,6 +136,8 @@ export default function InstructionsPage() {
               </li>
             ))}
           </ul>
+
+          <ExamStatusNote exam={exam} />
 
           <ReadinessGate onReady={setKioskReady} />
 
@@ -160,11 +164,7 @@ export default function InstructionsPage() {
                 <PlayCircle /> Start exam
               </Button>
             </>
-          ) : exam.state === StudentExamState.UPCOMING ? (
-            <Alert variant="info" title={`Opens ${formatRelative(exam.startTime)}`}>
-              This page updates by itself when the exam opens.
-            </Alert>
-          ) : exam.state === StudentExamState.COMPLETED ? (
+          ) : exam.state === StudentExamState.UPCOMING ? null : exam.state === StudentExamState.COMPLETED ? (
             <Alert variant="success" title="You have submitted this exam">
               Your result appears on your dashboard once it is published.
             </Alert>
@@ -177,6 +177,40 @@ export default function InstructionsPage() {
       </Card>
     </Shell>
   );
+}
+
+/** Where the exam stands for this student, in words that don't cause alarm. */
+function ExamStatusNote({ exam }: { exam: StudentExamView }) {
+  const now = Date.now();
+  const phase = studentExamPhase(exam, now);
+  if (phase === 'scheduled') {
+    return (
+      <Alert variant="info" title={`Scheduled for ${formatDateTime(exam.startTime)}`}>
+        Starts {formatRelative(exam.startTime, now)}. You can start it here once the exam opens. This page updates by itself.
+      </Alert>
+    );
+  }
+  if (phase === 'waiting') {
+    return (
+      <Alert variant="info" title="Waiting for your instructor to open the exam">
+        The scheduled start time ({formatDateTime(exam.startTime)}) has passed, but the exam hasn't been opened yet. You don't need to do
+        anything: this page updates by itself and the Start button appears as soon as the exam opens. Your timer starts only when you press
+        Start.
+      </Alert>
+    );
+  }
+  if (phase === 'open') {
+    const total = fullMinutes(exam);
+    const available = minutesIfStartedNow(exam, now);
+    return (
+      <Alert variant={available < total ? 'warning' : 'success'} title="The exam is open: you can attempt it now">
+        {available < total
+          ? `The exam window closes at ${formatDateTime(exam.endTime)}, so if you start now you will have ${available} minutes, not the full ${total}.`
+          : `You get ${total} minutes from when you start. Start by ${formatDateTime(latestFullStart(exam))} to have the full time; the exam window closes at ${formatDateTime(exam.endTime)}.`}
+      </Alert>
+    );
+  }
+  return null;
 }
 
 function Shell({ children }: { children: React.ReactNode }) {

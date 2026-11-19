@@ -1,7 +1,8 @@
 /**
- * Dev Seed Script — creates instructors (there is no admin), a TA, 3 test
- * students, a course they are enrolled in, and an active, published exam
- * owned by that course. A second instructor gets their own course and draft
+ * Dev Seed Script — creates instructors (there is no admin), a TA, the demo
+ * college's student list (40 students; 3 of them enrolled in the courses), a
+ * course those 3 are enrolled in, and an active, published exam owned by that
+ * course. A second instructor gets their own course and draft
  * exam, so you can check that instructors only see their own courses. Every
  * instructor ends up with two courses, each with its own question bank
  * (seed-data/course-banks.ts).
@@ -11,7 +12,8 @@
  *
  * Idempotent: skips rows that already exist.
  * NEVER run in production — this is a development-only convenience tool.
- * (Production instructors: `npm run db:seed-instructors -- instructors.json`.)
+ * (Production instructors: `npm run db:seed-instructors -- instructors.json`;
+ * the college's students: `npm run db:seed-students -- students.json`.)
  */
 
 import 'dotenv/config';
@@ -39,6 +41,7 @@ import {
 import { EASY_CODING_QUESTIONS, EASY_CODING_TAGS, EASY_CODING_TOPIC } from './seed-data/easy-coding';
 import { DEFAULT_INSTRUCTORS, upsertInstructors } from './seed-data/instructors';
 import { COURSE_BANKS } from './seed-data/course-banks';
+import { DEMO_STUDENT_PASSWORD, DEMO_STUDENTS, ENROLLED_DEMO_STUDENTS, upsertStudents } from './seed-data/students';
 import { backfillOwnership, convertAdminRoleToInstructor } from './phase5-ownership';
 
 // ── Seed data ──────────────────────────────────────────────────────────────
@@ -59,26 +62,9 @@ const TA = {
 /** The pre-Phase 5 development admin, deactivated by this seed if it exists. */
 const LEGACY_ADMIN_EMAIL = 'admin@secure-exam.dev';
 
-const STUDENTS = [
-  {
-    collegeId: 'CS2024001',
-    fullName: 'Alice Johnson',
-    email: 'alice@secure-exam.dev',
-    password: 'Student@1234',
-  },
-  {
-    collegeId: 'CS2024002',
-    fullName: 'Bob Smith',
-    email: 'bob@secure-exam.dev',
-    password: 'Student@1234',
-  },
-  {
-    collegeId: 'CS2024003',
-    fullName: 'Carol Williams',
-    email: 'carol@secure-exam.dev',
-    password: 'Student@1234',
-  },
-];
+// Students: the demo college's student list (seed-data/students.ts). Only
+// ENROLLED_DEMO_STUDENTS are put in the sample courses; the rest are on the
+// college list for instructors to enrol.
 
 // Must be a v4 UUID: StartAttemptDto rejects any other version.
 const SAMPLE_EXAM_ID = '11111111-1111-4111-8111-111111111111';
@@ -126,7 +112,7 @@ async function upsertUser(
   email: string,
   fullName: string,
   password: string,
-  role: 'ta' | 'student',
+  role: 'ta',
 ): Promise<{ id: string; created: boolean }> {
   const existing = await ds.query<{ id: string }[]>(
     `SELECT id FROM users WHERE email = $1 LIMIT 1`,
@@ -149,28 +135,6 @@ async function upsertUser(
      VALUES ($1, $2, $3, $4, true)
      RETURNING id`,
     [email, fullName, passwordHash, role],
-  );
-
-  return { id: row.id, created: true };
-}
-
-async function upsertStudent(
-  ds: DataSource,
-  userId: string,
-  collegeId: string,
-): Promise<{ id: string; created: boolean }> {
-  const existing = await ds.query<{ id: string }[]>(
-    `SELECT id FROM students WHERE "collegeId" = $1 LIMIT 1`,
-    [collegeId],
-  );
-
-  if (existing.length > 0) {
-    return { id: existing[0].id, created: false };
-  }
-
-  const [row] = await ds.query<{ id: string }[]>(
-    `INSERT INTO students ("userId", "collegeId") VALUES ($1, $2) RETURNING id`,
-    [userId, collegeId],
   );
 
   return { id: row.id, created: true };
@@ -517,8 +481,8 @@ async function seedBankCodingQuestions(ds: DataSource, ownerId: string) {
       await tx.query(
         `INSERT INTO coding_problems
            ("question_id", "statement_md", "starter_code", "allowed_languages", "time_limit_ms", "memory_limit_mb", "comparison_mode", "reference_solution")
-         VALUES ($1, $2, $3::jsonb, '{python}', 2000, 256, 'TRIM', $4)`,
-        [question.id, q.statement, JSON.stringify({ python: q.starter }), q.reference],
+         VALUES ($1, $2, $3::jsonb, $5, 2000, 256, 'TRIM', $4)`,
+        [question.id, q.statement, JSON.stringify({ python: q.starter }), q.reference, SEED_LANGUAGES],
       );
       let order = 0;
       for (const t of q.testCases) {
@@ -607,8 +571,8 @@ async function seedCourseBanks(ds: DataSource, instructorIds: Map<string, string
           await tx.query(
             `INSERT INTO coding_problems
                ("question_id", "statement_md", "starter_code", "allowed_languages", "time_limit_ms", "memory_limit_mb", "comparison_mode", "reference_solution")
-             VALUES ($1, $2, $3::jsonb, '{python}', 2000, 256, 'TRIM', $4)`,
-            [row.id, c.statement, JSON.stringify({ python: c.starter }), c.reference],
+             VALUES ($1, $2, $3::jsonb, $5, 2000, 256, 'TRIM', $4)`,
+            [row.id, c.statement, JSON.stringify({ python: c.starter }), c.reference, SEED_LANGUAGES],
           );
           let order = 0;
           for (const t of c.testCases) {
@@ -626,19 +590,29 @@ async function seedCourseBanks(ds: DataSource, instructorIds: Map<string, string
   }
 }
 
-/** #16: the sample coding questions accept every language (C/C++/Java start from the default templates). */
+/** #16: every seeded coding question accepts every language (C/C++/Java start from the default templates). */
 const SEED_LANGUAGES = ['python', 'c', 'cpp', 'java'];
 
-/** Opens the sample exam's Python-only coding questions to every language. Idempotent. */
+/**
+ * Opens the seeded coding questions that an older seed stored as Python-only
+ * (the sample exam's, the easy bank questions and the course banks') to every
+ * language. Questions instructors wrote themselves are left alone. Idempotent.
+ */
 async function seedCodingLanguages(ds: DataSource) {
+  const titles = [
+    ...CODING_PROBLEMS.map((p) => p.title),
+    ...EASY_CODING_QUESTIONS.map((q) => q.title),
+    ...COURSE_BANKS.flatMap((b) => b.topics.flatMap((t) => (t.coding ?? []).map((c) => c.title))),
+  ];
   const updated = await ds.query<{ question_id: string }[]>(
     `UPDATE coding_problems SET "allowed_languages" = $1
       WHERE "allowed_languages" = '{python}'
-        AND "question_id" IN (SELECT "question_id" FROM exam_questions WHERE "exam_id" = $2)
+        AND ("question_id" IN (SELECT "question_id" FROM exam_questions WHERE "exam_id" = $2)
+          OR "question_id" IN (SELECT id FROM questions WHERE "type" = 'CODING' AND "text" = ANY($3::text[])))
       RETURNING "question_id"`,
-    [SEED_LANGUAGES, SAMPLE_EXAM_ID],
+    [SEED_LANGUAGES, SAMPLE_EXAM_ID, titles],
   );
-  if (updated.length > 0) console.log(`   ✅ ${updated.length} coding question(s) now accept Python, C, C++ and Java`);
+  if (updated.length > 0) console.log(`   ✅ ${updated.length} seeded coding question(s) now accept Python, C, C++ and Java`);
 }
 
 /**
@@ -697,21 +671,14 @@ async function seed() {
   );
   if (legacyAdmin.length > 0) console.log(`   🚫 Deactivated the old ${LEGACY_ADMIN_EMAIL} account (there is no admin any more)`);
 
-  // ── Students ───────────────────────────────────────────────────────────
-  console.log('\n🎓 Seeding students…');
-  const studentIds: string[] = [];
-
-  for (const s of STUDENTS) {
-    const userResult = await upsertUser(ds, s.email, s.fullName, s.password, 'student');
-    const studentResult = await upsertStudent(ds, userResult.id, s.collegeId);
-    studentIds.push(studentResult.id);
-
-    if (userResult.created || studentResult.created) {
-      console.log(`   ✅ Created  ${s.fullName.padEnd(20)} | ${s.email.padEnd(28)} | password: ${s.password} | collegeId: ${s.collegeId}`);
-    } else {
-      console.log(`   ⏭  Exists   ${s.fullName.padEnd(20)} | ${s.email}`);
-    }
-  }
+  // ── Students: the college's student list ─────────────────────────────
+  console.log('\n🎓 Seeding the college student list…');
+  const roster = await upsertStudents(ds, DEMO_STUDENTS, { resetPasswords: true });
+  const count = (status: string) => roster.filter((r) => r.status === status).length;
+  console.log(`   ✅ ${count('created')} created, ${count('updated')} already there (password reset), ${count('skipped')} skipped`);
+  for (const r of roster.filter((x) => x.status === 'skipped')) console.log(`   ⚠️  Skipped ${r.collegeId} ${r.email}: ${r.reason}`);
+  const enrolledEmails = new Set(ENROLLED_DEMO_STUDENTS.map((s) => s.email));
+  const studentIds = roster.filter((r) => enrolledEmails.has(r.email) && r.studentId).map((r) => r.studentId!);
 
   // ── Courses ────────────────────────────────────────────────────────────
   console.log('\n🏫 Seeding courses…');
@@ -746,10 +713,14 @@ async function seed() {
   console.log('  Teaching assistant');
   console.log(`    ${TA.fullName.padEnd(18)} → ${TA.email} / ${TA.password}   (${SAMPLE_COURSE.code}: view exams, monitor, view results)`);
   console.log('');
-  console.log('  Students (web app, or legacy exam client on http://localhost:3002)');
-  for (const s of STUDENTS) {
-    console.log(`    ${s.fullName.padEnd(18)} → ${s.email} / ${s.password}`);
+  console.log('  Students (web app, or legacy exam client on http://localhost:3002), enrolled in the sample courses');
+  for (const s of ENROLLED_DEMO_STUDENTS) {
+    console.log(`    ${s.fullName.padEnd(18)} → ${s.email} / ${s.password}   (${s.collegeId})`);
   }
+  console.log(
+    `  ${DEMO_STUDENTS.length - ENROLLED_DEMO_STUDENTS.length} more students are on the college list, in no course yet (e.g. ` +
+      `${DEMO_STUDENTS[ENROLLED_DEMO_STUDENTS.length].email} / ${DEMO_STUDENT_PASSWORD}). Enrol them from a course page.`,
+  );
   console.log('');
   console.log('  The sample exam has 5 multiple-choice questions and 2 coding questions');
   console.log(`  (${CODING_PROBLEMS.map((p) => `${p.title}, ${p.marks} marks`).join('; ')}).`);

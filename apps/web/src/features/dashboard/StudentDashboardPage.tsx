@@ -17,11 +17,12 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NotificationList, notificationsQueryKey } from '@/features/notifications/NotificationBell';
 import { getErrorMessage } from '@/lib/errors';
-import { formatDateTime, formatPercent, formatRelative, formatScore } from '@/lib/format';
+import { fullMinutes, latestFullStart, minutesIfStartedNow, studentExamPhase } from '@/lib/examWindow';
+import { formatDateTime, formatPercent, formatRelative, formatScore, formatShortTime, formatWindow } from '@/lib/format';
 
 export default function StudentDashboardPage() {
   const queryClient = useQueryClient();
-  const { data, isPending, error, refetch } = useQuery({
+  const { data, isPending, error, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['dashboard'],
     queryFn: getMyDashboard,
     // Upcoming exams go live on their own; results and notifications arrive any time.
@@ -50,6 +51,9 @@ export default function StudentDashboardPage() {
   }
 
   const firstName = data.student.fullName.split(' ')[0];
+  // The server's clock decides when an exam starts; correct for a student's PC clock that is off.
+  const now = Date.now() + (new Date(data.serverTime).getTime() - dataUpdatedAt);
+  const next = data.upcoming[0];
 
   return (
     <div className="space-y-8">
@@ -59,9 +63,11 @@ export default function StudentDashboardPage() {
           {data.student.collegeId && <span className="font-mono">{data.student.collegeId}</span>}
           {data.student.collegeId && ' · '}
           {data.live.length
-            ? `${data.live.length} exam${data.live.length > 1 ? 's are' : ' is'} open now.`
-            : data.upcoming.length
-              ? `Next exam ${formatRelative(data.upcoming[0].startTime)}.`
+            ? `${data.live.length} exam${data.live.length > 1 ? 's are' : ' is'} open now: you can attempt ${data.live.length > 1 ? 'them' : 'it'} below.`
+            : next
+              ? studentExamPhase(next, now) === 'waiting'
+                ? `"${next.title}" will be open once your instructor opens it.`
+                : `Next exam: "${next.title}", ${formatDateTime(next.startTime)}.`
               : 'No exams scheduled.'}
         </p>
       </div>
@@ -73,7 +79,7 @@ export default function StudentDashboardPage() {
           </h2>
           <div className="grid gap-3 md:grid-cols-2">
             {data.live.map((exam) => (
-              <LiveExamCard key={exam.examId} exam={exam} />
+              <LiveExamCard key={exam.examId} exam={exam} now={now} />
             ))}
           </div>
         </section>
@@ -92,28 +98,42 @@ export default function StudentDashboardPage() {
                 <p className="text-sm text-muted-foreground">Nothing scheduled. Published exams you're registered for appear here.</p>
               ) : (
                 <ul className="divide-y">
-                  {data.upcoming.map((exam) => (
-                    <li key={exam.examId} className="flex flex-col items-start justify-between gap-2 py-3 sm:flex-row sm:items-center sm:gap-4">
-                      <div className="min-w-0">
-                        <Link to={`/student/exams/${exam.examId}`} className="font-medium hover:underline">
-                          {exam.title}
-                        </Link>
-                        <p className="text-xs text-muted-foreground">
-                          {exam.rescheduled && exam.originalStartTime && (
-                            <>
-                              <s>{formatDateTime(exam.originalStartTime)}</s>{' '}
-                            </>
+                  {data.upcoming.map((exam) => {
+                    const waiting = studentExamPhase(exam, now) === 'waiting';
+                    return (
+                      <li key={exam.examId} className="flex flex-col items-start justify-between gap-2 py-3 sm:flex-row sm:items-center sm:gap-4">
+                        <div className="min-w-0">
+                          <Link to={`/student/exams/${exam.examId}`} className="font-medium hover:underline">
+                            {exam.title}
+                          </Link>
+                          <p className="text-xs text-muted-foreground">
+                            Exam window:{' '}
+                            {exam.rescheduled && exam.originalStartTime && (
+                              <>
+                                <s>{formatDateTime(exam.originalStartTime)}</s>{' '}
+                              </>
+                            )}
+                            {formatWindow(exam.startTime, exam.endTime)} · Duration {exam.durationMinutes} min
+                            {exam.extendedMinutes ? ` (+${exam.extendedMinutes} min added)` : ''} · {exam.questionCount} questions
+                          </p>
+                          {waiting && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Not open yet. Your instructor opens the exam; it moves to <span className="font-medium">Open now</span> and you can start it then. This page updates by itself.
+                            </p>
                           )}
-                          {formatDateTime(exam.startTime)} · {exam.durationMinutes} min{exam.extendedMinutes ? ` (+${exam.extendedMinutes} min added)` : ''} · {exam.questionCount} questions
-                        </p>
-                        <ScheduleNote exam={exam} />
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        {exam.rescheduled && <RescheduledBadge exam={exam} />}
-                        <Badge variant="info">Opens {formatRelative(exam.startTime)}</Badge>
-                      </div>
-                    </li>
-                  ))}
+                          <ScheduleNote exam={exam} />
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {exam.rescheduled && <RescheduledBadge exam={exam} />}
+                          {waiting ? (
+                            <Badge variant="secondary">Waiting for instructor to open</Badge>
+                          ) : (
+                            <Badge variant="info">Starts {formatRelative(exam.startTime, now)}</Badge>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </CardContent>
@@ -195,8 +215,10 @@ export default function StudentDashboardPage() {
   );
 }
 
-function LiveExamCard({ exam }: { exam: StudentExamView }) {
+function LiveExamCard({ exam, now }: { exam: StudentExamView; now: number }) {
   const resuming = exam.attemptStatus === AttemptStatus.IN_PROGRESS;
+  const total = fullMinutes(exam);
+  const available = minutesIfStartedNow(exam, now);
   return (
     <Card className="border-success/40">
       <CardContent className="flex h-full flex-col justify-between gap-4 pt-5">
@@ -205,13 +227,32 @@ function LiveExamCard({ exam }: { exam: StudentExamView }) {
             {exam.title}
             {exam.rescheduled && <RescheduledBadge exam={exam} />}
           </p>
+          <p className="mt-1 text-sm font-medium text-success">
+            {resuming ? 'In progress: resume where you left off.' : 'The exam is open. You can attempt it now.'}
+          </p>
           <ScheduleNote exam={exam} />
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" aria-hidden="true" /> {exam.durationMinutes} min{exam.extendedMinutes ? ` (+${exam.extendedMinutes} min added)` : ''}
-            </span>
-            <span>{exam.questionCount} questions</span>
-            <span>Closes {formatDateTime(exam.endTime)}</span>
+          <dl className="mt-2 grid gap-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+              <dt>Exam window:</dt>
+              <dd className="text-foreground">{formatWindow(exam.startTime, exam.endTime)}</dd>
+            </div>
+            <div className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+              <dt>Duration:</dt>
+              <dd className="text-foreground">
+                {exam.durationMinutes} min{exam.extendedMinutes ? ` (+${exam.extendedMinutes} min added)` : ''} · {exam.questionCount} questions
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {resuming
+              ? exam.expiresAt
+                ? `Your time ends at ${formatShortTime(exam.expiresAt)}.`
+                : 'Your timer is running.'
+              : available < total
+                ? `The exam window closes at ${formatShortTime(exam.endTime)}: if you start now you will have ${available} min, not the full ${total}.`
+                : `You get ${total} min from when you start. Start by ${whenToday(latestFullStart(exam), now)} to have the full time.`}
           </p>
         </div>
         <Button asChild className="self-start">
@@ -273,4 +314,9 @@ function shiftText(seconds: number): string {
 function ScheduleNote({ exam }: { exam: StudentExamView }) {
   if (!exam.scheduleNote) return null;
   return <p className="mt-1 text-xs text-[hsl(38_60%_30%)] dark:text-[hsl(var(--warning))]">Note from your instructor: {exam.scheduleNote}</p>;
+}
+
+/** "18:30" today, else the full date and time. */
+function whenToday(iso: string, now: number): string {
+  return new Date(iso).toDateString() === new Date(now).toDateString() ? formatShortTime(iso) : formatDateTime(iso);
 }

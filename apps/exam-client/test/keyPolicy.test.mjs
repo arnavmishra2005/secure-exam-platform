@@ -74,6 +74,18 @@ test('zoom is blocked', () => {
   assert.ok(blockedKey(press('Digit0', { ctrl: true }), LINUX));
 });
 
+test('habits (save, print, zoom) are blocked quietly; escapes are recorded', () => {
+  for (const platform of [MAC, LINUX]) {
+    const mod = platform === MAC ? { meta: true } : { ctrl: true };
+    for (const code of ['KeyS', 'KeyP', 'KeyO', 'Equal', 'Minus', 'Digit0']) {
+      assert.equal(blockedKey(press(code, mod), platform)?.kind, 'quiet', `${code} on ${platform}`);
+    }
+    for (const code of ['KeyR', 'KeyW', 'KeyQ', 'KeyN', 'KeyT']) {
+      assert.equal(blockedKey(press(code, mod), platform)?.kind, 'shortcut', `${code} on ${platform}`);
+    }
+  }
+});
+
 test('editing shortcuts and typing stay allowed', () => {
   for (const platform of [MAC, LINUX]) {
     const mod = platform === MAC ? { meta: true } : { ctrl: true };

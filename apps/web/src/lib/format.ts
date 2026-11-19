@@ -2,6 +2,7 @@
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const timeOnly = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
+const timeShort = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
 
 export function formatDateTime(iso: string | null | undefined): string {
   return iso ? dateTime.format(new Date(iso)) : '—';
@@ -9,6 +10,19 @@ export function formatDateTime(iso: string | null | undefined): string {
 
 export function formatTime(iso: string | null | undefined): string {
   return iso ? timeOnly.format(new Date(iso)) : '—';
+}
+
+/** "18:30", without seconds. */
+export function formatShortTime(iso: string | null | undefined): string {
+  return iso ? timeShort.format(new Date(iso)) : '—';
+}
+
+/** "10 Nov 2026, 18:00 – 20:00" (same day) or "10 Nov 2026, 18:00 – 11 Nov 2026, 09:00". */
+export function formatWindow(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const sameDay = start.toDateString() === end.toDateString();
+  return `${dateTime.format(start)} – ${sameDay ? timeShort.format(end) : dateTime.format(end)}`;
 }
 
 /** 3725 -> "1h 2m", 75 -> "1m 15s". */

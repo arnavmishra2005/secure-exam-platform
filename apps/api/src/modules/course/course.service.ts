@@ -10,25 +10,17 @@ import type {
   EnrollStudentsResponse,
   JwtPayload,
 } from '@secure-exam/types';
-import { CreateCourseDto, CreateStudentDto, UpdateCourseDto } from '@secure-exam/validation';
+import { CreateCourseDto, UpdateCourseDto } from '@secure-exam/validation';
 import { In, Repository } from 'typeorm';
 import { AccessService } from '../../common/access/access.service';
 import { AuditService } from '../audit/audit.service';
 import { ExamEntity } from '../exam/entities/exam.entity';
-import { StudentEntity } from '../user/entities/student.entity';
 import { toStudentSummary, UserService } from '../user/user.service';
 import { CourseStaffEntity } from './entities/course-staff.entity';
 import { CourseEnrollmentEntity } from './entities/course-enrollment.entity';
 import { CourseEntity } from './entities/course.entity';
 import { ExamCourseEntity } from './entities/exam-course.entity';
 import { RegistrationService } from './registration.service';
-
-export interface ImportStudentsToCourseResult {
-  createdCount: number;
-  /** Students newly enrolled, whether their account is new or already existed. */
-  enrolledCount: number;
-  skipped: Array<{ collegeId: string; reason: string }>;
-}
 
 @Injectable()
 export class CourseService {
@@ -199,48 +191,6 @@ export class CourseService {
       actorId,
     );
     return { registrationsRemoved };
-  }
-
-  /** A new student account, enrolled straight into the course. */
-  async createStudent(courseId: string, dto: CreateStudentDto, actorId: string): Promise<StudentEntity> {
-    await this.getOrThrow(courseId);
-    const student = await this.userService.createStudent(dto, actorId);
-    await this.enroll(courseId, [student.id], actorId);
-    return (await this.userService.findStudentById(student.id))!;
-  }
-
-  /**
-   * Creates the accounts that don't exist yet, then enrols every listed
-   * student in the course. A row whose college ID already exists enrols that
-   * student; a row that can't be created (e.g. its email is taken) is skipped.
-   */
-  async importStudents(courseId: string, rows: CreateStudentDto[], actorId: string): Promise<ImportStudentsToCourseResult> {
-    await this.getOrThrow(courseId);
-    const studentIds: string[] = [];
-    const skipped: ImportStudentsToCourseResult['skipped'] = [];
-    let createdCount = 0;
-
-    for (const row of rows) {
-      const existing = await this.userService.findByCollegeId(row.collegeId);
-      if (existing) {
-        studentIds.push(existing.id);
-        continue;
-      }
-      try {
-        studentIds.push((await this.userService.createStudent(row, actorId)).id);
-        createdCount++;
-      } catch (err) {
-        skipped.push({ collegeId: row.collegeId, reason: err instanceof Error ? err.message : 'Unknown error' });
-      }
-    }
-
-    const enrolled = studentIds.length ? await this.enroll(courseId, studentIds, actorId) : { enrolledCount: 0 };
-    await this.auditService.logEvent(
-      AuditEventType.STUDENT_BULK_IMPORTED,
-      { courseId, attempted: rows.length, createdCount, enrolledCount: enrolled.enrolledCount, skippedCount: skipped.length },
-      actorId,
-    );
-    return { createdCount, enrolledCount: enrolled.enrolledCount, skipped };
   }
 
   // ---------------------------------------------------------------------

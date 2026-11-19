@@ -17,9 +17,7 @@ import { Permission, Role, STAFF_ROLES } from '@secure-exam/types';
 import type { JwtPayload } from '@secure-exam/types';
 import {
   AddCourseStaffDto,
-  BulkImportStudentsDto,
   CreateCourseDto,
-  CreateStudentDto,
   EnrollStudentsDto,
   UpdateCourseDto,
   UpdateCourseStaffDto,
@@ -80,29 +78,11 @@ export class CourseController {
     return this.courseService.listEnrollments(id);
   }
 
-  /** Enrol existing students (students.id, users.id or college IDs). */
+  /** Enrol students from the college's list (students.id, users.id or college IDs). Staff can't create students. */
   @Post(':id/students')
   @RequirePermission(Permission.STUDENTS_MANAGE, { course: 'id' })
   enroll(@Param('id', ParseUUIDPipe) id: string, @Body() dto: EnrollStudentsDto, @CurrentUser() user: JwtPayload) {
     return this.courseService.enroll(id, dto.studentIds, user.sub);
-  }
-
-  /** A new student account, enrolled in this course. */
-  @Post(':id/students/create')
-  @RequirePermission(Permission.STUDENTS_MANAGE, { course: 'id' })
-  createStudent(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateStudentDto, @CurrentUser() user: JwtPayload) {
-    return this.courseService.createStudent(id, dto, user.sub);
-  }
-
-  /** CSV rows: new accounts are created, and every listed student is enrolled. */
-  @Post(':id/students/import')
-  @RequirePermission(Permission.STUDENTS_MANAGE, { course: 'id' })
-  importStudents(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: BulkImportStudentsDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.courseService.importStudents(id, dto.students, user.sub);
   }
 
   @Delete(':id/students/:studentId')

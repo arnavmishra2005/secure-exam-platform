@@ -1,31 +1,9 @@
 // Owner: Person A (Identity/Auth/Security)
 
 import { Type } from 'class-transformer';
-import {
-  ArrayMinSize,
-  IsBoolean,
-  IsEmail,
-  IsOptional,
-  IsString,
-  MinLength,
-  ValidateNested,
-} from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
-export class CreateStudentDto {
-  @IsString()
-  collegeId!: string;
-
-  @IsString()
-  fullName!: string;
-
-  @IsEmail()
-  email!: string;
-
-  @IsOptional()
-  @IsString()
-  @MinLength(8)
-  password?: string; // if omitted, a temp password is generated
-}
+// Student accounts come from the college's student list (seeded); staff can't create them.
 
 export class UpdateStudentDto {
   @IsOptional()
@@ -41,9 +19,23 @@ export class UpdateStudentDto {
   isActive?: boolean;
 }
 
-export class BulkImportStudentsDto {
-  @ValidateNested({ each: true })
-  @Type(() => CreateStudentDto)
-  @ArrayMinSize(1)
-  students!: CreateStudentDto[];
+/** GET /students/directory: the college's students, searched by email, college ID or name. */
+export class StudentDirectoryQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number = 0;
 }

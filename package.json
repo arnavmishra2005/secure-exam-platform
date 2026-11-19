@@ -26,6 +26,7 @@
     "typecheck": "npm run build --workspace=packages/types && npm run build --workspace=packages/validation && npm run build --workspace=packages/api-client",
     "db:seed": "npm run db:seed --workspace=apps/api",
     "db:seed-instructors": "npm run db:seed-instructors --workspace=apps/api --",
+    "db:seed-students": "npm run db:seed-students --workspace=apps/api --",
     "web:dev": "NODE_OPTIONS=--max-old-space-size=768 npm run dev --workspace=@secure-exam/web",
     "web:build": "npm run build --workspace=@secure-exam/web",
     "web:test": "npm run test --workspace=@secure-exam/web",

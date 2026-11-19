@@ -120,3 +120,33 @@ describe('ExamService.create', () => {
     expect(registrationService.assignCourse).toHaveBeenCalledWith('exam-9', 'course-1', 'inst-1');
   });
 });
+
+describe('ExamService.start', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('tells registered students they can attempt the exam now', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(start.getTime() + 5 * 60_000));
+    const { service, registrationService } = setup(published);
+    await service.start('exam-1', 'inst-1');
+    expect(registrationService.notifyRegistered).toHaveBeenCalledWith(
+      'exam-1',
+      expect.objectContaining({ type: NotificationType.EXAM_OPENED, title: 'Exam open: Midterm' }),
+    );
+  });
+
+  it('opened before its start time: says it opens at the start time', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(start.getTime() - HOUR));
+    const { service, registrationService } = setup(published);
+    await service.start('exam-1', 'inst-1');
+    expect(registrationService.notifyRegistered).toHaveBeenCalledWith(
+      'exam-1',
+      expect.objectContaining({ type: NotificationType.EXAM_OPENED, title: 'Exam ready: Midterm' }),
+    );
+  });
+
+  it('does not notify anyone about an unpublished exam', async () => {
+    const { service, registrationService } = setup({ ...published, publishedAt: null });
+    await service.start('exam-1', 'inst-1');
+    expect(registrationService.notifyRegistered).not.toHaveBeenCalled();
+  });
+});
