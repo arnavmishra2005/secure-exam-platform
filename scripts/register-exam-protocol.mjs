@@ -9,6 +9,9 @@
 //   Linux : ~/.local/share/applications/secure-exam-dev.desktop  (+ xdg-mime default handler)
 //
 //   npm run exam:register              register (safe to repeat; also after moving the repo)
+//   npm run exam:register -- --server http://192.168.1.20:3003
+//                                      the exam app uses that computer's server (`npm run lan`
+//                                      there) instead of this one's localhost; run again to change it
 //   npm run exam:register -- --remove  undo it
 //
 // Windows is not supported (see the README).
@@ -29,6 +32,29 @@ function fail(message) {
   console.error(`\nexam:register: ${message}`);
   process.exit(1);
 }
+
+/** --server <url>: the computer running `npm run lan` (website and API on one address). */
+function serverOrigin() {
+  const args = process.argv.slice(2);
+  const raw = args.includes('--server') ? args[args.indexOf('--server') + 1] : args.find((a) => a.startsWith('--server='))?.slice(9);
+  if (raw === undefined) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return fail(`not a URL: ${raw}. Example: --server http://192.168.1.20:3003`);
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+    return fail(`use only the address, e.g. --server http://192.168.1.20:3003 (got ${raw})`);
+  }
+  return url.origin;
+}
+
+const server = serverOrigin();
+// The exam app (run from source) loads the website from EXAM_WEB_URL and calls the API at EXAM_API_URL.
+const serverEnv = server ? `EXAM_WEB_URL=${server} EXAM_API_URL=${server}/api ` : '';
+const serverNote = () =>
+  console.log(server ? `The exam app will use the server at ${server}.` : 'The exam app will use this computer (localhost:3003 and :3000).');
 
 function electronBinary() {
   try {
@@ -68,7 +94,7 @@ function macos() {
   const q = (s) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
   const script = [
     'on open location theURL',
-    `  do shell script "/usr/bin/env -u ELECTRON_RUN_AS_NODE EXAM_UNSANDBOXED_RUNNER=1 " & quoted form of ${q(electron)} & " " & quoted form of ${q(appDir)} & " " & quoted form of theURL & " >/dev/null 2>&1 &"`,
+    `  do shell script "/usr/bin/env -u ELECTRON_RUN_AS_NODE EXAM_UNSANDBOXED_RUNNER=1 ${serverEnv}" & quoted form of ${q(electron)} & " " & quoted form of ${q(appDir)} & " " & quoted form of theURL & " >/dev/null 2>&1 &"`,
     'end open location',
     // Opening the launcher by hand (double click) does nothing useful.
     'on run',
@@ -105,6 +131,7 @@ function macos() {
   ]);
 
   console.log(`Registered ${app}\nThe browser can now open the exam app with ${SCHEME}:// links.`);
+  serverNote();
   console.log('The first time, the browser asks "Open SecureExamDev?". Allow it (tick "always allow" if offered).');
 }
 
@@ -123,7 +150,7 @@ function linux() {
   const electron = electronBinary();
   compileApp();
   mkdirSync(apps, { recursive: true });
-  const exec = `env -u ELECTRON_RUN_AS_NODE "${electron}" "${appDir}" %u`;
+  const exec = `env -u ELECTRON_RUN_AS_NODE ${serverEnv}"${electron}" "${appDir}" %u`;
   writeFileSync(
     desktopFile,
     [
@@ -144,6 +171,7 @@ function linux() {
   const check = spawnSync('xdg-mime', ['query', 'default', `x-scheme-handler/${SCHEME}`], { encoding: 'utf8' });
 
   console.log(`Wrote ${desktopFile}\nDefault handler for ${SCHEME}:// is now: ${check.stdout.trim() || '(unknown)'}`);
+  serverNote();
   console.log('The first time, the browser asks to open "Secure Exam (development)". Allow it.');
 }
 

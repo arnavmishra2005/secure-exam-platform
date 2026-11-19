@@ -8,6 +8,9 @@ import { labNetworkAllows } from '../guards/lab-network';
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   PORT: Joi.number().default(3000),
+  // Interface to listen on. Unset = every interface. `npm run lan` sets 127.0.0.1 so the API
+  // is reachable only through the website's /api proxy on the same machine.
+  HOST: Joi.string().optional(),
 
   DATABASE_URL: Joi.string().uri().required(),
 

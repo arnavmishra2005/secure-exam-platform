@@ -25,6 +25,20 @@ export default defineConfig({
   },
   preview: {
     port: 3003,
+    // `npm run lan`: the built site and the API share one address, http://<laptop-ip>:3003, and
+    // /api is passed to the API on this machine (which then listens on 127.0.0.1 only). xfwd adds
+    // the client's address to X-Forwarded-For, so per-student login limits and logs keep working
+    // (the API trusts exactly this one proxy: TRUST_PROXY_HOPS=1).
+    proxy: {
+      '^/api(/|$)': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+        xfwd: true,
+        rewrite: (path) => path.replace(/^\/api/, '') || '/',
+      },
+    },
+    // Laptops are also reachable as <name>.local on networks that allow it.
+    allowedHosts: ['.local'],
   },
   test: {
     maxWorkers: 1,

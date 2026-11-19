@@ -34,7 +34,8 @@
     "desktop:test": "npm test --workspace=@secure-exam/exam-client-desktop",
     "dev": "npm run desktop:compile && concurrently -k -n api,web -c blue,green \"npm run api:start\" \"npm run web:dev\"",
     "exam:app": "node scripts/exam-app.mjs",
-    "exam:register": "node scripts/register-exam-protocol.mjs"
+    "exam:register": "node scripts/register-exam-protocol.mjs",
+    "lan": "node scripts/lan-server.mjs"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
