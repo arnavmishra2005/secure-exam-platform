@@ -38,6 +38,9 @@ function serverOrigin() {
   const args = process.argv.slice(2);
   const raw = args.includes('--server') ? args[args.indexOf('--server') + 1] : args.find((a) => a.startsWith('--server='))?.slice(9);
   if (raw === undefined) return null;
+  // A common slip: a dot instead of the colon before the port (http://10.50.33.112.3003).
+  const dotted = /^(https?:\/\/)(\d{1,3}(?:\.\d{1,3}){3})\.(\d{2,5})\/?$/.exec(raw ?? '');
+  if (dotted) return fail(`the port needs a colon, not a dot. Use: --server ${dotted[1]}${dotted[2]}:${dotted[3]}`);
   let url;
   try {
     url = new URL(raw);

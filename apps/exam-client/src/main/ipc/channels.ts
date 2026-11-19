@@ -38,6 +38,8 @@ export function registerIpcHandlers(win: BrowserWindow): () => void {
   function interruptExam() {
     if (!isSecurityActive() || interrupted) return;
     interrupted = true;
+    // The API recognises this detail (EXAM_INTERRUPTED_DETAIL_PREFIX in @secure-exam/types): continuing
+    // after it needs approval and the timer keeps running. Keep the two in step.
     emitSecurityEvent(win, 'BLOCKED_SHORTCUT', 'Ctrl+Alt+Delete: exam interrupted; invigilator approval is required to resume.');
     // Give the renderer time to send the audit event before exit. Never submit
     // the attempt: the existing launch approval flow controls re-entry.

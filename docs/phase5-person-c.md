@@ -19,7 +19,7 @@ extended and corrected here; they were not all missing implementations.
 | Student review and results | Review feedback was duplicated below the question; wrong selected options could appear green, and awarded marks were separated from the question header. | Inline correct/incorrect colours, marks beside the question number, and removal of duplicate option feedback. Published, owner-only review includes hidden-test details for learning; active-exam responses still redact them. |
 | Additional time | Whole-exam time granted before a student started did not reliably reach that student's allowance; the added-time notice persisted and Instructions showed only the base duration. | Pre-start and running extensions apply, the notice clears after 30 seconds, and Instructions refreshes and shows base minutes plus extra minutes. |
 | Desktop window and shortcut security | Reporting focus loss alone did not stop desktop shortcuts from leaving the exam. Window sizing/fullscreen regressions were also found during Phase 5 testing. | Maximised startup, confirmed fullscreen before entry, Linux fullscreen recovery, and temporary Ubuntu/GNOME shortcut suppression with restoration. Ordinary escape attempts keep the exam open and use warnings/admin logging. Key labels use Win/Ctrl and readable names. |
-| Ctrl+Alt+Delete and re-entry | A dedicated interruption/re-entry workflow was needed. | On Linux, this shortcut closes the app without submitting. Reopening an active attempt requires approval through Monitoring's Allow device change action. Server-saved answers remain and the timer continues. |
+| Ctrl+Alt+Delete and re-entry | A dedicated interruption/re-entry workflow was needed. | On Linux, this shortcut closes the app without submitting. Reopening an active attempt requires approval through Monitoring's Allow device change action. Server-saved answers remain and the timer continues (only other approved device changes pause it). |
 | Launch and session isolation | Exam launch replaced the browser refresh session, and active-attempt re-entry needed explicit approval/session binding. | Separate exam refresh sessions, invigilator-approved launch sessions, rejection of displaced sessions, and separate offline stores for new sessions. Browser launch also uses a server-validated, single-use captcha. |
 | Answer continuity and deployment | Review marks/last position and college intranet setup needed additional support. | Persisted review marks and last question, improved save/sync feedback, two additive migrations, and an intranet deployment/backup recipe with configurable API URLs and optional LAN restrictions. |
 
@@ -46,7 +46,9 @@ Implements the code portions of #3, #6, #7, #9, #10, #12, #15, #17 and #18
 in the active `apps/web`, API and Electron client. New exams require explicit
 coding **Submit** by default. `gradeUnsubmittedCode` enables draft fallback
 per exam. Existing exams retain their previous draft-grading policy through
-the migration. Device changes require invigilator approval; time keeps running.
+the migration. Device changes require invigilator approval. After an approved device change
+the timer is paused from the old device's last heartbeat until the student continues on the new
+one; after a Ctrl+Alt+Delete interruption it keeps running (`apps/api/src/modules/attempt/timer-pause.ts`).
 
 - Code palette state is derived from the latest confirmed submission and current
   draft. Draft-only/changed code stays amber; matching submitted code is green;

@@ -45,6 +45,7 @@ describe('SubmissionService', () => {
     markSubmitted: jest.Mock;
     markAutoSubmitted: jest.Mock;
     findExpiredInProgressAttemptIds: jest.Mock;
+    releaseLapsedTimerPauses: jest.Mock;
   };
   let timerService: { isAttemptValid: jest.Mock };
   let questionLookup: jest.Mocked<IQuestionLookupService>;
@@ -91,6 +92,7 @@ describe('SubmissionService', () => {
       markSubmitted: jest.fn().mockResolvedValue(undefined),
       markAutoSubmitted: jest.fn().mockResolvedValue(undefined),
       findExpiredInProgressAttemptIds: jest.fn().mockResolvedValue([]),
+      releaseLapsedTimerPauses: jest.fn().mockResolvedValue(0),
     };
     timerService = { isAttemptValid: jest.fn().mockReturnValue(true) };
     questionLookup = {

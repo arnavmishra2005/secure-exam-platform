@@ -4,6 +4,7 @@
 // the API, so staff see it. A no-op in a browser.
 
 import { reportSecurityEvents } from '@secure-exam/api-client';
+import { EXAM_INTERRUPTED_DETAIL_PREFIX } from '@secure-exam/types';
 import { useEffect } from 'react';
 import { desktop, isDesktop } from '../desktop/desktop';
 import { flushSecurityQueue } from './flushSecurityQueue';
@@ -33,7 +34,7 @@ export function useSecurityReporter(attemptId: string | null): void {
     // Only the native Ctrl+Alt+Delete path authorises a PIN-free interruption.
     // Ordinary violations keep the exam open and use ViolationBanner.
     const unsubscribe = window.desktop?.onSecurityEvent?.(event => {
-      if (event.type !== 'BLOCKED_SHORTCUT' || !event.detail?.startsWith('Ctrl+Alt+Delete: exam interrupted;')) return;
+      if (event.type !== 'BLOCKED_SHORTCUT' || !event.detail?.startsWith(`${EXAM_INTERRUPTED_DETAIL_PREFIX};`)) return;
       void (async () => {
         // Let the editor's debounced draft reach the durable answer queue.
         await new Promise(resolve => setTimeout(resolve, 2_000));

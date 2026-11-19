@@ -74,6 +74,10 @@ export class AttemptEntity {
   @Column({ type: 'timestamptz', nullable: true })
   deviceChangeApprovedAt: Date | null;
 
+  /** Timer stopped since then, for an invigilator-approved device change (see timer-pause.ts). */
+  @Column({ type: 'timestamptz', nullable: true })
+  timerPausedAt: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

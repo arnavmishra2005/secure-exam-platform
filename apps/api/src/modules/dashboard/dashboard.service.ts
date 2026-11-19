@@ -13,6 +13,7 @@ import type { DashboardResultItem, StudentDashboard, StudentExamView } from '@se
 import { In, Repository } from 'typeorm';
 import { ResultEntity } from '../answer/entities/result.entity';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
+import { effectiveExpiresAt } from '../attempt/timer-pause';
 import { RegistrationService } from '../course/registration.service';
 import { ExamEntity } from '../exam/entities/exam.entity';
 import { ExamService } from '../exam/exam.service';
@@ -155,7 +156,7 @@ function toStudentExamView(
     state: classifyStudentExam(exam, attempt?.status ?? null, now),
     attemptId: attempt?.id ?? null,
     attemptStatus: attempt?.status ?? null,
-    expiresAt: attempt ? attempt.expiresAt.toISOString() : null,
+    expiresAt: attempt ? effectiveExpiresAt(attempt, now).toISOString() : null,
     questionCount,
   };
 }

@@ -30,6 +30,7 @@ import {
 import type { JwtPayload } from '@secure-exam/types';
 import { CodeSubmitDto } from '@secure-exam/validation';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
+import { effectiveExpiresAt } from '../attempt/timer-pause';
 import { assertAttemptSession } from '../attempt/attempt-session';
 import { AttemptStatus } from '@secure-exam/types';
 import { AuditService } from '../audit/audit.service';
@@ -62,7 +63,7 @@ export class CodeSubmitService {
       const attempt = await manager.getRepository(AttemptEntity).findOne({ where: { id: attemptId }, lock: { mode: 'pessimistic_write' } });
       if (!attempt || attempt.studentId !== user.sub) throw new ConflictException('Attempt not available');
       assertAttemptSession(attempt, user);
-      if (attempt.status !== AttemptStatus.IN_PROGRESS || attempt.expiresAt.getTime() < Date.now()) throw new ConflictException('The attempt has ended');
+      if (attempt.status !== AttemptStatus.IN_PROGRESS || effectiveExpiresAt(attempt).getTime() < Date.now()) throw new ConflictException('The attempt has ended');
       const repo = manager.getRepository(CodeSubmissionEntity);
       return repo.save(repo.create(fields));
     });

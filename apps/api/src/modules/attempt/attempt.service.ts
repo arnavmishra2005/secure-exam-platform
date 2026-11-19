@@ -7,6 +7,7 @@ import { assertAttemptSession } from './attempt-session';
 import { AttemptEntity } from './entities/attempt.entity';
 import { ExamSessionEntity } from './entities/exam-session.entity';
 import { TimerService } from './timer.service';
+import { DEVICE_CHANGE_WINDOW_MS, effectiveExpiresAt } from './timer-pause';
 import { EXAM_LOOKUP_SERVICE, IExamLookupService } from './exam-lookup/exam-lookup.interface';
 import { AttemptStatus, ExtensionScope, Role } from '@secure-exam/types';
 import type { Attempt, AttemptMonitorView, HeartbeatResponse, JwtPayload } from '@secure-exam/types';
@@ -218,12 +219,13 @@ export class AttemptService {
   async approveDeviceChange(attemptId: string, actorId: string): Promise<{ approved: boolean }> {
     const attempt = await this.attemptRepository.findOne({ where: { id: attemptId } });
     if (!attempt) throw new NotFoundException('Attempt not found');
-    if (attempt.status !== AttemptStatus.IN_PROGRESS || !attempt.deviceChangeRequestedAt || attempt.expiresAt.getTime() <= Date.now() ||
-      attempt.deviceChangeRequestedAt.getTime() + 600_000 <= Date.now()) throw new ConflictException('No pending device change for a running attempt');
+    if (attempt.status !== AttemptStatus.IN_PROGRESS || !attempt.deviceChangeRequestedAt || effectiveExpiresAt(attempt).getTime() <= Date.now() ||
+      attempt.deviceChangeRequestedAt.getTime() + DEVICE_CHANGE_WINDOW_MS <= Date.now()) throw new ConflictException('No pending device change for a running attempt');
     const result = await this.attemptRepository.update({ id: attemptId, status: AttemptStatus.IN_PROGRESS,
       deviceChangeRequestedAt: attempt.deviceChangeRequestedAt }, { deviceChangeApprovedAt: new Date() });
     if (!result.affected) throw new ConflictException('The request changed. Refresh monitoring and try again.');
-    await logAuditSafely(this.logger, this.auditService, 'DEVICE_CHANGE_APPROVED', { attemptId, examId: attempt.examId }, actorId);
+    await logAuditSafely(this.logger, this.auditService, 'DEVICE_CHANGE_APPROVED',
+      { attemptId, examId: attempt.examId, timerPausedAt: attempt.timerPausedAt?.toISOString() ?? null }, actorId);
     return { approved: true };
   }
 
@@ -289,7 +291,7 @@ export class AttemptService {
 
     const now = new Date();
     const items: AttemptMonitorView[] = attempts.map((a) => {
-      const remainingSeconds = this.timerService.remainingSeconds(now, a.expiresAt);
+      const remainingSeconds = this.timerService.remainingSeconds(now, effectiveExpiresAt(a, now));
       const lastSeen = lastSeenByAttempt.get(a.id) ?? null;
       const student = studentByUser.get(a.studentId);
       return {
@@ -331,13 +333,26 @@ export class AttemptService {
   ): Promise<HeartbeatResponse> {
     const attempt = await this.findOwnedAttemptOrThrow(attemptId, user);
     const now = new Date();
+    // A device change is waiting, but this (old) device is still in use: no time is given back for
+    // that, so the pause starts again from now (timer-pause.ts).
+    if (attempt.status === AttemptStatus.IN_PROGRESS && attempt.timerPausedAt) {
+      const moved = await this.attemptRepository.update(
+        { id: attemptId, status: AttemptStatus.IN_PROGRESS, timerPausedAt: attempt.timerPausedAt },
+        { expiresAt: effectiveExpiresAt(attempt, now), timerPausedAt: now },
+      );
+      if (moved.affected) {
+        attempt.expiresAt = effectiveExpiresAt(attempt, now);
+        attempt.timerPausedAt = now;
+      }
+    }
+    const expiresAt = effectiveExpiresAt(attempt, now);
     const extensions = await this.extensionRepository.find({ where: { examId: attempt.examId } });
     const response: HeartbeatResponse = {
       extendedMinutes: extendedMinutesFor(attempt, extensions),
       serverTime: now.toISOString(),
-      expiresAt: attempt.expiresAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
       remainingSeconds:
-        attempt.status === AttemptStatus.IN_PROGRESS ? this.timerService.remainingSeconds(now, attempt.expiresAt) : 0,
+        attempt.status === AttemptStatus.IN_PROGRESS ? this.timerService.remainingSeconds(now, expiresAt) : 0,
       status: attempt.status,
     };
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
@@ -383,10 +398,28 @@ export class AttemptService {
    */
   async findExpiredInProgressAttemptIds(now: Date = new Date()): Promise<string[]> {
     const rows = await this.attemptRepository.find({
-      where: { status: AttemptStatus.IN_PROGRESS, expiresAt: LessThan(now) },
+      // A paused timer (device change in progress) is not running out.
+      where: { status: AttemptStatus.IN_PROGRESS, expiresAt: LessThan(now), timerPausedAt: IsNull() },
       select: ['id'],
     });
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Drops the pause of device changes that were not approved and completed in time: the timer
+   * counts as having run all along (timer-pause.ts). Called by the expiry sweep.
+   */
+  async releaseLapsedTimerPauses(now: Date = new Date()): Promise<number> {
+    const result = await this.attemptRepository
+      .createQueryBuilder()
+      .update(AttemptEntity)
+      .set({ timerPausedAt: null })
+      .where('status = :status AND "timerPausedAt" IS NOT NULL', { status: AttemptStatus.IN_PROGRESS })
+      .andWhere('("deviceChangeRequestedAt" IS NULL OR "deviceChangeRequestedAt" <= :lapsed)', {
+        lapsed: new Date(now.getTime() - DEVICE_CHANGE_WINDOW_MS),
+      })
+      .execute();
+    return result.affected ?? 0;
   }
 
   /** Called only by SubmissionService once a manual submission is finalized. */
@@ -453,8 +486,9 @@ export function toAttemptDto(entity: AttemptEntity): Attempt {
     lastQuestionId: entity.lastQuestionId ?? null,
     deviceChangeRequestedAt: entity.deviceChangeRequestedAt?.toISOString() ?? null,
     deviceChangeApproved: !!entity.deviceChangeApprovedAt,
+    timerPausedAt: entity.timerPausedAt?.toISOString() ?? null,
     startedAt: entity.startedAt.toISOString(),
-    expiresAt: entity.expiresAt.toISOString(),
+    expiresAt: effectiveExpiresAt(entity).toISOString(),
     submittedAt: entity.submittedAt ? entity.submittedAt.toISOString() : null,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),

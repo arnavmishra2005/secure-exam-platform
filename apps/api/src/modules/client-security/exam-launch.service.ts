@@ -19,6 +19,7 @@ import type { ExamLaunchCreated, ExamLaunchPreview, JwtPayload, LoginResponse } 
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { AttemptEntity } from '../attempt/entities/attempt.entity';
+import { DEVICE_CHANGE_WINDOW_MS, effectiveExpiresAt, lastSeenOnOldDevice, leftThroughViolation } from '../attempt/timer-pause';
 import { SecurityEventEntity } from './entities/security-event.entity';
 import { AuthService } from '../auth/auth.service';
 import { UserService } from '../user/user.service';
@@ -79,26 +80,50 @@ export class ExamLaunchService {
       const attempt = await attempts.createQueryBuilder('a').addSelect('a.deviceChangeTokenHash')
         .setLock('pessimistic_write').where('a.examId = :examId AND a.studentId = :studentId', { examId: row.examId, studentId: row.userId }).getOne();
       if (attempt?.status === AttemptStatus.IN_PROGRESS) {
-        if (attempt.expiresAt.getTime() <= Date.now()) throw new GoneException('The exam timer has expired.');
+        const now = new Date();
         if (attempt.deviceChangeTokenHash !== row.tokenHash || !attempt.deviceChangeApprovedAt) {
+          // A new request to continue on this device. Unless the student left through a violation
+          // (Ctrl+Alt+Delete), the timer stops where they left off: the old device's last heartbeat.
+          let timerPausedAt = attempt.timerPausedAt;
+          if (attempt.deviceChangeTokenHash !== row.tokenHash && !timerPausedAt) {
+            const enteredAt = attempt.startedAt;
+            if (!(await leftThroughViolation(manager, attempt.id, enteredAt))) {
+              let start = (await lastSeenOnOldDevice(manager, attempt.id)) ?? now;
+              // An earlier request that lapsed unapproved gave no time back: never pause before it ended.
+              const earlier = attempt.deviceChangeRequestedAt;
+              if (earlier && earlier.getTime() + DEVICE_CHANGE_WINDOW_MS <= now.getTime()) {
+                const lapsedAt = new Date(earlier.getTime() + DEVICE_CHANGE_WINDOW_MS);
+                if (start < lapsedAt) start = lapsedAt;
+              }
+              timerPausedAt = start < now ? start : now;
+            }
+          }
+          if (effectiveExpiresAt({ expiresAt: attempt.expiresAt, timerPausedAt }, now) <= now) {
+            throw new GoneException('The exam timer has expired.');
+          }
           if (attempt.deviceChangeTokenHash !== row.tokenHash) {
             await attempts.update(attempt.id, { deviceChangeTokenHash: row.tokenHash,
-              deviceChangeRequestedAt: new Date(), deviceChangeApprovedAt: null });
+              deviceChangeRequestedAt: now, deviceChangeApprovedAt: null, timerPausedAt });
             // Give the invigilator time to respond. Retrying cannot extend it again.
-            await repo.update(row.id, { expiresAt: new Date(Date.now() + 600_000) });
+            await repo.update(row.id, { expiresAt: new Date(now.getTime() + DEVICE_CHANGE_WINDOW_MS) });
           }
-          return { pending: true as const };
+          return { pending: true as const, timerPaused: !!timerPausedAt };
         }
+        if (effectiveExpiresAt(attempt, now) <= now) throw new GoneException('The exam timer has expired.');
+        // Approved: continue here, and the timer runs again from where it stopped.
         await attempts.update(attempt.id, { activeSessionId: binding.examSessionId,
-          deviceChangeTokenHash: null, deviceChangeRequestedAt: null, deviceChangeApprovedAt: null });
+          deviceChangeTokenHash: null, deviceChangeRequestedAt: null, deviceChangeApprovedAt: null,
+          expiresAt: effectiveExpiresAt(attempt, now), timerPausedAt: null });
         await manager.getRepository(SecurityEventEntity).insert({ attemptId: attempt.id, examId: attempt.examId,
           studentId: attempt.studentId, type: 'DEVICE_CHANGED', detail: 'Invigilator-approved device change', occurredAt: new Date() });
       }
       await repo.update(row.id, { usedAt: new Date() });
       return { pending: false as const, user, examId: row.examId };
     });
-    if (outcome.pending) throw new ConflictException({ code: 'DEVICE_CHANGE_PENDING',
-      message: 'Waiting for your invigilator to allow this device change in Monitoring. The exam timer keeps running.' });
+    if (outcome.pending) throw new ConflictException({ code: 'DEVICE_CHANGE_PENDING', timerPaused: outcome.timerPaused,
+      message: outcome.timerPaused
+        ? 'Waiting for your invigilator to allow this device change in Monitoring. Your exam timer is paused until you continue here.'
+        : 'Waiting for your invigilator to allow this device change in Monitoring. The exam timer keeps running.' });
     binding.examId = outcome.examId;
     const session = await this.authService.startSessionForUser(outcome.user, ipAddress,
       { via: 'exam-launch', examId: outcome.examId }, binding);

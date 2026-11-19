@@ -32,7 +32,7 @@ type Phase =
   | { name: 'loading' }
   | { name: 'ready'; preview: ExamLaunchPreview; token: string }
   | { name: 'signing-in' }
-  | { name: 'waiting'; preview: ExamLaunchPreview; token: string }
+  | { name: 'waiting'; preview: ExamLaunchPreview; token: string; timerPaused: boolean }
   | { name: 'blocked'; title: string; message: string };
 
 const NO_LINK = {
@@ -121,7 +121,8 @@ export default function LaunchPage() {
       }
     } catch (err) {
       desktop.setSecurityMode(false);
-      if ((err as { response?: { data?: { code?: string } } }).response?.data?.code === 'DEVICE_CHANGE_PENDING') { setPhase({ name: 'waiting', token, preview }); return; }
+      const pending = (err as { response?: { data?: { code?: string; timerPaused?: boolean } } }).response?.data;
+      if (pending?.code === 'DEVICE_CHANGE_PENDING') { setPhase({ name: 'waiting', token, preview, timerPaused: !!pending.timerPaused }); return; }
       setPhase(
         getErrorStatus(err) === 410
           ? { name: 'blocked', ...EXPIRED }
@@ -177,7 +178,13 @@ export default function LaunchPage() {
         )}
 
         {phase.name === 'waiting' && <div className="space-y-4">
-          <Alert variant="warning" title="Waiting for invigilator approval">Ask your invigilator to select “Allow device change” in Monitoring. Your timer keeps running. Retry here after approval, within 10 minutes.</Alert>
+          <Alert variant="warning" title="Waiting for invigilator approval">
+            Ask your invigilator to select “Allow device change” in Monitoring.{' '}
+            {phase.timerPaused
+              ? 'Your exam timer is paused and continues from where you left off once you are back in the exam.'
+              : 'Your timer keeps running, because the exam was interrupted with a blocked key combination.'}{' '}
+            Retry here after approval, within 10 minutes.
+          </Alert>
           <Button onClick={() => void handleLogin()}>Check approval and continue</Button>
           <Button variant="outline" onClick={() => void desktop.exitKiosk()}>Close</Button>
         </div>}

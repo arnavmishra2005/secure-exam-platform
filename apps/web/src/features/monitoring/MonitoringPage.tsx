@@ -156,7 +156,15 @@ export default function MonitoringPage() {
                 approving={approving === a.id}
                 onApprove={async () => {
                   setApproving(a.id);
-                  try { await approveDeviceChange(a.id); toast.success('Device change approved. Ask the student to retry in the exam app.'); await attempts.refetch(); }
+                  try {
+                    await approveDeviceChange(a.id);
+                    toast.success(
+                      a.timerPausedAt
+                        ? 'Device change approved. The timer stays paused until the student continues in the exam app.'
+                        : 'Device change approved. The timer keeps running (the exam was interrupted with Ctrl+Alt+Delete). Ask the student to retry in the exam app.',
+                    );
+                    await attempts.refetch();
+                  }
                   catch (error) { toast.error(getErrorMessage(error)); }
                   finally { setApproving(null); }
                 }}
@@ -209,7 +217,8 @@ function AttemptRow({
   approving: boolean;
 }) {
   const running = a.status === AttemptStatus.IN_PROGRESS;
-  const remaining = running ? Math.max(0, a.remainingSeconds - elapsedSinceFetch) : null;
+  // A paused timer (approved device change in progress) doesn't count down.
+  const remaining = running ? Math.max(0, a.remainingSeconds - (a.timerPausedAt ? 0 : elapsedSinceFetch)) : null;
 
   return (
     <TableRow className={cn(running && a.isDisconnected && 'bg-destructive/5')}>
@@ -232,6 +241,11 @@ function AttemptRow({
       </TableCell>
       <TableCell className="text-right tabular-nums">
         {remaining === null ? '—' : remaining === 0 ? 'Time up' : formatDuration(remaining)}
+        {running && a.timerPausedAt && (
+          <p className="text-xs text-muted-foreground" title="Paused for a device change; it continues when the student is back in the exam.">
+            Timer paused for {formatDuration((now - new Date(a.timerPausedAt).getTime()) / 1000)}
+          </p>
+        )}
         {!!a.extendedMinutes && <p className="text-xs text-muted-foreground">+{a.extendedMinutes} min extended</p>}
       </TableCell>
       <TableCell className="text-muted-foreground">{a.lastSeenAt ? formatRelative(a.lastSeenAt, now) : 'Never'}</TableCell>

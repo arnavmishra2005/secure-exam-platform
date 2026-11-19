@@ -31,9 +31,14 @@ export interface Attempt {
   extendedMinutes?: number;
   deviceChangeRequestedAt?: string | null;
   deviceChangeApproved?: boolean;
+  /**
+   * Set while the timer is paused for an invigilator-approved device change: when the student
+   * left off. Remaining time does not go down until they continue on the new device.
+   */
+  timerPausedAt?: string | null;
   /** ISO 8601 */
   startedAt: string;
-  /** ISO 8601 — server-authoritative, never derived from client input. */
+  /** ISO 8601 — server-authoritative, never derived from client input. While paused, the expiry as of now. */
   expiresAt: string;
   /** ISO 8601, or null while still in progress. */
   submittedAt: string | null;

@@ -23,6 +23,8 @@ describe('ExamLaunchService', () => {
   let users: { findById: jest.Mock };
   let auth: { startSessionForUser: jest.Mock };
   let qb: Record<string, jest.Mock>;
+  /** What the raw queries answer: did the student leave through Ctrl+Alt+Delete, and the old device's last heartbeat. */
+  let db: { interrupted: boolean; lastSeen: Date | null };
 
   beforeEach(async () => {
     qb = {
@@ -35,10 +37,14 @@ describe('ExamLaunchService', () => {
       execute: jest.fn(),
     };
     attemptRow = null;
+    db = { interrupted: false, lastSeen: null };
     const aq = { addSelect: jest.fn().mockReturnThis(), setLock: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), getOne: jest.fn(async () => attemptRow) };
     attempts = { createQueryBuilder: jest.fn(() => aq), update: jest.fn(async (_id, values) => Object.assign(attemptRow!, values)) };
     events = { insert: jest.fn() };
-    tokens = { insert: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(qb), update: jest.fn(), manager: { transaction: async (work: (m: unknown) => unknown) => work({ getRepository: (e: { name: string }) => e.name === 'AttemptEntity' ? attempts : e.name === 'SecurityEventEntity' ? events : tokens }) } };
+    tokens = { insert: jest.fn(), createQueryBuilder: jest.fn().mockReturnValue(qb), update: jest.fn(), manager: { transaction: async (work: (m: unknown) => unknown) => work({
+      getRepository: (e: { name: string }) => e.name === 'AttemptEntity' ? attempts : e.name === 'SecurityEventEntity' ? events : tokens,
+      query: jest.fn(async (sql: string) => (sql.includes('security_events') ? [{ interrupted: db.interrupted }] : [{ lastSeen: db.lastSeen }])),
+    }) } };
     users = { findById: jest.fn() };
     auth = { startSessionForUser: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: { id: 'user-1' } }) };
     const moduleRef = await Test.createTestingModule({
@@ -131,6 +137,72 @@ describe('ExamLaunchService', () => {
       expect(attemptRow.activeSessionId).toBe(result.examSessionId);
       expect(attemptRow.deviceChangeTokenHash).toBeNull();
       expect(events.insert).toHaveBeenCalledWith(expect.objectContaining({ type: 'DEVICE_CHANGED' }));
+    });
+
+    describe('the timer during an approved device change', () => {
+      const MIN = 60_000;
+      const approveAndContinue = async () => {
+        attemptRow!.deviceChangeApprovedAt = new Date();
+        return service.redeem(TOKEN, null);
+      };
+      beforeEach(() => {
+        qb.getOne.mockResolvedValue(live);
+        users.findById.mockResolvedValue({ id: 'user-1', role: 'student', isActive: true });
+      });
+
+      it('stops where the student left off and continues from there on the new device', async () => {
+        const now = Date.now();
+        db.lastSeen = new Date(now - 4 * MIN); // the old PC's last heartbeat
+        attemptRow = { id: 'attempt-1', examId: 'exam-1', studentId: 'user-1', status: 'IN_PROGRESS', startedAt: new Date(now - 30 * MIN),
+          expiresAt: new Date(now + 10 * MIN), activeSessionId: 'old', deviceChangeRequestedAt: null };
+
+        await expect(service.redeem(TOKEN, null)).rejects.toMatchObject({ response: { code: 'DEVICE_CHANGE_PENDING', timerPaused: true } });
+        expect(attemptRow.timerPausedAt).toEqual(db.lastSeen);
+
+        await approveAndContinue();
+        expect(attemptRow.timerPausedAt).toBeNull();
+        // 14 minutes were left when the student left off: they still are.
+        const remaining = (attemptRow.expiresAt as Date).getTime() - Date.now();
+        expect(remaining).toBeGreaterThan(14 * MIN - 2_000);
+        expect(remaining).toBeLessThanOrEqual(14 * MIN);
+      });
+
+      it('keeps running after Ctrl+Alt+Delete (a violation)', async () => {
+        const now = Date.now();
+        const expiresAt = new Date(now + 10 * MIN);
+        db.interrupted = true;
+        db.lastSeen = new Date(now - 4 * MIN);
+        attemptRow = { id: 'attempt-1', examId: 'exam-1', studentId: 'user-1', status: 'IN_PROGRESS', startedAt: new Date(now - 30 * MIN),
+          expiresAt, activeSessionId: 'old', deviceChangeRequestedAt: null };
+
+        await expect(service.redeem(TOKEN, null)).rejects.toMatchObject({ response: { code: 'DEVICE_CHANGE_PENDING', timerPaused: false } });
+        expect(attemptRow.timerPausedAt).toBeFalsy();
+        await approveAndContinue();
+        expect(attemptRow.expiresAt).toEqual(expiresAt);
+      });
+
+      it('does not let the clock run out while the student was away', async () => {
+        const now = Date.now();
+        db.lastSeen = new Date(now - 5 * MIN);
+        // Two minutes were left when the PC died; that was three minutes ago.
+        attemptRow = { id: 'attempt-1', examId: 'exam-1', studentId: 'user-1', status: 'IN_PROGRESS', startedAt: new Date(now - 30 * MIN),
+          expiresAt: new Date(now - 3 * MIN), activeSessionId: 'old', deviceChangeRequestedAt: null };
+
+        await expect(service.redeem(TOKEN, null)).rejects.toMatchObject({ response: { code: 'DEVICE_CHANGE_PENDING', timerPaused: true } });
+        await approveAndContinue();
+        expect((attemptRow.expiresAt as Date).getTime() - Date.now()).toBeGreaterThan(2 * MIN - 2_000);
+      });
+
+      it('gives nothing back for an earlier request that lapsed unapproved', async () => {
+        const now = Date.now();
+        db.lastSeen = new Date(now - 30 * MIN);
+        const lapsedRequest = new Date(now - 15 * MIN); // its 10-minute window ended 5 minutes ago
+        attemptRow = { id: 'attempt-1', examId: 'exam-1', studentId: 'user-1', status: 'IN_PROGRESS', startedAt: new Date(now - 60 * MIN),
+          expiresAt: new Date(now + 10 * MIN), activeSessionId: 'old', deviceChangeTokenHash: 'other', deviceChangeRequestedAt: lapsedRequest };
+
+        await expect(service.redeem(TOKEN, null)).rejects.toMatchObject({ response: { code: 'DEVICE_CHANGE_PENDING' } });
+        expect(attemptRow.timerPausedAt).toEqual(new Date(lapsedRequest.getTime() + 10 * MIN));
+      });
     });
 
     it.each(['instructor', 'ta'])('refuses a %s', async (role) => {

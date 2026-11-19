@@ -17,6 +17,7 @@ import { SubmissionEntity } from './entities/submission.entity';
 import { ResultEntity } from './entities/result.entity';
 import { AttemptService } from '../attempt/attempt.service';
 import { TimerService } from '../attempt/timer.service';
+import { effectiveExpiresAt } from '../attempt/timer-pause';
 import { AttemptStatus } from '@secure-exam/types';
 import type { JwtPayload, Result, Submission } from '@secure-exam/types';
 import { SubmitAttemptDto } from '@secure-exam/validation';
@@ -143,7 +144,7 @@ export class SubmissionService {
       throw new ConflictException('This attempt has already been submitted');
     }
 
-    if (!this.timerService.isAttemptValid(new Date(), attempt.expiresAt)) {
+    if (!this.timerService.isAttemptValid(new Date(), effectiveExpiresAt(attempt))) {
       const outcome = await this.withLockedInProgressAttempt(attemptId, (manager, lockedAttempt) =>
         this.finalizeLocked(manager, lockedAttempt, true),
       );
@@ -170,7 +171,7 @@ export class SubmissionService {
       throw new ConflictException('This attempt has already been submitted');
     }
 
-    const isAutoSubmit = !this.timerService.isAttemptValid(new Date(), attempt.expiresAt);
+    const isAutoSubmit = !this.timerService.isAttemptValid(new Date(), effectiveExpiresAt(attempt));
 
     // If this call loses a race against a concurrent submit for the same
     // attempt, withLockedInProgressAttempt throws ConflictException here —
@@ -326,6 +327,8 @@ export class SubmissionService {
    * expected and harmless — never blocks the rest of the sweep.
    */
   async sweepExpiredAttempts(now: Date = new Date()): Promise<{ sweptCount: number; failedCount: number }> {
+    // Device changes that were never completed give no time back (timer-pause.ts).
+    await this.attemptService.releaseLapsedTimerPauses(now);
     const expiredIds = await this.attemptService.findExpiredInProgressAttemptIds(now);
     let sweptCount = 0;
     let failedCount = 0;
@@ -333,8 +336,10 @@ export class SubmissionService {
     for (const attemptId of expiredIds) {
       try {
         const outcome = await this.withLockedInProgressAttempt(attemptId, (manager, attempt) =>
-          this.finalizeLocked(manager, attempt, true),
+          // Paused for a device change since the scan: not expiring any more.
+          attempt.timerPausedAt && effectiveExpiresAt(attempt) > new Date() ? Promise.resolve(null) : this.finalizeLocked(manager, attempt, true),
         );
+        if (!outcome) continue;
         await this.logFinalizeAudit(outcome, true, outcome.studentId);
         sweptCount++;
       } catch (err) {

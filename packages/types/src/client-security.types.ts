@@ -72,6 +72,13 @@ export const DESKTOP_VIOLATION_TYPES = [
 
 export type DesktopViolationType = (typeof DESKTOP_VIOLATION_TYPES)[number];
 
+/**
+ * Start of the detail the exam app records when Ctrl+Alt+Delete interrupts an exam (a BLOCKED_SHORTCUT).
+ * Continuing after it needs invigilator approval, and the timer keeps running; after any other
+ * approved device change the timer is paused while the student was away.
+ */
+export const EXAM_INTERRUPTED_DETAIL_PREFIX = 'Ctrl+Alt+Delete: exam interrupted';
+
 /** Informational events that do not count towards an attempt's violation total. */
 export const NON_VIOLATION_TYPES: readonly DesktopViolationType[] = ['FOCUS_REGAINED', 'HEARTBEAT_LOST', 'DEVICE_CHANGED'];
 
