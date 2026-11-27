@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 import { fullMinutes, latestFullStart, minutesIfStartedNow, studentExamPhase } from '@/lib/examWindow';
 import { formatDateTime, formatRelative, formatWindow } from '@/lib/format';
+import { useNow } from '@/lib/useNow';
 import { OpenInExamApp } from '../components/OpenInExamApp';
 import { useAttempt } from '../contexts/AttemptContext';
 import { isDesktop } from '../desktop/desktop';
@@ -181,7 +182,7 @@ export default function InstructionsPage() {
 
 /** Where the exam stands for this student, in words that don't cause alarm. */
 function ExamStatusNote({ exam }: { exam: StudentExamView }) {
-  const now = Date.now();
+  const now = useNow(); // ticks every second so the countdown keeps running
   const phase = studentExamPhase(exam, now);
   if (phase === 'scheduled') {
     return (

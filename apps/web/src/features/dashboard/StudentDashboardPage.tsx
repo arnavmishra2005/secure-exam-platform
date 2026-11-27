@@ -19,6 +19,7 @@ import { NotificationList, notificationsQueryKey } from '@/features/notification
 import { getErrorMessage } from '@/lib/errors';
 import { fullMinutes, latestFullStart, minutesIfStartedNow, studentExamPhase } from '@/lib/examWindow';
 import { formatDateTime, formatPercent, formatRelative, formatScore, formatShortTime, formatWindow } from '@/lib/format';
+import { useNow } from '@/lib/useNow';
 
 export default function StudentDashboardPage() {
   const queryClient = useQueryClient();
@@ -28,6 +29,8 @@ export default function StudentDashboardPage() {
     // Upcoming exams go live on their own; results and notifications arrive any time.
     refetchInterval: 30_000,
   });
+  // Ticks every second so "Starts in …" counts down without waiting for the next refresh.
+  const deviceNow = useNow();
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -52,7 +55,7 @@ export default function StudentDashboardPage() {
 
   const firstName = data.student.fullName.split(' ')[0];
   // The server's clock decides when an exam starts; correct for a student's PC clock that is off.
-  const now = Date.now() + (new Date(data.serverTime).getTime() - dataUpdatedAt);
+  const now = deviceNow + (new Date(data.serverTime).getTime() - dataUpdatedAt);
   const next = data.upcoming[0];
 
   return (
