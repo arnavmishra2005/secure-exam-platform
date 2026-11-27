@@ -55,6 +55,24 @@ export function toLocalInputValue(iso?: string | null): string {
 }
 
 /** Relative phrase like "in 2h 5m" or "3m ago". */
+/**
+ * A live countdown to `iso` that always shows seconds, so it visibly ticks:
+ * "in 2d 03h 05m 12s", "in 1h 05m 12s", "in 5m 03s", "in 12s"; "now" once reached.
+ */
+export function formatCountdown(iso: string, now = Date.now()): string {
+  const total = Math.floor((new Date(iso).getTime() - now) / 1000);
+  if (total <= 0) return 'now';
+  const d = Math.floor(total / 86_400);
+  const h = Math.floor((total % 86_400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (d > 0) return `in ${d}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+  if (h > 0) return `in ${h}h ${pad(m)}m ${pad(s)}s`;
+  if (m > 0) return `in ${m}m ${pad(s)}s`;
+  return `in ${s}s`;
+}
+
 export function formatRelative(iso: string, now = Date.now()): string {
   const diffSeconds = Math.round((new Date(iso).getTime() - now) / 1000);
   const phrase = formatDuration(Math.abs(diffSeconds));

@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { NotificationList, notificationsQueryKey } from '@/features/notifications/NotificationBell';
 import { getErrorMessage } from '@/lib/errors';
 import { fullMinutes, latestFullStart, minutesIfStartedNow, studentExamPhase } from '@/lib/examWindow';
-import { formatDateTime, formatPercent, formatRelative, formatScore, formatShortTime, formatWindow } from '@/lib/format';
+import { formatCountdown, formatDateTime, formatPercent, formatScore, formatShortTime, formatWindow } from '@/lib/format';
 import { useNow } from '@/lib/useNow';
 
 export default function StudentDashboardPage() {
@@ -131,7 +131,7 @@ export default function StudentDashboardPage() {
                           {waiting ? (
                             <Badge variant="secondary">Waiting for instructor to open</Badge>
                           ) : (
-                            <Badge variant="info">Starts {formatRelative(exam.startTime, now)}</Badge>
+                            <Badge variant="info" className="tabular-nums">Starts {formatCountdown(exam.startTime, now)}</Badge>
                           )}
                         </div>
                       </li>

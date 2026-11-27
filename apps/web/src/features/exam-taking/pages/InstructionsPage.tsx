@@ -20,7 +20,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 import { fullMinutes, latestFullStart, minutesIfStartedNow, studentExamPhase } from '@/lib/examWindow';
-import { formatDateTime, formatRelative, formatWindow } from '@/lib/format';
+import { formatCountdown, formatDateTime, formatWindow } from '@/lib/format';
 import { useNow } from '@/lib/useNow';
 import { OpenInExamApp } from '../components/OpenInExamApp';
 import { useAttempt } from '../contexts/AttemptContext';
@@ -187,7 +187,7 @@ function ExamStatusNote({ exam }: { exam: StudentExamView }) {
   if (phase === 'scheduled') {
     return (
       <Alert variant="info" title={`Scheduled for ${formatDateTime(exam.startTime)}`}>
-        Starts {formatRelative(exam.startTime, now)}. You can start it here once the exam opens. This page updates by itself.
+        Starts <span className="tabular-nums">{formatCountdown(exam.startTime, now)}</span>. You can start it here once the exam opens. This page updates by itself.
       </Alert>
     );
   }
