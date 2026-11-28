@@ -4,6 +4,7 @@ This guide assumes a fresh computer and no knowledge of the project. It has a co
 separate walkthrough for **macOS** (Part A) and **Ubuntu** (Part B), then shared reference
 material (Part C). Follow only your own part, top to bottom.
 
+- [Team](#team)
 - [How it works](#how-it-works)
 - [Which commands, when](#which-commands-when)
 - [Part A: macOS](#part-a-macos)
@@ -16,6 +17,16 @@ material (Part C). Follow only your own part, top to bottom.
   - [C5. Troubleshooting](#c5-troubleshooting)
   - [C6. Windows](#c6-windows)
   - [C7. Project layout and further reading](#c7-project-layout-and-further-reading)
+
+---
+
+## Team
+
+| Member | Main areas |
+|---|---|
+| Divyansh Dubey | Platform core: sign-in and access, courses and staff, students and enrolment, the exam lifecycle, results |
+| Arnav Mishra | Secure exam delivery: the desktop exam app, kiosk lockdown, secure launch, violations and live monitoring |
+| Keshav Mishra | Questions and coding: the question bank, coding questions, the code editor, languages and code grading |
 
 ---
 
@@ -100,6 +111,16 @@ npm run db:seed
 
 The seed alone (`npm run db:seed`) can be re-run at any time without wiping: it is idempotent and
 moves the sample exam's time window forward so it is open again.
+
+**5. Demo over the college wifi** (one laptop serves everyone on the same network):
+
+```bash
+npm run lan                                            # on the server laptop; prints http://<ip>:3003
+npm run exam:register -- --server http://<ip>:3003     # once on each teammate's laptop, for the exam app
+```
+
+`npm run lan` builds the website when it starts, so stop it (Ctrl+C) and run it again after pulling or
+changing code. Full steps: [docs/lan-demo.md](docs/lan-demo.md).
 
 ---
 
@@ -628,6 +649,12 @@ coding question in CS301 and CS210 (`apps/api/src/database/seed-data/course-bank
 their own banks, so the three accounts also show that banks are kept apart. alice, bob and carol are enrolled
 in every course.
 
+The seed also loads the demo college's student list (`apps/api/src/database/seed-data/students.ts`, all with
+password `Student@1234`). Apart from alice, bob and carol, those students are in no course, so instructors can
+try enrolling them: Courses → a course → Students, searching by email, college ID or name. Nobody in the app
+can create a student; for the real list run `npm run db:seed-students -- students.json` with a JSON array of
+`{ "collegeId", "fullName", "email", "password" }`.
+
 Login is limited to 5 attempts per minute per IP. If you see "Too many requests", wait a minute.
 
 Nobody in the app can create an instructor. `npm run db:seed` creates the ones above; for real accounts run
@@ -859,7 +886,7 @@ packages/types              shared types          (needs build: npm run typechec
 packages/validation         shared DTOs           (needs build)
 packages/api-client         axios API wrappers    (needs build)
 packages/exam-content-ui    shared exam UI + code editor (used from source)
-scripts/                    exam:register and exam:app helpers
+scripts/                    exam:register, exam:app and lan (wifi demo server) helpers
 docs/                       design notes and contracts (index: docs/README.md)
 infra/linux-kiosk           Linux kiosk session, firewall and USB-block scripts
 infra/runner                system-call filter for the server's code sandbox
@@ -872,6 +899,7 @@ infra/runner-images         Docker images for running Python, C/C++ and Java (np
 - [docs/execution-security.md](docs/execution-security.md): running and grading code on the server (sandbox, languages, capacity, deployment checklist).
 - [docs/merge-notes-person-b.md](docs/merge-notes-person-b.md): Person B's Phase 5 changes that touch A's or C's code, for merging.
 - [docs/phase4-contracts.md](docs/phase4-contracts.md): shared API contracts.
+- [docs/lan-demo.md](docs/lan-demo.md): running a demo from one laptop over the college wifi.
 - [infra/linux-kiosk/README.md](infra/linux-kiosk/README.md): the Linux kiosk session.
 
 ### Phase 5 — Person C
