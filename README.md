@@ -22,11 +22,11 @@ material (Part C). Follow only your own part, top to bottom.
 
 ## Team
 
-| Member | Main areas |
-|---|---|
-| Divyansh Dubey | Platform core: sign-in and access, courses and staff, students and enrolment, the exam lifecycle, results |
-| Arnav Mishra | Secure exam delivery: the desktop exam app, kiosk lockdown, secure launch, violations and live monitoring |
-| Keshav Mishra | Questions and coding: the question bank, coding questions, the code editor, languages and code grading |
+| No. | Member | Roll number | Email | Main areas |
+|---|---|---|---|---|
+| 1 | Divyansh Dubey | 12340690 | divyanshd@iitbhilai.ac.in | Platform core: sign-in and access, courses and staff, students and enrolment, the exam lifecycle, results |
+| 2 | Keshav Mishra | 12341140 | keshavm@iitbhilai.ac.in | Questions and coding: the question bank, coding questions, the code editor, languages and code grading |
+| 3 | Arnav Mishra | 12340330 | arnavm@iitbhilai.ac.in | Secure exam delivery: the desktop exam app, kiosk lockdown, secure launch, violations and live monitoring |
 
 ---
 
